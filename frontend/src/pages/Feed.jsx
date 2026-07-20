@@ -556,13 +556,21 @@ export default function FeedPage() {
             <h3 className="text-sm font-semibold mb-2">Your imports ({imports.length})</h3>
             <ul className="divide-y divide-line dark:divide-line-dark" data-testid="imports-list">
               {imports.map((i) => (
-                <li key={i.id} className="py-2 flex items-center justify-between gap-3">
-                  <div className="min-w-0">
+                <li key={i.id} className="py-3 flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
                     <Link to={`/jobs/${i.id}`} className="text-sm text-ink dark:text-ink-dark hover:underline">{i.title}</Link>
                     <div className="text-xs muted flex items-center gap-1 mt-0.5">
                       <ExternalLink className="h-3 w-3" />
-                      <a href={i.origin_url} target="_blank" rel="noreferrer" className="hover:underline">{i.origin_url}</a>
+                      <a href={i.origin_url} target="_blank" rel="noreferrer" className="hover:underline truncate">{i.origin_url}</a>
                     </div>
+                    {i.needs_origin && i.resolver_label && (
+                      <p
+                        className="text-xs text-amber-700 dark:text-amber-400 mt-1 leading-relaxed"
+                        data-testid={`imports-resolver-label-${i.id}`}
+                      >
+                        {i.resolver_label}
+                      </p>
+                    )}
                   </div>
                   <StatusChip status={i.status} />
                 </li>

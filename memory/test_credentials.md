@@ -1,4 +1,4 @@
-# Test Credentials — OpportunityOS (Phase 1)
+# Test Credentials — OpportunityOS
 
 > Read by testing agents and fork runs. Keep in sync with `domains/seeds/seeder.py`.
 
@@ -6,14 +6,47 @@
 
 ---
 
-## User Zero (real seed candidate — NOT a sample)
+## ⭐ Fixture user — USE THIS FOR AUTOMATED TESTS (Phase 3+)
+
+- **Email:** `fixture-ead@opportunityos.dev`
+- **Password:** `Fixture!Test1`
+- **Role:** `user`
+- **Persona:** Synthetic test fixture. NOT a real candidate.
+- **State (re-baselined on every backend startup):**
+  - Passport ACTIVATED
+  - Consents: ALL 5 scopes granted
+  - Eligibility: `status=ead_opt`, opt_end=2027-12-31, earliest_start=2026-03-01 (sealed)
+    → derived_flags `{itar_excluded:true, e_verify_need:true, sponsorship_need:true}`
+  - Preferences v1: locations `["Phoenix, AZ", "Remote (US)"]`, `remote_ok:true`,
+    salary_floor $90,000, role_families incl. vehicle systems + simulation + controls + …
+  - Claims (all APPROVED, version 1):
+    - identity, contact, location Phoenix AZ US
+    - education: MS Mechanical Engineering @ Test University, 2018-08 → 2020-05
+    - employment: Fixture Motors Systems Engineer, 2020-08 → present (~5.5 yrs by 2026-02)
+    - skills: MATLAB, Simulink, SolidWorks, MBSE, requirements, systems
+  - Applications, hidden_jobs, match_scores, usage_meters, documents, resume_versions:
+    **wiped on every startup** — start clean.
+
+Deterministic acceptance-check-B against the seeded 15 SampleCo jobs for this user:
+- `GET /api/v1/jobs/feed` → passing count **exactly 9**, excluded count **exactly 6**.
+- `excluded_by_reason.requires_us_person` **exactly 2** (Autonomy Systems + Fab Equipment).
+- `excluded_by_reason.no_sponsorship_offered` **exactly 4** (Battery Test, Battery Thermal, Vehicle Test, Manufacturing Process).
+- `GET /api/v1/eligibility/coverage-preview` returns identical numbers (gate-engine parity).
+
+---
+
+## User Zero (real seed candidate — DO NOT use for destructive tests)
+
 - **Email:** `ujjwal@opportunityos.dev`
 - **Password:** `Passport!Test0`
 - **Role:** `user`
 - **Persona:** Ujjwal Singla — Phoenix, AZ — automotive systems engineer
-- **Passport state:** all 16 seeded claims start `status:"pending"`, `user_approved:false`, `verification_level:0`. Work-authorization claim is `sealed` (owner sees real value; admin/support see the masked `•••• (sealed)` placeholder).
-
-_Note for testers:_ Phase 2 does NOT auto-approve any of User Zero's seeded claims. You must approve at least one `identity` claim AND one `education` or `employment` claim before `/api/v1/passport/activate` will succeed. User Zero has both types available in the pending pile.
+- **⚠️ Reserved for demos and product-owner walkthroughs.** Do NOT run automated tests
+  that mutate his preferences / eligibility / applications. Use `fixture-ead@` above.
+- **One-time cleanup (marker `user_zero_cleanup_v1`) removes tester pollution:**
+  preferences, eligibility_profiles, applications, hidden_jobs, match_scores,
+  usage_meters, documents, resume_versions, score_feedback. Claims + consent_records +
+  audit_logs are preserved (append-only rule).
 
 ## Admin
 - **Email:** `admin@opportunityos.dev`
@@ -28,9 +61,11 @@ _Note for testers:_ Phase 2 does NOT auto-approve any of User Zero's seeded clai
 ---
 
 ## Curl smoke test
+
 ```bash
 BASE="https://lynk-preview-2.preview.emergentagent.com"
+# Fixture user login
 curl -s -X POST "$BASE/api/v1/auth/login" \
   -H 'Content-Type: application/json' \
-  -d '{"email":"ujjwal@opportunityos.dev","password":"Passport!Test0"}'
+  -d '{"email":"fixture-ead@opportunityos.dev","password":"Fixture!Test1"}'
 ```

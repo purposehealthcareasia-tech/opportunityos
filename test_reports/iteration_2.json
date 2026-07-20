@@ -1,0 +1,52 @@
+{
+  "summary": "Phase 3 FIX DIRECTIVE verified against the FIXTURE user. Primary acceptance-check-B PASSES: 9/6 geometry exact, fail_reasons {no_sponsorship_offered:4, requires_us_person:2}, feed<->coverage-preview single-engine parity, shortlist happy/dup-409/idempotency-replay, hide persists, state-transition atomicity, imports resolver_label surfaced, SampleCo integrity (15 samples, sample-13 & sample-09 both show 14 gates with itar=FAIL + location_onsite=PASS). Match modal returns 9 reason_codes with all required fields. 22/24 tests pass. 2 failures are on the User Zero cleanup effect — the v2 one-time cleanup marker DID run (evidenced by claims preserved + prefs empty), but iteration_1's older test_phase3_integration.py (still uses ujjwal@ for state-mutating tests) polluted User Zero AGAIN after the marker fired. This is not a fix regression — it's a testing-strategy gap that needs a v3 marker OR migration of test_phase3_integration.py to the fixture user.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "/api/v1/eligibility/me + /api/v1/applications (User Zero)",
+        "issue": "User Zero (ujjwal@) still has eligibility.status='citizen' (updated 06:58:03) and 4 applications (Powertrain, HIL, Battery Test, Vehicle Systems). Founder Fix's user_zero_cleanup_v2 marker is one-time; iteration_1 tests polluted after it ran. Recommend either (a) migrate legacy test_phase3_integration.py from ujjwal@ to fixture-ead@ or (b) bump marker to v3."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_fixture_acceptance_b.py",
+    "/app/test_reports/pytest/fixture_acceptance_b.xml"
+  ],
+  "action_items": [
+    "Migrate /app/backend/tests/test_phase3_integration.py to use fixture-ead@opportunityos.dev instead of ujjwal@opportunityos.dev for all state-mutating operations, so User Zero stays a pristine demo user.",
+    "OR: Bump the one-time cleanup marker in /app/backend/domains/seeds/seeder.py from 'user_zero_cleanup_v2' to 'user_zero_cleanup_v3' so the next startup re-cleanses User Zero. Verified target state per review-request Item 11: preferences=empty (already true), eligibility=empty (currently 'citizen'), applications=[] (currently 4 rows), claims preserved (already true)."
+  ],
+  "critical_code_review_comments": [
+    "seeder._rebase_fixture_user (line 280) correctly wipes ALL derivable state on every startup for the fixture user. Verified — three consecutive restarts each produced applications=[], usage_meter=0, prefs+eligibility+claims re-seeded from FIXTURE_* constants.",
+    "seeder._cleanup_non_sample_test_jobs (line 368) query is correct: purges is_sample=False AND (status!='derived' OR imported_by missing). Verified — deleted 2 leftover qatest.com jobs from prior iteration_1 tests on the first restart during this run (feed excluded went from 8 -> 6 after purge).",
+    "seeder._one_time_user_zero_cleanup (line 222) marker guard is by-design one-shot. Combined with legacy tests that still mutate User Zero, this leaves User Zero polluted after subsequent test cycles. Recommend either marker-bumping strategy or a per-startup wipe (matching what fixture user gets).",
+    "domains/jobs/router.user_import correctly returns resolver_label 'SAMPLE resolver in v0.1 links manually…' and status='derived' + needs_origin=true. Same label surfaces via /jobs/imports/me. Verified both directly.",
+    "SampleCo sample-13 (Fab Equipment Engineer) confirmed relocated to Phoenix, AZ so location_onsite=PASS while itar=FAIL is the SOLE cause. sample-09 (Autonomy) similarly moved to Remote (US). Both jobs return 14 gates.",
+    "Coverage-preview <-> feed parity holds: both return passing=9, excluded_by_reason={no_sponsorship_offered:4, requires_us_person:2}. The feed's totals.excluded includes only jobs with fail_reasons (=6) — unknown-reason jobs (like qatest leftovers if any) are separately reported; on a fully cleaned startup the counts are strictly {passing:9, excluded:6}.",
+    "Shortlist endpoint returns 201 with route in {guided_manual, email_application, manual_queue}, snapshots job with is_sample=true, duplicates return 409 detail.error='already_shortlisted', and Idempotency-Key replay returns X-Idempotent-Replay:true + byte-identical body. All three verified in test_01/02/03.",
+    "State-transition PATCH is atomic: expected_state precondition returns 409 detail.error='state_precondition_failed' on stale expectation. Confirmed with two identical PATCH calls (200 then 409).",
+    "Match /matches/for-job/{id} on the highest-scored passing job returns reason_codes length exactly 9, each with factor/value/direction/weight_applied/detail. Confidence in [0,1], weights_version='v0.1'. Contract holds.",
+    "Test hygiene note (my earlier suite bug — now fixed): idempotency keys must be unique per test-run against a persistent backend; static keys (e.g. 'fx-tester-hide-1') will hit the idempotency store on re-runs and return a cached 201 without actually toggling state. Fixed by keying with a per-run uuid suffix.",
+    "Preferences API returns fields nested under .payload (locations/remote_ok/salary_floor_usd), not at top level. Not a bug — the review spec's phrasing implies top-level access. Consider a small OpenAPI/docs note.",
+    "Claims API uses field .status ('approved') rather than .state. Consistent throughout — no bug, but flag for cross-domain naming (applications use .state, claims use .status)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_fixture_acceptance_b.py (new — 24 tests covering every review-request item)"
+  ],
+  "success_rate": {
+    "backend": "91.7% (22/24)",
+    "frontend": "not tested (backend only per review-request testing_type)"
+  },
+  "test_credentials": "Fixture: fixture-ead@opportunityos.dev / Fixture!Test1 (used for all acceptance mutations). User Zero: ujjwal@opportunityos.dev / Passport!Test0 (read-only checks only). Both sourced from /app/memory/test_credentials.md.",
+  "seed_data_creation": "One transient greenhouse import per run (via /jobs/import for the resolver_label test); no cleanup needed since the fixture user is re-baselined on every startup. Test creates a shortlist + hide + one preparing-state application which TestZZCleanup transitions to 'closed' before exiting so subsequent runs stay well-behaved even without restart.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "PRIMARY acceptance-check-B (9/6 geometry, 4/2 reasons, parity) PASSES cleanly. Run: `cd /app/backend && python3 -m pytest tests/test_fixture_acceptance_b.py -v`. Two intentional test-strategy failures on User Zero cleanup — these are the ONLY remaining items and are documented in action_items. If you re-run against a live backend WITHOUT restart, the fixture user retains state from the previous run's TestZZCleanup (which closes the shortlisted app) — the test file handles this via idempotent per-run keys + pre-run cleanup. On a fresh restart (`sudo supervisorctl restart backend && sleep 6`) you'll see purged_test_jobs=N in the log if any qatest.com pollution is present and it gets scrubbed automatically. Golden-set harness was NOT re-run this iteration (unchanged since iteration_1: 98.95% accuracy).",
+  "rca_of_the_issue": "User Zero pollution root cause: seeder._one_time_user_zero_cleanup uses a `seed_migrations`-collection marker ('user_zero_cleanup_v2') that guarantees it runs exactly once in the DB's lifetime. It ran once during a prior boot and wiped everything correctly. However, /app/backend/tests/test_phase3_integration.py (from iteration_1, still checked in) authenticates as ujjwal@ and mutates prefs/eligibility/applications during its 29-test integration run. Those mutations landed AFTER the marker fired, so User Zero was re-polluted. The FIX DIRECTIVE's own re-baseline (_rebase_fixture_user) runs on EVERY startup and would work here too — recommend applying the same per-startup wipe pattern to User Zero OR migrating the older tests to the fixture user. Reproduction: any test that logs in as ujjwal@ and POSTs to /api/v1/eligibility or /api/v1/jobs/{id}/shortlist will re-pollute User Zero. Mitigation options: (1) migrate test_phase3_integration.py to fixture user (safest, matches the review's founder directive that ujjwal@ is 'read-only, real seed'); (2) bump the marker to v3 (fixes state once but re-pollutes on next legacy-test run); (3) convert _one_time_user_zero_cleanup to _rebase_user_zero (runs every startup like fixture)."
+}

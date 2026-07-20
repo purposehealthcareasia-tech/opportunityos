@@ -85,64 +85,79 @@ COMPANIES: list[dict] = [
 SAMPLE_COMPANY = {"domain": "sampleco.demo", "name": "SampleCo (demo)", "ats_type": "sample"}
 
 SAMPLE_JOBS: list[dict] = [
+    # 1 — PASS for fixture-ead (Phoenix, AZ; offers_sponsorship True; comp ≥ 90k)
     {"title": "Vehicle Systems Engineer", "family": "vehicle systems",
      "geo": "Phoenix, AZ", "comp": "$115k-$150k", "apply_method": "internal",
      "eligibility": {"requires_us_person": False, "offers_sponsorship": True},
      "jd": "Own vehicle-level requirements decomposition for a new EV platform. Interface with subsystem owners for propulsion, thermal, and HV. MBSE workflow."},
+    # 2 — FAIL sponsorship (offers_sponsorship=False). Location matches fixture so it fails on ONE cause only.
     {"title": "Battery Test Engineer", "family": "battery systems/test",
-     "geo": "San Jose, CA", "comp": "$105k-$140k", "apply_method": "external",
+     "geo": "Phoenix, AZ", "comp": "$105k-$140k", "apply_method": "external",
      "eligibility": {"requires_us_person": False, "offers_sponsorship": False},
      "jd": "Design and execute cell-level and module-level test plans. Own bench safety and DAQ instrumentation. Reduce test cycle time. Visa sponsorship not available."},
+    # 3 — PASS (Remote US)
     {"title": "HIL Simulation Engineer", "family": "simulation (MIL/SIL/HIL)",
-     "geo": "Detroit, MI", "comp": "$110k-$150k", "apply_method": "ats-workday",
+     "geo": "Remote (US)", "comp": "$110k-$150k", "apply_method": "ats-workday",
      "eligibility": {"requires_us_person": False, "offers_sponsorship": True},
      "jd": "Build and maintain HIL benches for powertrain and chassis controls. Author plant models in Simulink. Own signal fidelity budgets."},
+    # 4 — PASS (Phoenix, AZ; years_min moderated in REQ_BY_TITLE below)
     {"title": "Powertrain Controls Engineer", "family": "controls",
-     "geo": "Auburn Hills, MI", "comp": "$120k-$155k", "apply_method": "internal",
+     "geo": "Phoenix, AZ", "comp": "$120k-$155k", "apply_method": "internal",
      "eligibility": {"requires_us_person": False, "offers_sponsorship": True},
      "jd": "Develop model-based controls for e-axle torque management. Deliver production-quality Simulink models and calibrations."},
+    # 5 — PASS (Phoenix, AZ)
     {"title": "Vehicle Dynamics Engineer", "family": "vehicle dynamics",
-     "geo": "Plymouth, MI", "comp": "$115k-$145k", "apply_method": "external",
+     "geo": "Phoenix, AZ", "comp": "$115k-$145k", "apply_method": "external",
      "eligibility": {"requires_us_person": False, "offers_sponsorship": True},
      "jd": "Own ride and handling objective/subjective targets. Correlate CarMaker/CarSim models to physical proving-ground data."},
+    # 6 — FAIL sponsorship (offers_sponsorship=False, location matches)
     {"title": "Battery Thermal Engineer", "family": "thermal/energy",
-     "geo": "Fremont, CA", "comp": "$120k-$160k", "apply_method": "ats-greenhouse",
+     "geo": "Remote (US)", "comp": "$120k-$160k", "apply_method": "ats-greenhouse",
      "eligibility": {"requires_us_person": False, "offers_sponsorship": False},
      "jd": "Design pack-level thermal management. 1D + 3D correlation. Own coolant flow and cell temperature targets under fast-charge. Sponsorship not offered."},
+    # 7 — PASS (Phoenix, AZ; $95k ≥ $90k)
     {"title": "Mechanical Design Engineer", "family": "mechanical design",
-     "geo": "Tempe, AZ", "comp": "$95k-$130k", "apply_method": "external",
+     "geo": "Phoenix, AZ", "comp": "$95k-$130k", "apply_method": "external",
      "eligibility": {"requires_us_person": False, "offers_sponsorship": True},
      "jd": "Detail-design brackets, mounts, and enclosures for a battery pack. GD&T fluency. Own DFM reviews with suppliers."},
+    # 8 — FAIL sponsorship (location matches so only one fail cause)
     {"title": "Vehicle Test Engineer", "family": "test engineer",
-     "geo": "Yucca, AZ", "comp": "$100k-$135k", "apply_method": "internal",
+     "geo": "Phoenix, AZ", "comp": "$100k-$135k", "apply_method": "internal",
      "eligibility": {"requires_us_person": False, "offers_sponsorship": False},
      "jd": "Plan and execute proving-ground validation cycles. Author test plans, run DAQ, deliver crisp reports. Visa sponsorship not offered."},
+    # 9 — FAIL ITAR (requires_us_person=True; location matches so only ONE fail cause)
     {"title": "Autonomy Systems Engineer", "family": "robotics",
-     "geo": "Mountain View, CA", "comp": "$150k-$210k", "apply_method": "ats-greenhouse",
+     "geo": "Remote (US)", "comp": "$150k-$210k", "apply_method": "ats-greenhouse",
      "eligibility": {"requires_us_person": True, "offers_sponsorship": True, "notes": "US-person requirement per export-control obligations."},
      "jd": "Own end-to-end autonomy stack integration for a driverless platform. Perception <-> planning integration and safety case authoring. US-person status required per export controls."},
+    # 10 — PASS (Remote US)
     {"title": "Applications Engineer - Simulation Tools", "family": "applications engineer",
      "geo": "Remote (US)", "comp": "$115k-$145k", "apply_method": "ats-workday",
      "eligibility": {"requires_us_person": False, "offers_sponsorship": True},
      "jd": "Support OEM customers deploying MIL/SIL/HIL toolchains. Build reference workflows. Author technical enablement content."},
+    # 11 — PASS (Phoenix, AZ)
     {"title": "Model-Based Systems Engineer", "family": "systems engineer",
-     "geo": "Torrance, CA", "comp": "$120k-$155k", "apply_method": "external",
+     "geo": "Phoenix, AZ", "comp": "$120k-$155k", "apply_method": "external",
      "eligibility": {"requires_us_person": False, "offers_sponsorship": True},
      "jd": "Author SysML models for vehicle-level architectures. Own requirements traceability from stakeholder needs to test verification."},
+    # 12 — FAIL sponsorship (location matches)
     {"title": "Manufacturing Process Engineer", "family": "manufacturing/process",
-     "geo": "Normal, IL", "comp": "$95k-$125k", "apply_method": "ats-workday",
+     "geo": "Phoenix, AZ", "comp": "$95k-$125k", "apply_method": "ats-workday",
      "eligibility": {"requires_us_person": False, "offers_sponsorship": False},
      "jd": "Own line-side process for a new battery module assembly cell. Cycle-time analysis, PFMEA ownership, kaizen leadership. Sponsorship not available."},
+    # 13 — FAIL ITAR (location matches so ONLY ITAR fires)
     {"title": "Fab Equipment Engineer", "family": "equipment engineer",
-     "geo": "Chandler, AZ", "comp": "$105k-$140k", "apply_method": "external",
+     "geo": "Phoenix, AZ", "comp": "$105k-$140k", "apply_method": "external",
      "eligibility": {"requires_us_person": True, "offers_sponsorship": True, "notes": "US-person requirement per export-control obligations for advanced fab tooling."},
      "jd": "Own uptime, yield, and MTBF for a critical fab-line tool. Partner with vendors on preventive-maintenance windows. US-person status required."},
+    # 14 — PASS (Remote US)
     {"title": "SIL Software Engineer", "family": "simulation (MIL/SIL/HIL)",
-     "geo": "Warren, MI", "comp": "$120k-$155k", "apply_method": "ats-workday",
+     "geo": "Remote (US)", "comp": "$120k-$155k", "apply_method": "ats-workday",
      "eligibility": {"requires_us_person": False, "offers_sponsorship": True},
      "jd": "Stand up SIL frameworks for ADAS software. Automate test-case authoring. Own signal-fidelity trade studies."},
+    # 15 — PASS (Phoenix, AZ)
     {"title": "EV Systems Engineer", "family": "vehicle systems",
-     "geo": "Newark, CA", "comp": "$125k-$160k", "apply_method": "ats-greenhouse",
+     "geo": "Phoenix, AZ", "comp": "$125k-$160k", "apply_method": "ats-greenhouse",
      "eligibility": {"requires_us_person": False, "offers_sponsorship": True},
      "jd": "Own cross-subsystem requirements for a new BEV. Coordinate propulsion, HV distribution, and thermal targets."},
 ]
@@ -208,3 +223,47 @@ FEATURE_FLAGS = [
     {"key": "application_tracker_enabled", "value": False},
     {"key": "billing_enabled", "value": False},
 ]
+
+# ---------------------------------------------------------------------------
+# FIXTURE user — deterministic re-baseline every startup (Founder Fix #1).
+# All rows keyed to this email are RESET on each seeder run so testing agents get
+# a canonical acceptance-check-B state:
+#   passport activated, eligibility=ead_opt, prefs Phoenix+Remote+$90k floor,
+#   claims MS + 1 employment (3.5yrs) + skills MATLAB/Simulink/SolidWorks,
+#   ZERO applications / hidden_jobs / match_scores / usage_meters.
+# ---------------------------------------------------------------------------
+FIXTURE_USER = {
+    "email": "fixture-ead@opportunityos.dev",
+    "password": "Fixture!Test1",
+    "name": "Test Candidate (FIXTURE — automated tests only)",
+}
+
+FIXTURE_EMPLOYMENT_START = "2020-08"  # ~3.5 years by Feb 2026
+FIXTURE_EMPLOYMENT_END = None  # Present
+
+FIXTURE_ELIGIBILITY = {
+    "status": "ead_opt",
+    "dates": {"opt_end": "2027-12-31", "earliest_start": "2026-03-01"},
+    "notes": "Synthetic fixture for automated testing. Not a real candidate.",
+}
+
+FIXTURE_PREFERENCES = {
+    "role_families": ["vehicle systems", "simulation (MIL/SIL/HIL)", "controls", "vehicle dynamics",
+                       "mechanical design", "applications engineer", "systems engineer"],
+    "locations": ["Phoenix, AZ", "Remote (US)"],
+    "remote_ok": True,
+    "salary_floor_usd": 90000,
+    "employer_include": [],
+    "employer_exclude": [],
+    "screener_answers": {},
+    "search_intensity": "medium",
+}
+
+FIXTURE_CLAIMS = [
+    {"type": "identity",   "value": {"name": "Test Candidate FIXTURE"}, "sensitivity": "normal"},
+    {"type": "contact",    "value": {"email": "fixture-ead@opportunityos.dev"}, "sensitivity": "normal"},
+    {"type": "location",   "value": {"city": "Phoenix", "state": "AZ", "country": "US"}, "sensitivity": "normal"},
+    {"type": "education",  "value": {"institution": "Test University", "degree": "MS", "field": "Mechanical Engineering", "start": "2018-08", "end": "2020-05"}, "sensitivity": "normal"},
+    {"type": "employment", "value": {"company": "Fixture Motors", "role": "Systems Engineer", "start": FIXTURE_EMPLOYMENT_START, "end": None, "summary": "Synthetic fixture experience."}, "sensitivity": "normal"},
+]
+FIXTURE_SKILLS = ["MATLAB", "Simulink", "SolidWorks", "MBSE", "requirements", "systems"]
