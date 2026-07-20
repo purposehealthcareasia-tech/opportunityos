@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ShieldAlert, Search, RefreshCw, Users, CreditCard, Inbox, ToggleLeft, LifeBuoy, Activity, AlertTriangle, Loader2, X, Check, Lock } from 'lucide-react';
+import { ShieldAlert, Search, RefreshCw, Users, CreditCard, Inbox, ToggleLeft, LifeBuoy, Activity, AlertTriangle, Loader2, X, Check, Lock, Cable } from 'lucide-react';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 
@@ -16,13 +16,14 @@ import { useAuth } from '../lib/auth';
  */
 
 const TABS = [
-  { id: 'users',       label: 'Users',          Icon: Users },
-  { id: 'subs',        label: 'Subscriptions',  Icon: CreditCard },
-  { id: 'queue',       label: 'Manual queue',   Icon: Inbox },
-  { id: 'flags',       label: 'Feature flags',  Icon: ToggleLeft },
-  { id: 'tickets',     label: 'Support',        Icon: LifeBuoy },
-  { id: 'health',      label: 'Health',         Icon: Activity },
-  { id: 'obs',         label: 'Observability',  Icon: AlertTriangle },
+  { id: 'users',        label: 'Users',          Icon: Users },
+  { id: 'subs',         label: 'Subscriptions',  Icon: CreditCard },
+  { id: 'queue',        label: 'Manual queue',   Icon: Inbox },
+  { id: 'flags',        label: 'Feature flags',  Icon: ToggleLeft },
+  { id: 'integrations', label: 'Integrations',   Icon: Cable },
+  { id: 'tickets',      label: 'Support',        Icon: LifeBuoy },
+  { id: 'health',       label: 'Health',         Icon: Activity },
+  { id: 'obs',          label: 'Observability',  Icon: AlertTriangle },
 ];
 
 export default function Admin() {
@@ -65,6 +66,7 @@ export default function Admin() {
       {tab === 'subs'    && <SubscriptionsTab isAdmin={isAdmin} />}
       {tab === 'queue'   && <QueueTab isAdmin={isAdmin} />}
       {tab === 'flags'   && <FlagsTab isAdmin={isAdmin} />}
+      {tab === 'integrations' && <IntegrationsTab isAdmin={isAdmin} />}
       {tab === 'tickets' && <TicketsTab />}
       {tab === 'health'  && <HealthTab />}
       {tab === 'obs'     && <ObservabilityTab isAdmin={isAdmin} />}
@@ -713,3 +715,192 @@ function FlashBanner({ kind, message, onDismiss }) {
     </div>
   );
 }
+
+// ----------------------------------------------------------------------------
+// INTEGRATIONS DASHBOARD (Milestone A · admin-only)
+// ----------------------------------------------------------------------------
+const STATUS_STYLE = {
+  CONNECTED:              'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200',
+  TEST_MODE:              'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-200',
+  CONFIGURATION_REQUIRED: 'bg-neutral-100 text-neutral-700 dark:bg-neutral-900 dark:text-neutral-300',
+  DEGRADED:               'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300',
+  DISABLED:               'bg-neutral-200 text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400',
+};
+
+function IntegrationsTab({ isAdmin }) {
+  const [rows, setRows] = useState([]);
+  const [summary, setSummary] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [busySlug, setBusySlug] = useState(null);
+  const [flash, setFlash] = useState(null);
+  const [detail, setDetail] = useState(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const r = await api.get('/api/v1/admin/integrations');
+      setRows(r.data.providers || []);
+      setSummary(r.data.summary || null);
+    } finally { setLoading(false); }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const test = async (slug) => {
+    setBusySlug(slug);
+    try {
+      const r = await api.post(`/api/v1/admin/integrations/${slug}/test`, {});
+      setFlash({ kind: r.data.ok ? 'ok' : 'warn',
+                 message: `${slug}: ${r.data.detail || 'no detail'}` });
+      await load();
+    } catch (e) {
+      setFlash({ kind: 'warn',
+                 message: e?.response?.data?.detail?.message || `${slug}: test failed.` });
+    } finally { setBusySlug(null); }
+  };
+  const toggle = async (slug, enabled) => {
+    setBusySlug(slug);
+    try {
+      await api.post(`/api/v1/admin/integrations/${slug}/${enabled ? 'disable' : 'enable'}`, {});
+      setFlash({ kind: 'ok', message: `${slug}: ${enabled ? 'disabled' : 'enabled'}.` });
+      await load();
+    } catch (e) {
+      setFlash({ kind: 'warn', message: `${slug}: toggle failed.` });
+    } finally { setBusySlug(null); }
+  };
+  const open = async (slug) => {
+    setDetail({ loading: true, slug });
+    try {
+      const r = await api.get(`/api/v1/admin/integrations/${slug}`);
+      setDetail({ loading: false, ...r.data });
+    } catch (e) {
+      setDetail({ loading: false, slug, error: 'Failed to load.' });
+    }
+  };
+
+  const byCat = rows.reduce((acc, r) => {
+    (acc[r.category || 'misc'] = acc[r.category || 'misc'] || []).push(r);
+    return acc;
+  }, {});
+
+  return (
+    <section className="space-y-4" data-testid="admin-integrations-tab">
+      {flash && <FlashBanner {...flash} onDismiss={() => setFlash(null)} />}
+      {summary && (
+        <div className="flex flex-wrap gap-2 text-xs" data-testid="integrations-summary">
+          {Object.entries(summary.counts || {}).filter(([, v]) => v > 0).map(([k, v]) => (
+            <span key={k} className={`pill text-[10px] ${STATUS_STYLE[k] || 'pill-neutral'}`}>{k}: {v}</span>
+          ))}
+          <span className="pill pill-neutral text-[10px]">total: {summary.total}</span>
+        </div>
+      )}
+      {loading ? <Loader2 className="h-4 w-4 animate-spin muted" /> : (
+        <div className="space-y-6">
+          {Object.entries(byCat).sort(([a], [b]) => a.localeCompare(b)).map(([cat, list]) => (
+            <div key={cat} className="space-y-2">
+              <div className="text-xs uppercase muted tracking-wider">{cat}</div>
+              <div className="rounded-md border border-line dark:border-line-dark overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-neutral-50 dark:bg-neutral-900 text-xs uppercase muted">
+                    <tr>
+                      <th className="text-left px-3 py-2">Provider</th>
+                      <th className="text-left px-3 py-2">Status</th>
+                      <th className="text-left px-3 py-2">Missing env</th>
+                      <th className="text-right px-3 py-2">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {list.map((p) => {
+                      const disabled = p.status === 'DISABLED';
+                      return (
+                        <tr key={p.slug} className="border-t border-line dark:border-line-dark" data-testid={`integration-row-${p.slug}`}>
+                          <td className="px-3 py-2">
+                            <button type="button" onClick={() => open(p.slug)} className="hover:underline">
+                              <span className="font-medium">{p.label}</span>
+                              <span className="ml-2 text-[10px] muted font-mono">{p.slug}</span>
+                            </button>
+                            {p.docs_url && (
+                              <a href={p.docs_url} target="_blank" rel="noreferrer" className="ml-2 text-[10px] muted underline">docs</a>
+                            )}
+                          </td>
+                          <td className="px-3 py-2">
+                            <span className={`pill text-[10px] ${STATUS_STYLE[p.status] || 'pill-neutral'}`} data-testid={`integration-status-${p.slug}`}>{p.status}</span>
+                          </td>
+                          <td className="px-3 py-2 text-[11px] font-mono">
+                            {(p.missing_env || []).map((k) => <div key={k}>{k}</div>)}
+                            {(p.missing_env || []).length === 0 && <span className="muted">—</span>}
+                          </td>
+                          <td className="px-3 py-2 text-right whitespace-nowrap">
+                            <button type="button" onClick={() => test(p.slug)} disabled={!isAdmin || busySlug === p.slug}
+                                    className="text-xs underline text-accent disabled:opacity-40 disabled:no-underline mr-3" data-testid={`integration-test-${p.slug}`}>
+                              {busySlug === p.slug ? '…' : 'Test'}
+                            </button>
+                            <button type="button" onClick={() => toggle(p.slug, !disabled)} disabled={!isAdmin || busySlug === p.slug}
+                                    className="text-xs underline disabled:opacity-40 disabled:no-underline" data-testid={`integration-toggle-${p.slug}`}>
+                              {disabled ? 'Enable' : 'Disable'}
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {detail && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" data-testid="integration-detail-modal">
+          <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-lg border border-line dark:border-line-dark bg-bg dark:bg-bg-dark p-5 space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="font-semibold">{detail.label || detail.slug}</h3>
+              <button type="button" onClick={() => setDetail(null)}><X className="h-4 w-4" /></button>
+            </div>
+            {detail.loading ? <Loader2 className="h-4 w-4 animate-spin muted" /> : detail.error ? (
+              <p className="text-sm text-red-600">{detail.error}</p>
+            ) : (
+              <>
+                <div className="text-xs muted">
+                  Category: <span className="font-medium">{detail.category}</span> ·
+                  Status: <span className={`pill text-[10px] ml-1 ${STATUS_STYLE[detail.status] || ''}`}>{detail.status}</span>
+                </div>
+                <div className="rounded-md border border-line dark:border-line-dark p-3 text-xs space-y-1">
+                  <div className="uppercase muted">Env vars</div>
+                  <div>Required: <span className="font-mono">{(detail.required_env || []).join(', ') || '—'}</span></div>
+                  <div>Optional: <span className="font-mono">{(detail.optional_env || []).join(', ') || '—'}</span></div>
+                  <div>Missing:  <span className="font-mono text-red-500">{(detail.missing_env || []).join(', ') || 'none'}</span></div>
+                </div>
+                <div className="rounded-md border border-line dark:border-line-dark p-3 text-xs">
+                  <div className="uppercase muted mb-2">Recent events</div>
+                  {(detail.recent_events || []).length === 0 ? (
+                    <p className="muted">No events yet.</p>
+                  ) : (
+                    <ul className="divide-y divide-line dark:divide-line-dark">
+                      {(detail.recent_events || []).slice(0, 10).map((e, i) => (
+                        <li key={i} className="py-1.5">
+                          <div className="flex items-center justify-between">
+                            <span className="font-mono">{e.kind}</span>
+                            <span className="muted">{new Date(e.ts).toLocaleString()}</span>
+                          </div>
+                          {e.detail?.detail && <div className="muted">{e.detail.detail}</div>}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+                {detail.last_error && (
+                  <div className="rounded-md border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950 p-3 text-xs">
+                    <div className="text-red-800 dark:text-red-200">Last error</div>
+                    <div className="font-mono">{detail.last_error.code}: {detail.last_error.message}</div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+

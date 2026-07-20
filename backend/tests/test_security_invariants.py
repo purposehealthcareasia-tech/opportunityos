@@ -40,6 +40,10 @@ ADMIN_READ_ENDPOINTS: list[str] = [
     "/api/v1/admin/health",
     "/api/v1/admin/observability/events",
     "/api/v1/admin/observability/errors",
+    # Milestone A — integrations dashboard.
+    "/api/v1/admin/integrations",
+    "/api/v1/admin/integrations/stripe",
+    "/api/v1/admin/integrations/email_password",
 ]
 
 # User-facing GETs that serialize the currently-authenticated user or a
@@ -431,4 +435,64 @@ class TestSensitiveRegistryStillIntact:
         svc = Path("/app/backend/domains/admin/service.py").read_text()
         for field in ("password_hash", "password", "totp_secret", "recovery_codes"):
             assert f'"{field}"' in svc
+
+
+
+# ---------------------------------------------------------------------------
+# Milestone A · Integrations dashboard invariants.
+# ---------------------------------------------------------------------------
+VALID_STATUSES = {"CONNECTED", "TEST_MODE", "CONFIGURATION_REQUIRED", "DEGRADED", "DISABLED"}
+
+
+class TestIntegrationsRegistry:
+    """The dashboard must never fabricate a green status."""
+
+    def test_status_enum_is_truthful(self, admin_token):
+        r = requests.get(f"{BASE}/api/v1/admin/integrations",
+                          headers={"Authorization": f"Bearer {admin_token}"}, timeout=15)
+        assert r.status_code == 200
+        body = r.json()
+        provs = body["providers"]
+        assert len(provs) >= 10, "expected at least the 10+ registered adapters"
+        for p in provs:
+            assert p["status"] in VALID_STATUSES, f"unknown status {p['status']!r}"
+            # A CONFIGURATION_REQUIRED provider MUST list at least one missing env var.
+            if p["status"] == "CONFIGURATION_REQUIRED":
+                assert p["missing_env"], f"CONFIGURATION_REQUIRED without missing_env: {p['slug']}"
+        # Summary counts add up.
+        counts = body["summary"]["counts"]
+        assert sum(counts.values()) == body["summary"]["total"]
+
+    def test_provider_describe_leaks_no_secrets(self, admin_token):
+        r = requests.get(f"{BASE}/api/v1/admin/integrations",
+                          headers={"Authorization": f"Bearer {admin_token}"}, timeout=15)
+        text = r.text
+        # No key values may appear (config is intentionally omitted from describe()).
+        # Only env-var NAMES are surfaced.
+        for marker in ('"config":', '"STRIPE_API_KEY":"sk_', '"api_key":', 'sk_test_'):
+            assert marker not in text, f"integration describe leaks {marker!r}"
+        # bcrypt marker never present either.
+        assert not re.search(r"\$2[aby]\$\d{2}\$", text), "integrations body contains bcrypt marker"
+
+    def test_support_cannot_mutate_integrations(self, support_token):
+        for suffix in ("stripe/test", "stripe/enable", "stripe/disable"):
+            r = requests.post(f"{BASE}/api/v1/admin/integrations/{suffix}",
+                              headers={"Authorization": f"Bearer {support_token}"}, timeout=15)
+            assert r.status_code == 403, f"support must not be able to POST {suffix}: {r.status_code}"
+            body = r.json()
+            assert (body.get("detail") or {}).get("error") == "admin_required"
+
+    def test_admin_can_run_test_connection(self, admin_token):
+        r = requests.post(f"{BASE}/api/v1/admin/integrations/email_password/test",
+                           headers={"Authorization": f"Bearer {admin_token}"}, timeout=15)
+        assert r.status_code == 200
+        body = r.json()
+        assert body["ok"] is True, body
+        assert body["status"] in VALID_STATUSES
+
+    def test_unknown_slug_returns_404(self, admin_token):
+        for path in ("/api/v1/admin/integrations/nope", "/api/v1/admin/integrations/nope/test"):
+            method = requests.get if "test" not in path else requests.post
+            r = method(f"{BASE}{path}", headers={"Authorization": f"Bearer {admin_token}"}, timeout=15)
+            assert r.status_code == 404
 

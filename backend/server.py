@@ -10,6 +10,9 @@ from core.db import ensure_indexes, get_db
 from core.policy import CONSENT_SCOPES, policy_version
 from core.sessions import ensure_session_indexes
 from services.login_throttle import ensure_indexes as ensure_throttle_indexes
+from integrations import registry as integration_registry
+from integrations.health import ensure_indexes as ensure_integration_indexes, snapshot_provider
+from routers.integrations import router as integrations_router
 from middleware.idempotency import IdempotencyMiddleware
 from middleware.csrf import CSRFMiddleware
 from domains.auth.router import router as auth_router
@@ -81,6 +84,15 @@ async def lifespan(_app: FastAPI):
     await ensure_indexes()
     await ensure_session_indexes()
     await ensure_throttle_indexes()
+    await ensure_integration_indexes()
+    # Load and snapshot every provider so the admin dashboard shows real status
+    # immediately on first request.
+    integration_registry.load_all()
+    for _p in integration_registry.all_providers():
+        try:
+            await snapshot_provider(_p)
+        except Exception:
+            log.exception("Failed to snapshot integration provider %s", _p.slug)
     _assert_unique_operation_ids(_app)
     try:
         counts = await run_seeds()
@@ -209,3 +221,4 @@ app.include_router(privacy_router)
 app.include_router(admin_router)
 app.include_router(support_router)
 app.include_router(observability_router)
+app.include_router(integrations_router)
