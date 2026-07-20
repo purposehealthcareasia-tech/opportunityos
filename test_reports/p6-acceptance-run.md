@@ -41,6 +41,48 @@
 
 **Overall: 100% PASS across A–I.**
 
+## v0.1 close-out fix directive (post-acceptance, 2026-07-20)
+
+| # | Item | Result | Evidence |
+|---|------|--------|----------|
+| Fix-1 · P0 SECURITY | `GET /api/v1/admin/users/{id}` MUST NOT leak `password_hash` / `totp_secret` / any credential material to admin OR support | **PASS** | Added `SENSITIVE_USER_FIELDS` + `_sanitize_user()` in `domains/admin/service.py`. Curl sweep of all 8 admin endpoints: zero `password_hash`, `totp_secret`, or bcrypt-marker strings. Pytest `test_admin_user_detail_never_leaks_password_hash` — asserts for both admin AND support: JSON body contains none of those keys. |
+| Fix-2 · P1 PROVABLE SEALED MASKING | Admin detail surfaces `eligibility_profile` with sealed data fields masked as `"•••• (sealed)"` (PRD §Sealed fields). Sealed claims same. No unmask path. | **PASS** | New endpoint field `eligibility_profile` returned with `status="•••• (sealed)"`, `dates="•••• (sealed)"`, `notes="•••• (sealed)"`, `derived_flags="•••• (sealed)"`. Pytest `test_admin_user_detail_masks_sealed_data` inserts a sentinel sealed claim (`SENTINEL_SHOULD_NEVER_LEAK`), verifies admin AND support see the mask literal AND the sentinel never appears in the response body. Frontend `Admin.jsx` renders the new masked block with a `data-testid="admin-user-eligibility"` and the persistent italic caption "Sealed values are masked. No unmask path exists in v0.1." |
+| Fix-3 · Mask-literal alignment | `SEALED_MASK` changed from `"🔒 masked (sealed sensitivity)"` to `"•••• (sealed)"` per PRD.md §Sealed fields | **PASS** | Curl output: `status: •••• (sealed)` / `dates: •••• (sealed)` / `notes: •••• (sealed)` / `derived_flags: •••• (sealed)` on fixture-ead. |
+
+### Sanitized `/api/v1/admin/users/{fixture-ead-id}` — verbatim (Bearer, admin)
+
+```json
+{
+  "user": {
+    "id": "c9f47fd8-fd59-4df9-8c9c-b7ff68fb4785",
+    "email": "fixture-ead@opportunityos.dev",
+    "name": "Test Candidate (FIXTURE — automated tests only)",
+    "passport_activated": true,
+    "created_at": "2026-07-20T02:15:59.062000"
+  },
+  "claims": [
+    {"type": "contact",   "sensitivity": "normal", "value": {"email": "fixture-ead@opportunityos.dev"}, ...},
+    {"type": "education", "sensitivity": "normal", "value": {"institution": "Test University", "degree": "MS", ...}, ...},
+    {"type": "identity",  "sensitivity": "sealed", "value": "•••• (sealed)", ...}   ← masked
+  ],
+  "eligibility_profile": {
+    "id": "…",
+    "user_id": "c9f47fd8-…",
+    "version": 1,
+    "status":         "•••• (sealed)",
+    "dates":          "•••• (sealed)",
+    "notes":          "•••• (sealed)",
+    "derived_flags":  "•••• (sealed)",
+    "sensitivity":    "sealed",
+    "updated_at":     "2026-07-20T13:25:05.617000"
+  },
+  "subscription": {…},
+  "counts": {"applications": 0, "receipts": 0}
+}
+```
+
+No `password_hash` key. Non-sealed claim values pass through. Sealed claim values + sealed eligibility_profile data fields are the literal `"•••• (sealed)"`.
+
 ## Screenshots captured
 
 - /app/test_reports/p6-user-detail-support.png — support role sealed-mask literal + no unmask control

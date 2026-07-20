@@ -1,0 +1,45 @@
+{
+  "summary": "OpportunityOS v0.1 close-out FINAL FIX verification (iteration 9). BOTH P0 credential-leak fix AND P1 provable sealed masking are GREEN. Backend pytest tests/test_phase6_acceptance.py: 36/36 PASS (new: test_admin_user_detail_never_leaks_password_hash + test_admin_user_detail_masks_sealed_data). Custom sweep script /app/test_reports/sweep_admin_sensitive.py — clean across /admin/users, /admin/users/{id}, /admin/subscriptions, /admin/manual-queue, /admin/flags, /admin/support-tickets, /admin/health, /admin/observability/events, /admin/observability/errors — no `password_hash`, `totp_secret`, `recovery_codes`, or bcrypt marker ($2a$/$2b$/$2y$) in any response body for admin OR support. Sentinel sealed claim inserted directly via pymongo — retrieved via GET /admin/users/{fixture_id} for BOTH admin and support: (a) claim surfaced by id, (b) claim.value == '•••• (sealed)' exactly, (c) neither 'SENTINEL_SHOULD_NEVER_LEAK' nor '1234' present anywhere in body, (d) eligibility_profile IS present with sensitivity='sealed', (e) status/dates/notes/derived_flags all exactly '•••• (sealed)', (f) structural fields (user_id, version, sensitivity, updated_at, id) visible, (g) no 'unmask'/'reveal'/'decrypt' keyword in response body. Sentinel deleted on test teardown. SEALED_MASK literal confirmed '•••• (sealed)' (no emoji). Frontend verified via Playwright at /admin — logged in as admin, opened fixture-ead detail modal, [data-testid=admin-user-eligibility] block present and contains '•••• (sealed)' next to status/dates/notes/derived_flags + italic caption 'Sealed values are masked. No unmask path exists in v0.1.'. Screenshot at /app/test_reports/p6-user-detail-masked.png. Sanitized admin user-detail body (verbatim JSON) captured at /app/test_reports/p9-admin-user-detail-body.json — founder-requested artifact.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/v1/admin/health", "issue": "(carried over from iteration 8) counts.audit_logs is now correct but 'audit_events' remains a legacy naming artifact in privacy export bundle. Not touched by this iteration."},
+      {"endpoint": "POST /api/v1/privacy/export", "issue": "(carried over) audit_trail fetched from wrong collection name — 1-line fix. Not in scope of this close-out."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Admin → Users → detail modal", "issues": ["(carried over from iteration 8) Sticky admin tabs visible behind the modal overlay in some viewports. Not a blocker; z-index tweak on modal container would fix."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase6_acceptance.py",
+    "/app/test_reports/pytest/phase6_iter9.xml",
+    "/app/test_reports/sweep_admin_sensitive.py",
+    "/app/test_reports/p9-admin-user-detail-body.json",
+    "/app/test_reports/p6-user-detail-masked.png"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "domains/admin/service.py `_sanitize_user()` is a strong defence-in-depth pattern (projection + post-fetch scrub). Confirmed it strips {password_hash, password, totp_secret, recovery_codes} for admin AND support. Good.",
+    "SENSITIVE_USER_FIELDS is a module-level constant — recommend re-using the same allow/deny list wherever a User is serialized (e.g., /auth/me, /auth/register response). No leak seen there today, but centralizing prevents future regressions.",
+    "The sealed-mask logic in `_mask_sealed_profile` uses .lower() on sensitivity; also matches iteration-8 note about legacy claims writing `{'level':'sealed'}` shape — still applies. Consider a Pydantic model with a Literal type on `sensitivity` to prevent silent bypass.",
+    "Frontend Admin.jsx caption 'Sealed values are masked. No unmask path exists in v0.1.' contains the substring 'unmask' as a negation. This is fine and expected, but if the founder wants ZERO occurrences of the string 'unmask' in the DOM (defence-in-depth against grep-scans), rewording to 'Sealed values cannot be revealed in v0.1.' would satisfy that stricter interpretation. Current implementation follows PRD wording exactly."
+  ],
+  "updated_files": [
+    "/app/test_reports/sweep_admin_sensitive.py (new — sweep script + verbatim body capture)",
+    "/app/test_reports/p9-admin-user-detail-body.json (new — founder-requested artifact)",
+    "/app/test_reports/p6-user-detail-masked.png (new — screenshot of masked eligibility block)",
+    "/app/test_reports/pytest/phase6_iter9.xml (new — pytest junit report, 36/36 pass)",
+    "/app/test_reports/iteration_9.json (this file)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "admin@opportunityos.dev / Admin!Console1 · support@opportunityos.dev / Support!Console1 · fixture-ead@opportunityos.dev / Fixture!Test1. Bearer path via CI_TEST_ISSUER_ENABLED=true.",
+  "seed_data_creation": "Sentinel sealed claim (id=pytest-sealed-<uuid>) inserted into db.claims for fixture-ead@ during test_admin_user_detail_masks_sealed_data and deleted in the finally block. No persistent data mutation.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "v0.1 close-out is GREEN. 36/36 phase-6 acceptance tests pass including the 2 new sanitization/masking tests. The sanitized admin user-detail body is at /app/test_reports/p9-admin-user-detail-body.json — confirms `user` object contains ONLY {created_at, email, id, name, passport_activated} (no credential fields), and `eligibility_profile` contains {status, dates, notes, derived_flags} each equal to '•••• (sealed)' exactly with structural fields (user_id, version, sensitivity, updated_at, id) visible. Screenshot at /app/test_reports/p6-user-detail-masked.png. No unmask/reveal/decrypt control exists — the only 'unmask' occurrences are in the italic caption 'No unmask path exists in v0.1.' which is intended negation-copy per PRD. Minor carry-over items from iteration 8 (audit_events → audit_logs naming in /admin/health and privacy export bundle) are still open but NOT in the scope of this close-out fix.",
+  "rca of the issue": "N/A — no bugs to RCA in this iteration. Both P0 (credential leak) and P1 (provable sealed masking) fixes were verified in place and effective. Prior RCA (iteration 8) applies for the minor audit-events naming carry-over."
+}

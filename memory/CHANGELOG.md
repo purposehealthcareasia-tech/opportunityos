@@ -51,3 +51,8 @@
 
 ### Final acceptance run
 - 153/153 backend pytest green (119 prior + 34 new phase-6 acceptance tests). 100% A–I pass. Screenshots at `/app/test_reports/p6-*.png`. Detailed report at `/app/test_reports/p6-acceptance-run.md`.
+
+### v0.1 close-out fix directive (post-acceptance)
+- **P0 SECURITY** — `/api/v1/admin/users/{id}` was returning the target user's raw `password_hash` (bcrypt). Added `SENSITIVE_USER_FIELDS = {"password_hash", "password", "totp_secret", "recovery_codes"}` constant + `_sanitize_user()` helper in `domains/admin/service.py`. The user projection now excludes those fields at the driver level, and the sanitizer scrubs again post-fetch (defence-in-depth). Sweep of every admin endpoint confirmed no `password_hash` / `totp_secret` / bcrypt-marker string leaks anywhere. New pytest `test_admin_user_detail_never_leaks_password_hash` locks the invariant in for both admin and support roles.
+- **P1 PROVABLE SEALED MASKING** — admin user-detail now surfaces `eligibility_profile` with sealed data fields (`status`, `dates`, `notes`, `derived_flags`) replaced by the mask literal `"•••• (sealed)"` (matches PRD §Sealed fields). Sealed claims already returned the mask literal; alignment to the PRD wording is done here. Frontend `Admin.jsx` shows the new masked block. New pytest `test_admin_user_detail_masks_sealed_data` inserts a sentinel sealed claim, verifies both admin and support see the mask literal, and asserts the raw sentinel value never appears anywhere in the response body.
+- Mask literal changed from `"🔒 masked (sealed sensitivity)"` to `"•••• (sealed)"` to match `PRD.md` §Sealed fields.

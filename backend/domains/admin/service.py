@@ -37,8 +37,22 @@ from domains.audit import service as audit
 router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
 
 
-SEALED_MASK = "🔒 masked (sealed sensitivity)"
+SEALED_MASK = "•••• (sealed)"
 REFUND_REASONS = {"duplicate_charge", "customer_request", "billing_error", "goodwill", "policy_bounded_first_purchase"}
+
+# Fields that must NEVER leave the server via any admin-facing serialization.
+# Add here whenever a new credential/secret column is introduced.
+SENSITIVE_USER_FIELDS = {"password_hash", "password", "totp_secret", "recovery_codes"}
+
+
+def _sanitize_user(row: dict | None) -> dict | None:
+    """Strip credential/secret material before returning a user document to
+    admin / support. This is the last line of defence against a P0 leak — the
+    projection helpers above already exclude these, but any future ad-hoc
+    `find` that forgets the projection is caught here too."""
+    if not row:
+        return row
+    return {k: v for k, v in row.items() if k not in SENSITIVE_USER_FIELDS}
 
 
 def _require_admin(user: dict = Depends(get_current_user)) -> dict:
@@ -63,10 +77,33 @@ def _require_admin_only(user: dict = Depends(get_current_user)) -> dict:
 
 def _mask_sealed(claim: dict) -> dict:
     """Mask value fields of any sealed claim. The claim shape stays intact so the
-    UI can still show the type/label/status."""
+    UI can still show the type/label/status. No unmask path exists in v0.1."""
     if (claim.get("sensitivity") or "").lower() == "sealed":
         return {**claim, "value": SEALED_MASK}
     return claim
+
+
+# Fields on eligibility_profile that carry actual eligibility data. Everything
+# NOT in this set is treated as structural (id/user_id/version/updated_at/
+# sensitivity) and passes through so the UI can still render the shell.
+_ELIG_DATA_FIELDS = {"status", "dates", "notes", "derived_flags", "opt_end",
+                     "earliest_start", "work_auth", "sponsorship"}
+
+
+def _mask_sealed_profile(profile: dict | None) -> dict | None:
+    """Mask sealed eligibility_profile fields with `SEALED_MASK`. If the profile
+    is not marked sealed we pass it through unchanged so we can still surface
+    non-sealed rows (e.g., legacy imports). All new profiles are sealed by
+    default in v0.1."""
+    if not profile:
+        return profile
+    if (profile.get("sensitivity") or "").lower() != "sealed":
+        return profile
+    masked = dict(profile)
+    for k in list(masked.keys()):
+        if k in _ELIG_DATA_FIELDS:
+            masked[k] = SEALED_MASK
+    return masked
 
 
 # ---------- User management (A1) ----------
@@ -89,12 +126,25 @@ async def list_users(q: str = "", staff: dict = Depends(_require_admin)):
 @router.get("/users/{user_id}")
 async def get_user_detail(user_id: str, staff: dict = Depends(_require_admin)):
     db = get_db()
-    row = await db.users.find_one({"id": user_id}, {"_id": 0})
+    # Projection excludes credential fields at the driver level; _sanitize_user
+    # scrubs again after the fetch (defence-in-depth).
+    row = await db.users.find_one(
+        {"id": user_id},
+        {"_id": 0, **{f: 0 for f in SENSITIVE_USER_FIELDS}},
+    )
     if not row:
         raise HTTPException(status_code=404, detail="user_not_found")
-    # Sealed masking on claims.
+    row = _sanitize_user(row)
+    # Sealed masking on claims — value replaced with SEALED_MASK when sensitivity=sealed.
     claims_raw = [c async for c in db.claims.find({"user_id": user_id}, {"_id": 0})]
     claims = [_mask_sealed(c) for c in claims_raw]
+    # Sealed masking on the eligibility_profile (latest version). Structural
+    # fields pass through so the UI can render the shell; data fields become
+    # SEALED_MASK. No unmask path.
+    elig_raw = await db.eligibility_profiles.find_one(
+        {"user_id": user_id}, {"_id": 0}, sort=[("version", -1)],
+    )
+    eligibility_profile = _mask_sealed_profile(elig_raw)
     sub = await db.subscriptions.find_one({"user_id": user_id}, {"_id": 0})
     apps_count = await db.applications.count_documents({"user_id": user_id})
     receipts_count = await db.submission_receipts.count_documents({"user_id": user_id})
@@ -103,6 +153,7 @@ async def get_user_detail(user_id: str, staff: dict = Depends(_require_admin)):
     return jsonable_encoder({
         "user": row,
         "claims": claims,
+        "eligibility_profile": eligibility_profile,
         "subscription": sub,
         "counts": {"applications": apps_count, "receipts": receipts_count},
     })

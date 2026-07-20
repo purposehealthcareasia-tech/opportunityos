@@ -208,9 +208,85 @@ class TestAdminConsole:
         sealed = [c for c in body.get("claims", []) if (c.get("sensitivity") or "").lower() == "sealed"]
         if sealed:
             for c in sealed:
-                assert c["value"] == "🔒 masked (sealed sensitivity)", c
+                assert c["value"] == "•••• (sealed)", c
         after = mongo_db.audit_logs.count_documents({"actor": admin_id, "action": "admin.user_detail_view"})
         assert after >= before + 1
+
+    # ------------------------------------------------------------------
+    # v0.1 close-out fix directive #1 — P0 SECURITY.
+    # /api/v1/admin/users/{id} MUST NOT return credential material.
+    # ------------------------------------------------------------------
+    def test_admin_user_detail_never_leaks_password_hash(self, admin_login, support_login):
+        r0 = requests.get(f"{BASE}/api/v1/admin/users?q=fixture", headers=_bearer(admin_login[0]))
+        uid = r0.json()["users"][0]["id"]
+        for label, login in (("admin", admin_login), ("support", support_login)):
+            tok, *_ = login
+            r = requests.get(f"{BASE}/api/v1/admin/users/{uid}", headers=_bearer(tok))
+            assert r.status_code == 200, f"{label} 200 required, got {r.status_code}"
+            body = r.json()
+            u = body.get("user", {})
+            for k in ("password_hash", "password", "totp_secret", "recovery_codes"):
+                assert k not in u, f"{label} response leaked credential field {k}: keys={list(u.keys())}"
+            # Serialized JSON body must not contain the sensitive keys either.
+            text = json.dumps(body)
+            for k in ("password_hash", "totp_secret"):
+                assert k not in text, f"{label} response body contains sensitive key `{k}`"
+
+    # ------------------------------------------------------------------
+    # v0.1 close-out fix directive #2 — P1 PROVABLE SEALED MASKING.
+    # Admin user-detail surfaces eligibility_profile (MASKED when sealed)
+    # AND sealed claims come back with value == '•••• (sealed)'. No unmask.
+    # ------------------------------------------------------------------
+    def test_admin_user_detail_masks_sealed_data(self, admin_login, support_login, mongo_db):
+        MASK = "•••• (sealed)"
+        r0 = requests.get(f"{BASE}/api/v1/admin/users?q=fixture", headers=_bearer(admin_login[0]))
+        uid = r0.json()["users"][0]["id"]
+
+        # Insert a demonstrable sealed claim on the fixture (idempotent for the test).
+        sealed_id = f"pytest-sealed-{uuid.uuid4()}"
+        mongo_db.claims.insert_one({
+            "id": sealed_id,
+            "user_id": uid,
+            "type": "identity",
+            "value": {"ssn_last4": "1234", "note": "SENTINEL_SHOULD_NEVER_LEAK"},
+            "sensitivity": "sealed",
+            "status": "approved",
+            "version": 99,
+            "superseded_by": None,
+            "user_approved": True,
+            "confidence": None,
+            "source": {"type": "test"},
+            "created_at": "2026-01-01T00:00:00+00:00",
+        })
+        try:
+            for label, login in (("admin", admin_login), ("support", support_login)):
+                tok, *_ = login
+                r = requests.get(f"{BASE}/api/v1/admin/users/{uid}", headers=_bearer(tok))
+                assert r.status_code == 200, f"{label} status {r.status_code}"
+                body = r.json()
+
+                # 1) The sealed claim we just inserted must be present AND masked.
+                mine = next((c for c in body.get("claims", []) if c.get("id") == sealed_id), None)
+                assert mine is not None, f"{label}: sealed claim not surfaced"
+                assert mine["value"] == MASK, f"{label}: sealed claim value not masked, got {mine['value']!r}"
+
+                # 2) No sentinel token from the sealed value may appear anywhere in the body.
+                body_text = json.dumps(body)
+                assert "SENTINEL_SHOULD_NEVER_LEAK" not in body_text, f"{label}: sealed value leaked into body"
+                assert "1234" not in body_text or body_text.count("1234") == 0, f"{label}: sealed value leaked"
+
+                # 3) Eligibility_profile surfaced. When sensitivity=sealed, data fields → MASK.
+                elig = body.get("eligibility_profile")
+                assert elig is not None, f"{label}: eligibility_profile omitted (P1 regression)"
+                if (elig.get("sensitivity") or "").lower() == "sealed":
+                    for k in ("status", "dates", "notes", "derived_flags"):
+                        if k in elig and elig[k] is not None:
+                            assert elig[k] == MASK, f"{label}: eligibility.{k} not masked, got {elig[k]!r}"
+                # Structural fields must still be visible.
+                assert "user_id" in elig
+                assert "sensitivity" in elig
+        finally:
+            mongo_db.claims.delete_one({"id": sealed_id})
 
     def test_admin_health_shape(self, admin_login):
         tok, *_ = admin_login

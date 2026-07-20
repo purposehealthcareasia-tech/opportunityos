@@ -177,6 +177,35 @@ function UsersTab({ isAdmin }) {
                   ) : <div className="muted text-xs">No subscription (free tier).</div>}
                 </div>
 
+                <div className="rounded-md border border-line dark:border-line-dark p-3 space-y-1" data-testid="admin-user-eligibility">
+                  <div className="text-xs muted uppercase">Eligibility profile</div>
+                  {detail.eligibility_profile ? (
+                    <div className="text-xs space-y-0.5">
+                      {['status', 'dates', 'notes', 'derived_flags'].map((k) => (
+                        detail.eligibility_profile[k] !== undefined && (
+                          <div key={k} className="flex items-start gap-2">
+                            <span className="muted min-w-[110px]">{k}:</span>
+                            <span className="font-mono">
+                              {typeof detail.eligibility_profile[k] === 'string'
+                                ? detail.eligibility_profile[k]
+                                : JSON.stringify(detail.eligibility_profile[k])}
+                            </span>
+                          </div>
+                        )
+                      ))}
+                      <div className="flex items-start gap-2">
+                        <span className="muted min-w-[110px]">sensitivity:</span>
+                        <span className={`pill text-[10px] ${detail.eligibility_profile.sensitivity === 'sealed' ? 'pill-neutral' : 'pill-accent'}`}>
+                          {detail.eligibility_profile.sensitivity || 'normal'}
+                        </span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-xs muted">No eligibility profile.</div>
+                  )}
+                  <p className="text-[10px] muted italic">Sealed values are masked. No unmask path exists in v0.1.</p>
+                </div>
+
                 <div className="rounded-md border border-line dark:border-line-dark p-3 space-y-1" data-testid="admin-user-claims">
                   <div className="text-xs muted uppercase">Claims ({detail.claims?.length || 0})</div>
                   {(detail.claims || []).map((c) => {
