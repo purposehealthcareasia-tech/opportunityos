@@ -151,10 +151,13 @@ async def _upsert_sample_jobs() -> int:
 
 async def _upsert_feature_flags() -> int:
     db = get_db()
+    now = utc_now()
     for f in seed_data.FEATURE_FLAGS:
         await db.feature_flags.update_one(
-            {"key": f["key"]},
-            {"$set": {"value": f["value"]}, "$setOnInsert": {"key": f["key"], "changed_by": "system"}},
+            {"name": f["name"]},
+            {"$set": {"enabled": f["enabled"], "description": f.get("description", ""),
+                       "updated_at": now},
+             "$setOnInsert": {"name": f["name"], "created_at": now, "created_by": "system"}},
             upsert=True,
         )
     return await db.feature_flags.count_documents({})

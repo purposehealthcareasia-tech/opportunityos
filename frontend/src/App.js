@@ -15,12 +15,11 @@ import ApplicationPrep from './pages/ApplicationPrep';
 import Approvals from './pages/Approvals';
 import Tracker from './pages/Tracker';
 import Analytics from './pages/Analytics';
+import Billing from './pages/Billing';
+import Privacy from './pages/Privacy';
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
 import RoleRoute from './components/RoleRoute';
-import {
-  Billing, Privacy,
-} from './pages/placeholders';
 
 export default function App() {
   return (

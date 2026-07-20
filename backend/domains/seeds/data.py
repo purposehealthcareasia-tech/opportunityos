@@ -218,10 +218,10 @@ SUPPORT_USER = {
 }
 
 FEATURE_FLAGS = [
-    {"key": "feed_enabled", "value": True},
-    {"key": "ai_generation_enabled", "value": False},
-    {"key": "application_tracker_enabled", "value": False},
-    {"key": "billing_enabled", "value": False},
+    {"name": "feed_enabled", "enabled": True, "description": "Gates the /feed route + jobs feed."},
+    {"name": "ai_generation_enabled", "enabled": False, "description": "Gates Phase 4 tailoring."},
+    {"name": "application_tracker_enabled", "enabled": False, "description": "Gates Phase 5 tracker."},
+    {"name": "billing_enabled", "enabled": False, "description": "Gates Phase 6 billing UI."},
 ]
 
 # ---------------------------------------------------------------------------

@@ -42,10 +42,22 @@ REFUND_REASONS = {"duplicate_charge", "customer_request", "billing_error", "good
 
 
 def _require_admin(user: dict = Depends(get_current_user)) -> dict:
+    """Read access — admin AND support."""
     role = user.get("role") or "user"
     if role not in {"admin", "support"}:
         raise HTTPException(status_code=403, detail={"error": "role_required",
                                                        "message": "Admin/support role required."})
+    return user
+
+
+def _require_admin_only(user: dict = Depends(get_current_user)) -> dict:
+    """Write access — admin ONLY. Support role is read-only everywhere except
+    support-ticket reply/close (which explicitly opts back into support with
+    `_require_admin`). This is enforced server-side per founder amendment 2(e)."""
+    role = user.get("role") or "user"
+    if role != "admin":
+        raise HTTPException(status_code=403, detail={"error": "admin_required",
+                                                       "message": "Only admin role may mutate this resource."})
     return user
 
 
@@ -110,7 +122,7 @@ class RefundBody(BaseModel):
 
 
 @router.post("/subscriptions/{sub_id}/refund")
-async def admin_refund(sub_id: str, body: RefundBody, staff: dict = Depends(_require_admin)):
+async def admin_refund(sub_id: str, body: RefundBody, staff: dict = Depends(_require_admin_only)):
     if body.reason not in REFUND_REASONS:
         raise HTTPException(status_code=400, detail={"error": "invalid_reason",
                                                        "allowed": sorted(REFUND_REASONS)})
@@ -148,7 +160,7 @@ class ResolveBody(BaseModel):
 
 
 @router.post("/manual-queue/{item_id}/resolve")
-async def resolve_manual_item(item_id: str, body: ResolveBody, staff: dict = Depends(_require_admin)):
+async def resolve_manual_item(item_id: str, body: ResolveBody, staff: dict = Depends(_require_admin_only)):
     db = get_db()
     item = await db.manual_queue_items.find_one_and_update(
         {"id": item_id, "state": "queued"},
@@ -182,7 +194,7 @@ async def list_flags(staff: dict = Depends(_require_admin)):
 
 
 @router.post("/flags")
-async def create_flag(body: FlagBody, staff: dict = Depends(_require_admin)):
+async def create_flag(body: FlagBody, staff: dict = Depends(_require_admin_only)):
     db = get_db()
     now = utc_now()
     doc = {"name": body.name, "enabled": body.enabled, "description": body.description,
@@ -195,7 +207,7 @@ async def create_flag(body: FlagBody, staff: dict = Depends(_require_admin)):
 
 
 @router.patch("/flags/{name}")
-async def toggle_flag(name: str, body: FlagToggle, staff: dict = Depends(_require_admin)):
+async def toggle_flag(name: str, body: FlagToggle, staff: dict = Depends(_require_admin_only)):
     db = get_db()
     row = await db.feature_flags.find_one_and_update(
         {"name": name},
@@ -210,7 +222,7 @@ async def toggle_flag(name: str, body: FlagToggle, staff: dict = Depends(_requir
 
 
 @router.delete("/flags/{name}")
-async def delete_flag(name: str, staff: dict = Depends(_require_admin)):
+async def delete_flag(name: str, staff: dict = Depends(_require_admin_only)):
     r = await get_db().feature_flags.delete_one({"name": name})
     if r.deleted_count == 0:
         raise HTTPException(status_code=404, detail="flag_not_found")
@@ -296,7 +308,7 @@ class TestErrorBody(BaseModel):
 
 
 @router.post("/observability/test-error")
-async def emit_test_error(body: TestErrorBody, staff: dict = Depends(_require_admin)):
+async def emit_test_error(body: TestErrorBody, staff: dict = Depends(_require_admin_only)):
     db = get_db()
     doc = {
         "id": str(uuid.uuid4()),

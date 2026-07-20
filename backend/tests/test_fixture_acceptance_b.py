@@ -102,9 +102,12 @@ class TestFixtureRebaseline:
         # After a fresh restart it should be 0. Allow small non-zero due to
         # prior tests but assert key exists.
         assert "jobs_processed" in d
+        # Phase 6 returns a `{used, cap, resets_at, meter, ...}` dict per key.
+        jp = d["jobs_processed"]
+        used = jp["used"] if isinstance(jp, dict) else jp
         # spec: should be 0 immediately after startup
         # We check for <= 15 (sanity bound: only 15 sample jobs).
-        assert d["jobs_processed"] <= 15
+        assert used <= 15
 
     def test_preferences_are_seeded(self, fixture_client):
         r = fixture_client.get(f"{API}/preferences/me")

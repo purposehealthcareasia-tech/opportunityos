@@ -1,16 +1,19 @@
 import logging
+from collections import Counter
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from core.config import settings
 from core.db import ensure_indexes, get_db
 from core.policy import CONSENT_SCOPES, policy_version
+from core.sessions import ensure_session_indexes
 from middleware.idempotency import IdempotencyMiddleware
+from middleware.csrf import CSRFMiddleware
 from domains.auth.router import router as auth_router
 from domains.consent.router import router as consent_router
 from domains.users.router import router as users_router
-from domains.admin.router import router as admin_router
 from domains.passport.router import router as passport_router
 from domains.documents.router import router as documents_router
 from domains.claims.router import router as claims_router
@@ -38,16 +41,50 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 log = logging.getLogger("oppos")
 
 
+# ---------------------------------------------------------------------------
+# Fail-fast: PROD_MODE + CI_TEST_ISSUER_ENABLED must never both be true.
+# The CI-only Bearer issuer is a testing shim; it MUST be disabled in prod.
+# ---------------------------------------------------------------------------
+if settings.PROD_MODE and settings.CI_TEST_ISSUER_ENABLED:
+    raise RuntimeError(
+        "SECURITY: CI_TEST_ISSUER_ENABLED cannot be true in PROD_MODE=true. "
+        "Disable one before starting the server."
+    )
+
+
+def _assert_unique_operation_ids(app_: FastAPI) -> None:
+    """Guard against silent route collisions (founder amendment 1). Any
+    duplicate FastAPI operation_id crashes startup with a listing so the bug
+    can never recur unnoticed."""
+    op_ids: list[str] = []
+    for route in app_.routes:
+        opid = getattr(route, "operation_id", None) or getattr(route, "name", None)
+        path = getattr(route, "path", "?")
+        methods = getattr(route, "methods", set()) or set()
+        # Skip mount / WebSocket / static.
+        if not methods or {"HEAD"} == methods:
+            continue
+        for m in sorted(methods - {"HEAD"}):
+            op_ids.append(f"{m} {path}::{opid}")
+    dupes = [k for k, v in Counter(op_ids).items() if v > 1]
+    if dupes:
+        raise RuntimeError(
+            "Duplicate FastAPI operation IDs detected:\n  - "
+            + "\n  - ".join(dupes)
+        )
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     log.info("OpportunityOS backend starting…")
     await ensure_indexes()
+    await ensure_session_indexes()
+    _assert_unique_operation_ids(_app)
     try:
         counts = await run_seeds()
         log.info("Seed complete: %s", counts)
     except Exception:
         log.exception("Seeder failed")
-    # Phase 6 — sweep expired deletion_pending users on boot. Fires each restart.
     try:
         swept = await sweep_expired_deletions()
         if swept:
@@ -67,15 +104,35 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
-    expose_headers=["X-Idempotent-Replay"],
-)
+# ---------------------------------------------------------------------------
+# CORS — explicit allowlist required for credentialed requests (cookies).
+# Wildcard "*" + allow_credentials=True is blocked by browsers, so we source
+# the origin list from settings.CORS_ALLOW_ORIGINS. Fall back to a permissive
+# no-credentials config only when the env var is unset (local dev).
+# ---------------------------------------------------------------------------
+_origins = [o.strip() for o in (settings.CORS_ALLOW_ORIGINS or "").split(",") if o.strip()]
+if _origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*", settings.CSRF_HEADER_NAME, "X-Service-Token", "Idempotency-Key"],
+        expose_headers=["X-Idempotent-Replay"],
+    )
+else:
+    # Dev fallback — no credentials because wildcard + credentials is illegal.
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"],
+        expose_headers=["X-Idempotent-Replay"],
+    )
+
 app.add_middleware(IdempotencyMiddleware)
+app.add_middleware(CSRFMiddleware)
 
 
 @app.exception_handler(Exception)
@@ -97,6 +154,8 @@ async def health():
         "mongo": mongo_ok,
         "phase": 6,
         "policy_text_version": policy_version(),
+        "ci_test_issuer_enabled": bool(settings.CI_TEST_ISSUER_ENABLED),
+        "prod_mode": bool(settings.PROD_MODE),
     }
 
 
@@ -112,7 +171,6 @@ async def policy_meta():
 app.include_router(auth_router)
 app.include_router(consent_router)
 app.include_router(users_router)
-app.include_router(admin_router)
 app.include_router(passport_router)
 app.include_router(documents_router)
 app.include_router(claims_router)

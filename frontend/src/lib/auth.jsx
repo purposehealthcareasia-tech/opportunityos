@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useMemo, useState, useCallback } from 'react';
-import { api, setAuthToken, loadAuthToken } from './api';
+import { api, setOnUnauthorized } from './api';
 
 const AuthCtx = createContext(null);
 
@@ -8,45 +8,46 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
-    const t = loadAuthToken();
-    if (!t) { setUser(null); setLoading(false); return null; }
     try {
       const { data } = await api.get('/api/v1/auth/me');
       setUser(data);
       return data;
     } catch (e) {
       setUser(null);
-      setAuthToken(null);
       return null;
     } finally {
       setLoading(false);
     }
   }, []);
 
-  useEffect(() => { refresh(); }, [refresh]);
+  useEffect(() => {
+    setOnUnauthorized(() => setUser(null));
+    refresh();
+  }, [refresh]);
 
   const signup = useCallback(async ({ email, password, name, consents, policy_text_version }) => {
     const { data } = await api.post('/api/v1/auth/signup', {
       email, password, name, consents, policy_text_version,
     });
-    setAuthToken(data.access_token);
     setUser(data.user);
     return data.user;
   }, []);
 
   const login = useCallback(async ({ email, password }) => {
     const { data } = await api.post('/api/v1/auth/login', { email, password });
-    setAuthToken(data.access_token);
     setUser(data.user);
     return data.user;
   }, []);
 
-  const logout = useCallback(() => {
-    setAuthToken(null);
+  const logout = useCallback(async () => {
+    try {
+      await api.post('/api/v1/auth/logout', {});
+    } catch (e) { /* best-effort */ }
     setUser(null);
   }, []);
 
-  const value = useMemo(() => ({ user, loading, signup, login, logout, refresh }), [user, loading, signup, login, logout, refresh]);
+  const value = useMemo(() => ({ user, loading, signup, login, logout, refresh }),
+                        [user, loading, signup, login, logout, refresh]);
   return <AuthCtx.Provider value={value}>{children}</AuthCtx.Provider>;
 }
 

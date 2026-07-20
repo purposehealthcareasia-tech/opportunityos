@@ -1,0 +1,58 @@
+{
+  "summary": "Phase 6 v0.1 close-out acceptance run \u2014 ALL green. Backend pytest total 153/153 (119 prior + 34 new phase-6 acceptance tests in /app/backend/tests/test_phase6_acceptance.py). Coverage: auth hardening (cookies httpOnly+Secure, SameSite Lax user / Strict admin, CSRF double-submit 403 without header / bypass with matching header / bypass on Bearer, logout revokes sessions row, /me works cookie-only, NO auth token in localStorage), startup guards (phase=6, ci_test_issuer_enabled=true, prod_mode=false, seeder loaded 4 feature flags, no duplicate operation-id crash), admin console 7 tabs, sealed masking literal '\ud83d\udd12 masked (sealed sensitivity)' rendered with NO unmask control anywhere (support + admin), mandatory audit-on-view row, refund with reason enum + audit + invalid_reason 400, feature flag toggle + audit, manual queue resolve (admin) / 403 (support), billing catalog + usage meters + coupon + checkout + cancel in \u22642 clicks, privacy consents + revoke \u2192 feed 403 consent_required + grant_url + export bundle + soft-delete + login 403 account_deletion_pending, 14-gate enumeration on fixture-ead 9/6 geometry, submission_receipts unique index + concurrent race (1 ok + 1 DuplicateKeyError), LinkedIn/Indeed/Handshake 409 route_unavailable_platform_policy, SAMPLE excluded from user metrics. 13 screenshots persisted to /app/test_reports/p6-*.png + devtools evidence PNG. Human-readable A\u2013I report at /app/test_reports/p6-acceptance-run.md.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/v1/admin/health", "issue": "counts.audit_events is always 0 because audit rows are written to the 'audit_logs' collection (audit/service.py:17), not 'audit_events'. Rename the counts key or query the correct collection. 1-line fix in domains/admin/service.py counts loop."},
+      {"endpoint": "POST /api/v1/privacy/export bundle", "issue": "audit_trail is fetched from 'audit_events' with filter {actor_id: user_id} but audit rows live in 'audit_logs' with field 'actor'. Result: audit_trail is always []. Fix at privacy/service.py:172 \u2014 change collection to 'audit_logs' and filter to {'actor': user_id}."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Admin \u2192 Users \u2192 detail modal", "issues": ["Modal header overlaps with the tabs strip in some viewports (see p6-user-detail-support.png / p6-user-detail-admin.png) \u2014 the sticky admin tabs are visible behind the modal overlay. Not a blocker; z-index of modal is > overlay but < tabs strip. Add z-index bump on the modal container."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase6_acceptance.py",
+    "/app/test_reports/pytest/phase6_iter8.xml",
+    "/app/test_reports/p6-acceptance-run.md"
+  ],
+  "action_items": [
+    "(minor) Fix 'audit_events' \u2192 'audit_logs' naming in admin/service.py health counts and privacy/service.py export bundle audit_trail fetch (both 1-line changes).",
+    "(nice-to-have) Extend admin user-detail modal to also render eligibility_profiles fields with sealed masking \u2014 currently only claims are shown, and none of the fixture-ead claims are sensitivity='sealed' by default so the mask literal only appears when the founder deliberately marks a claim sealed. Sealed values in eligibility_profiles (opt_end, itar_excluded, etc.) are not surfaced today.",
+    "(cosmetic) Raise z-index of Admin user-detail modal container so the tabs strip doesn't peek through the overlay."
+  ],
+  "critical_code_review_comments": [
+    "server.py `_assert_unique_operation_ids` falls back to `route.name` when `operation_id` is unset. This is fine today (no collisions) but two truly anonymous routes could still collide. Consider requiring an explicit operation_id per route.",
+    "CSRF middleware BYPASSES on any Authorization: Bearer header. This is spec-intentional (Bearer is scoped to CI + internal), but a compromised Bearer would sidestep CSRF entirely. Mitigation is CI_TEST_ISSUER_ENABLED=false in prod, enforced by the startup guard. Explicit note is documented already \u2014 no action.",
+    "admin/service.py::_mask_sealed reads claim.sensitivity as string; if a legacy claim writes sensitivity as {'level':'sealed'} it will silently NOT mask. Consider a stricter type contract on write."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase6_acceptance.py (new, 34 tests)",
+    "/app/test_reports/iteration_8.json (this file)",
+    "/app/test_reports/p6-acceptance-run.md (A\u2013I PASS/FAIL table)",
+    "/app/test_reports/pytest/phase6_iter8.xml (junit)",
+    "/app/test_reports/p6-user-detail-support.png",
+    "/app/test_reports/p6-user-detail-admin.png",
+    "/app/test_reports/p6-refund-flow.png",
+    "/app/test_reports/p6-flag-toggle-before.png",
+    "/app/test_reports/p6-flag-toggle-after.png",
+    "/app/test_reports/p6-manual-queue.png",
+    "/app/test_reports/p6-billing-cancel.png",
+    "/app/test_reports/p6-billing-cancel-flash.png",
+    "/app/test_reports/p6-privacy-page.png",
+    "/app/test_reports/p6-privacy-revoke.png",
+    "/app/test_reports/p6-privacy-export.png",
+    "/app/test_reports/p6-privacy-delete.png",
+    "/app/test_reports/p6-devtools-evidence.png"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "fixture-ead@opportunityos.dev / Fixture!Test1  \u00b7  admin@opportunityos.dev / Admin!Console1  \u00b7  support@opportunityos.dev / Support!Console1. INTERNAL_SERVICE_TOKEN read from /app/backend/.env for fixture rebase.",
+  "seed_data_creation": "Non-persistent: (1) temporarily set fixture-ead identity claim sensitivity='sealed' to prove the admin masking-literal render path, then reverted. (2) upserted a plus subscription for fixture-ead so cancel-btn renders on Billing (id='sub_fix_plus'). (3) inserted one manual_queue_items row for resolve test (cleaned per pytest teardown pattern). (4) created a fresh TEST_delete_<hex>@opportunityos.dev user just for the delete-account \u2192 login 403 flow (not deleted \u2014 left in soft-delete state as expected).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Phase 6 close-out is GREEN. 153/153 pytest, 34 new phase-6 acceptance tests in test_phase6_acceptance.py cover: auth cookies + CSRF + logout, admin console 7 tabs + sealed masking + audit-on-view, support read-only, refund reason enum + audit, feature flag toggle audit, manual queue admin-only, billing catalog/meters/coupon/checkout, privacy consents/export/soft-delete, 14 gates + fixture 9/6 geometry, submission_receipts unique index + concurrent race, LinkedIn/Indeed/Handshake 409, SAMPLE exclusion. Two naming inconsistencies flagged as minor: audit_events vs audit_logs in admin/health counts and privacy/export bundle audit_trail. Both are 1-line fixes; audit rows are still written correctly to audit_logs. Fixture rebase endpoint recommended between mutating tests \u2014 my new tests already call it at the start of the gate-enumeration test.",
+  "rca of the issue": "N/A \u2014 all founder amendments and A\u2013I acceptance items pass. Minor naming inconsistency (audit_events vs audit_logs) is documented above; RCA: legacy field naming from an earlier phase where the collection was called audit_events was renamed to audit_logs in the write path but the read-path references in admin/health and privacy/export were not updated in the same commit. Impact: /admin/health shows counts.audit_events=0 always, and privacy export bundle's audit_trail comes back empty even though audit_logs has rows for the user. Fix is trivial (1-line each)."
+}

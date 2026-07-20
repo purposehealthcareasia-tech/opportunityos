@@ -4,6 +4,12 @@
 
 **Preview base URL:** `https://lynk-preview-2.preview.emergentagent.com`
 
+## Auth transport (Phase 6)
+
+- **Browser clients:** cookie-based sessions. `oppos_session` (httpOnly, Secure, SameSite=Lax for user / Strict for admin/support) + `oppos_csrf` (JS-readable, same SameSite). Every POST/PUT/PATCH/DELETE under `/api/v1/*` must echo `X-CSRF-Token` = cookie value.
+- **CI / pytest / curl smoke:** Bearer JWT still accepted because `CI_TEST_ISSUER_ENABLED=true` in the preview `.env`. Login response includes `access_token` when that flag is on. Prod builds MUST set `CI_TEST_ISSUER_ENABLED=false`; server refuses to start if `PROD_MODE=true` and the flag is on.
+- **Internal endpoints** (`/api/internal/*`) still gated by `X-Service-Token` header, no cookie required.
+
 ---
 
 ## ⭐ Fixture user — USE THIS FOR AUTOMATED TESTS (Phase 3+)

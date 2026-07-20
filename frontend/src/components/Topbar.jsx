@@ -18,16 +18,20 @@ function UsageMeterChip() {
     return () => { alive = false; };
   }, []);
   if (!usage) return null;
+  const jp = typeof usage.jobs_processed === 'object' ? (usage.jobs_processed?.used ?? 0) : usage.jobs_processed;
+  const ap = typeof usage.applications_prepared === 'object' ? (usage.applications_prepared?.used ?? 0) : usage.apps_prepared;
+  const as = typeof usage.apps_submitted === 'object' ? (usage.apps_submitted?.used ?? 0) : usage.apps_submitted;
+  const period = usage.period || (usage.jobs_processed?.meter || 'now');
   return (
     <div
       className="hidden md:inline-flex items-center gap-1.5 rounded-md border border-line dark:border-line-dark px-2.5 py-1.5 text-xs muted"
-      title={`Period ${usage.period} — jobs scored: ${usage.jobs_processed}, apps prepared: ${usage.apps_prepared}, apps submitted: ${usage.apps_submitted}`}
+      title={`Period ${period} — jobs scored: ${jp}, apps prepared: ${ap}, apps submitted: ${as}`}
       data-testid="usage-meter-chip"
     >
       <Gauge className="h-3.5 w-3.5" />
-      <span className="font-mono">{usage.period}</span>
+      <span className="font-mono">{period}</span>
       <span className="muted">·</span>
-      <span data-testid="usage-jobs-processed">{usage.jobs_processed} scored</span>
+      <span data-testid="usage-jobs-processed">{jp} scored</span>
     </div>
   );
 }

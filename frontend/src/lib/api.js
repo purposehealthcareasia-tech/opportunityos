@@ -2,38 +2,36 @@ import axios from 'axios';
 
 const BASE = process.env.REACT_APP_BACKEND_URL;
 
+// Cookie-first: every request carries credentials so the browser attaches the
+// httpOnly session cookie AND the JS-readable CSRF cookie.
 export const api = axios.create({
   baseURL: BASE,
   timeout: 20000,
+  withCredentials: true,
 });
 
-let _token = null;
-export function setAuthToken(token) {
-  _token = token;
-  if (token) {
-    localStorage.setItem('oppos.token', token);
-    api.defaults.headers.common.Authorization = `Bearer ${token}`;
-  } else {
-    localStorage.removeItem('oppos.token');
-    delete api.defaults.headers.common.Authorization;
-  }
+const CSRF_COOKIE_NAME = 'oppos_csrf';
+const STATE_METHODS = new Set(['post', 'put', 'patch', 'delete']);
+
+function readCsrfCookie() {
+  if (typeof document === 'undefined') return '';
+  const match = document.cookie.split('; ').find((c) => c.startsWith(`${CSRF_COOKIE_NAME}=`));
+  return match ? decodeURIComponent(match.split('=')[1]) : '';
 }
 
-export function loadAuthToken() {
-  const t = localStorage.getItem('oppos.token');
-  if (t) {
-    _token = t;
-    api.defaults.headers.common.Authorization = `Bearer ${t}`;
+// Attach X-CSRF-Token on state-changing verbs (double-submit contract).
+api.interceptors.request.use((config) => {
+  const method = (config.method || 'get').toLowerCase();
+  if (STATE_METHODS.has(method)) {
+    const csrf = readCsrfCookie();
+    if (csrf) {
+      config.headers = { ...(config.headers || {}), 'X-CSRF-Token': csrf };
+    }
   }
-  return t;
-}
-
-export function getToken() {
-  return _token || localStorage.getItem('oppos.token');
-}
+  return config;
+});
 
 export function newIdempotencyKey() {
-  // Prefer crypto.randomUUID when available (all modern browsers).
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID();
   }
@@ -45,12 +43,17 @@ export function withIdempotency(config = {}) {
   return { ...config, headers };
 }
 
+// Clear session on 401 so the router bounces to /login. No local token to nuke —
+// the server-side session store is the sole source of truth.
+let onUnauthorized = null;
+export function setOnUnauthorized(fn) { onUnauthorized = fn; }
+
 api.interceptors.response.use(
   (r) => r,
   (err) => {
-    if (err?.response?.status === 401) {
-      setAuthToken(null);
+    if (err?.response?.status === 401 && typeof onUnauthorized === 'function') {
+      onUnauthorized();
     }
     return Promise.reject(err);
-  }
+  },
 );

@@ -27,7 +27,6 @@ async def ensure_indexes() -> None:
     await db.authorization_scopes.create_index([("user_id", ASCENDING), ("kind", ASCENDING), ("target", ASCENDING)])
     await db.audit_logs.create_index([("actor", ASCENDING), ("ts", DESCENDING)])
     await db.audit_logs.create_index([("object_ref", ASCENDING), ("ts", DESCENDING)])
-    await db.feature_flags.create_index("key", unique=True)
     await db.admin_users.create_index("user_id", unique=True)
     await db.documents.create_index("user_id")
     await db.documents.create_index("sha256")
