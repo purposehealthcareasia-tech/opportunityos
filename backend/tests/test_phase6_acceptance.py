@@ -218,7 +218,7 @@ class TestAdminConsole:
         assert r.status_code == 200
         b = r.json()
         assert "counts" in b
-        for key in ["users", "jobs", "applications", "feature_flags", "audit_events"]:
+        for key in ["users", "jobs", "applications", "feature_flags", "audit_logs"]:
             assert key in b["counts"]
 
 

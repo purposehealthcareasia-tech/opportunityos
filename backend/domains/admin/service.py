@@ -281,7 +281,7 @@ async def system_health(staff: dict = Depends(_require_admin)):
     counts = {}
     for coll in ["users", "jobs", "applications", "submission_receipts",
                  "outcomes", "interviews", "manual_queue_items",
-                 "authorization_scopes", "ai_generations", "audit_events",
+                 "authorization_scopes", "ai_generations", "audit_logs",
                  "consent_records", "subscriptions", "payment_transactions",
                  "export_jobs", "support_tickets", "feature_flags"]:
         counts[coll] = await db[coll].count_documents({})

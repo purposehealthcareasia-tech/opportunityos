@@ -153,7 +153,7 @@ function UsersTab({ isAdmin }) {
       )}
 
       {detail && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4" data-testid="admin-user-detail-modal">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" data-testid="admin-user-detail-modal">
           <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-lg border border-line dark:border-line-dark bg-bg dark:bg-bg-dark p-5 space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="font-semibold">User detail</h3>
@@ -284,7 +284,7 @@ function SubscriptionsTab({ isAdmin }) {
       )}
 
       {refunding && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4" data-testid="admin-refund-modal">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" data-testid="admin-refund-modal">
           <div className="w-full max-w-md rounded-lg border border-line dark:border-line-dark bg-bg dark:bg-bg-dark p-4 space-y-3">
             <div className="flex items-center justify-between">
               <h3 className="font-semibold">Issue refund</h3>

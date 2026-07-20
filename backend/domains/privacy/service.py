@@ -169,7 +169,7 @@ async def _build_bundle(user_id: str) -> dict:
         "screening_answers":    await _fetch("screening_answers",  {"user_id": user_id}),
         "authorization_scopes": await _fetch("authorization_scopes",{"user_id": user_id}),
         "subscriptions":        await _fetch("subscriptions",      {"user_id": user_id}),
-        "audit_trail":          await _fetch("audit_events",       {"actor_id": user_id}),
+        "audit_trail":          await _fetch("audit_logs",         {"actor": user_id}),
         "exported_at": utc_now().isoformat(),
     }
     return jsonable_encoder(bundle)

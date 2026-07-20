@@ -42,3 +42,12 @@
 
 ### Deprecations / removed
 - `frontend/src/pages/placeholders.jsx` and `frontend/src/components/PhasePlaceholder.jsx` deleted (no more phase-preview stubs; real pages ship for every route).
+
+### Bug fixes surfaced by Acceptance Run A–I
+- `domains/admin/service.py::system_health` counted a non-existent `audit_events` collection. Renamed to the actual `audit_logs` collection so the count reflects the real (append-only) audit ledger.
+- `domains/privacy/service.py` export bundle fetched `audit_trail` from `audit_events` with `{actor_id: user_id}`. The real collection is `audit_logs` with field `actor`. Corrected. The Phase 6 export now returns the user's real audit trail (>2000 rows for fixture-ead).
+- `tests/test_fixture_acceptance_b.py::test_usage_meter_starts_at_zero` was still asserting the pre-Phase 6 scalar meter shape. Updated to accept the new `{used, cap, resets_at, meter}` dict.
+- `components/Topbar.jsx::UsageMeterChip` rendered `{usage.jobs_processed}` — now an object per Phase 6 caps refactor — causing a React "Objects are not valid as a React child" crash on every authenticated page. Normalised to `.used`.
+
+### Final acceptance run
+- 153/153 backend pytest green (119 prior + 34 new phase-6 acceptance tests). 100% A–I pass. Screenshots at `/app/test_reports/p6-*.png`. Detailed report at `/app/test_reports/p6-acceptance-run.md`.
