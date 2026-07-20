@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     JWT_EXPIRES_HOURS: int = 24
     POLICY_TEXT_VERSION: str = "1.0"
     STORAGE_ROOT: str = "/app/backend/storage"
+    EMERGENT_LLM_KEY: str = ""
+    MAX_UPLOAD_MB: int = 10
 
 
 @lru_cache

@@ -59,6 +59,7 @@ async def _upsert_sample_jobs() -> int:
                     "comp": j["comp"],
                     "jd_text": j["jd"],
                     "apply_method": j["apply_method"],
+                    "eligibility_requirements": j.get("eligibility", {}),
                     "first_seen": utc_now(),
                     "last_verified": utc_now(),
                     "status": "live",
@@ -148,6 +149,13 @@ async def _ensure_consent_seed(user_id: str) -> None:
 
 async def _ensure_user_zero_claims(user_id: str, email: str) -> None:
     db = get_db()
+    # Backfill: any claim rows missing a status get "pending" (Phase-1 rows created before
+    # the status field existed). This keeps the append-only ledger intact and just adds
+    # a discriminator so passport activation and claims listing know the row is a draft.
+    await db.claims.update_many(
+        {"user_id": user_id, "status": {"$exists": False}},
+        {"$set": {"status": "pending"}},
+    )
     # If claims already exist for this user, do not re-seed. Idempotent.
     if await db.claims.count_documents({"user_id": user_id}) > 0:
         return
@@ -159,15 +167,14 @@ async def _ensure_user_zero_claims(user_id: str, email: str) -> None:
         "verification": {"level": 0, "note": "unverified"},
         "confidence": None,
         "user_approved": False,
+        "status": "pending",
         "version": 1,
         "superseded_by": None,
         "created_at": now,
     }
-    # Structured claims
     docs = []
     for c in seed_data.USER_ZERO_CLAIMS:
         docs.append({"id": str(uuid.uuid4()), "type": c["type"], "value": c["value"], "sensitivity": c["sensitivity"], **base})
-    # Contact claim (email is user-facing so start normal)
     docs.append({
         "id": str(uuid.uuid4()),
         "type": "contact",
@@ -175,7 +182,6 @@ async def _ensure_user_zero_claims(user_id: str, email: str) -> None:
         "sensitivity": "normal",
         **base,
     })
-    # Individual skill claims
     for skill in seed_data.USER_ZERO_SKILLS:
         docs.append({
             "id": str(uuid.uuid4()),

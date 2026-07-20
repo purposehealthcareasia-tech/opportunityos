@@ -12,6 +12,10 @@ from domains.consent.router import router as consent_router
 from domains.users.router import router as users_router
 from domains.admin.router import router as admin_router
 from domains.passport.router import router as passport_router
+from domains.documents.router import router as documents_router
+from domains.claims.router import router as claims_router
+from domains.preferences.router import router as preferences_router
+from domains.eligibility.router import router as eligibility_router
 from domains.seeds.seeder import run_seeds
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -87,3 +91,7 @@ app.include_router(consent_router)
 app.include_router(users_router)
 app.include_router(admin_router)
 app.include_router(passport_router)
+app.include_router(documents_router)
+app.include_router(claims_router)
+app.include_router(preferences_router)
+app.include_router(eligibility_router)
