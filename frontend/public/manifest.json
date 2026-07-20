@@ -1,0 +1,9 @@
+{
+  "short_name": "OpportunityOS",
+  "name": "OpportunityOS",
+  "icons": [],
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#0b0d10",
+  "background_color": "#ffffff"
+}

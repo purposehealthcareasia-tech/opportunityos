@@ -1,0 +1,73 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+  html.dark {
+    color-scheme: dark;
+  }
+  html, body, #root {
+    height: 100%;
+  }
+  body {
+    @apply bg-surface text-ink antialiased;
+    font-feature-settings: 'cv11', 'ss01', 'ss03';
+  }
+  html.dark body {
+    @apply bg-surface-dark text-ink-dark;
+  }
+  h1, h2, h3, h4 {
+    @apply tracking-tight;
+  }
+  a {
+    @apply text-accent hover:text-accent-hover;
+  }
+  ::selection {
+    background: rgba(15, 118, 110, 0.18);
+  }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 font-medium rounded-md px-4 py-2 text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-primary {
+    @apply bg-ink text-white hover:bg-black dark:bg-white dark:text-ink dark:hover:bg-neutral-200;
+  }
+  .btn-secondary {
+    @apply bg-transparent border border-line text-ink dark:text-ink-dark dark:border-line-dark hover:bg-neutral-100 dark:hover:bg-neutral-800;
+  }
+  .btn-ghost {
+    @apply bg-transparent hover:bg-neutral-100 dark:hover:bg-neutral-800 text-ink dark:text-ink-dark;
+  }
+  .btn-accent {
+    @apply bg-accent text-white hover:bg-accent-hover;
+  }
+  .card {
+    @apply bg-white dark:bg-neutral-900 border border-line dark:border-line-dark rounded-card shadow-subtle;
+  }
+  .field-label {
+    @apply block text-sm font-medium text-ink dark:text-ink-dark mb-1.5;
+  }
+  .field-input {
+    @apply w-full rounded-md border border-line dark:border-line-dark bg-white dark:bg-neutral-900 px-3 py-2 text-sm text-ink dark:text-ink-dark placeholder:text-ink-muted dark:placeholder:text-ink-dark-muted focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/25;
+  }
+  .muted {
+    @apply text-ink-muted dark:text-ink-dark-muted;
+  }
+  .divider {
+    @apply border-t border-line dark:border-line-dark;
+  }
+  .pill {
+    @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium border;
+  }
+  .pill-neutral {
+    @apply border-line dark:border-line-dark text-ink-muted dark:text-ink-dark-muted;
+  }
+  .pill-accent {
+    @apply border-accent/30 text-accent bg-accent/5;
+  }
+}

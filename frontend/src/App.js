@@ -1,0 +1,42 @@
+import React from 'react';
+import { Routes, Route, Navigate } from 'react-router-dom';
+import Landing from './pages/Landing';
+import Login from './pages/Login';
+import Signup from './pages/Signup';
+import Settings from './pages/Settings';
+import Admin from './pages/Admin';
+import Layout from './components/Layout';
+import ProtectedRoute from './components/ProtectedRoute';
+import RoleRoute from './components/RoleRoute';
+import {
+  Passport, Preferences, Eligibility, Feed, Applications, Tracker, Analytics, Billing, Privacy,
+} from './pages/placeholders';
+
+export default function App() {
+  return (
+    <Routes>
+      <Route path="/" element={<Landing />} />
+      <Route path="/login" element={<Login />} />
+      <Route path="/signup" element={<Signup />} />
+
+      <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
+        <Route path="/passport" element={<Passport />} />
+        <Route path="/preferences" element={<Preferences />} />
+        <Route path="/eligibility" element={<Eligibility />} />
+        <Route path="/feed" element={<Feed />} />
+        <Route path="/applications" element={<Applications />} />
+        <Route path="/tracker" element={<Tracker />} />
+        <Route path="/analytics" element={<Analytics />} />
+        <Route path="/billing" element={<Billing />} />
+        <Route path="/privacy" element={<Privacy />} />
+        <Route path="/settings" element={<Settings />} />
+        <Route
+          path="/admin"
+          element={<RoleRoute roles={["admin", "support"]}><Admin /></RoleRoute>}
+        />
+      </Route>
+
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
+}
