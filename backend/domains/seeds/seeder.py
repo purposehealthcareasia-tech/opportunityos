@@ -345,6 +345,9 @@ async def _rebase_fixture_user() -> str:
         "match_scores", "usage_meters", "documents", "resume_versions",
         "score_feedback", "claims", "consent_records",
         "ai_generations", "screening_answers",
+        # Phase 5 collections
+        "authorization_scopes", "outcomes", "interviews",
+        "manual_queue_items", "submission_receipts", "subscriptions",
     ]
     for coll in to_wipe:
         await db[coll].delete_many({"user_id": user_id})
@@ -432,6 +435,10 @@ async def _rebase_fixture_user() -> str:
         "created_at": now,
         "updated_at": now,
     })
+    # Phase 5 — seed the fixture user's subscription at plus (15 submits/day).
+    # Founder brief: fixture-ead@ = plus; everyone else defaults to free.
+    from domains.subscriptions import service as subs_svc
+    await subs_svc.set_plan(user_id, "plus", actor="system:fixture")
     # Audit row.
     await db.audit_logs.insert_one({
         "id": str(uuid.uuid4()),

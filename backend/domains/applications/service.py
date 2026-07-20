@@ -634,3 +634,379 @@ async def export_resume(
         content=data, media_type=media,
         headers={"Content-Disposition": f'attachment; filename="tailored-{application_id}.{fmt}"'},
     )
+
+
+
+# ========================================================================================
+# Phase 5 — Approve, Revoke-authorization, Submit, Attest, Receipts
+# ========================================================================================
+from datetime import datetime, timedelta, timezone  # noqa: E402
+from domains.authorizations import service as auth_svc  # noqa: E402
+from domains.submission_receipts import service as receipts_svc  # noqa: E402
+from domains.subscriptions import service as subs_svc  # noqa: E402
+from services import materials_hash as mh_svc  # noqa: E402
+
+
+class BatchApproveRequest(BaseModel):
+    application_ids: list[str]
+
+
+class AttestRequest(BaseModel):
+    confirm_method: str = "user_attest"  # placeholder for future ATS-confirm sources
+    submitted_at: str | None = None      # ISO-8601 override; defaults to server time
+
+
+async def _load_current_materials(user_id: str, app_row: dict) -> tuple[list[dict], list[dict], dict | None]:
+    """Return (accepted_lines, approved_answers, tailored_resume_doc)."""
+    db = get_db()
+    resume_id = (app_row.get("materials") or {}).get("resume_version_id")
+    resume = await db.resume_versions.find_one({"id": resume_id, "user_id": user_id}, {"_id": 0}) if resume_id else None
+    manifest_lines = ((resume or {}).get("render_manifest") or {}).get("lines") or []
+    # Accepted lines only; if the user hasn't clicked accept, fall back to proposed
+    # lines (mirrors export behaviour so a fresh prepare can be approved without per-line clicks).
+    accepted = [L for L in manifest_lines if L.get("status") == "accepted"]
+    if not accepted:
+        accepted = [L for L in manifest_lines if L.get("status") == "proposed"]
+    # Approved answers (application-scoped only; library rows have application_id=None).
+    answers_cur = db.screening_answers.find({
+        "user_id": user_id, "application_id": app_row["id"], "approved": True,
+    }, {"_id": 0})
+    approved_answers = [a async for a in answers_cur]
+    return accepted, approved_answers, resume
+
+
+async def _latest_track_consent_id(user_id: str) -> str | None:
+    row = await get_db().consent_records.find_one(
+        {"user_id": user_id, "scope": "track_applications"},
+        sort=[("ts", -1)],
+    )
+    return row["id"] if row else None
+
+
+async def _approve_single(user_id: str, application_id: str) -> dict:
+    """Core approval routine — used by both single and batch approve endpoints."""
+    db = get_db()
+    app_row = await db.applications.find_one({"id": application_id, "user_id": user_id}, {"_id": 0})
+    if not app_row:
+        raise HTTPException(status_code=404, detail={"error": "application_not_found", "id": application_id})
+    if app_row["state"] != "awaiting_approval":
+        raise HTTPException(status_code=409, detail={
+            "error": "state_precondition_failed",
+            "id": application_id,
+            "current": app_row["state"], "expected": "awaiting_approval",
+        })
+    accepted, approved_answers, _ = await _load_current_materials(user_id, app_row)
+    if not accepted:
+        raise HTTPException(status_code=409, detail={
+            "error": "no_materials_to_authorize", "id": application_id,
+            "message": "The tailored resume has no accepted lines — nothing to authorize.",
+        })
+    materials_hash = mh_svc.compute(accepted_lines=accepted, approved_answers=approved_answers)
+    consent_ref = await _latest_track_consent_id(user_id)
+    auth = await auth_svc.create(
+        user_id=user_id, application_id=application_id,
+        materials_hash=materials_hash, consent_ref=consent_ref,
+    )
+    updated = await atomic_transition(
+        user_id=user_id, application_id=application_id,
+        expected_state="awaiting_approval", new_state="approved",
+        extra_set={"authorization_id": auth["id"], "authorization_expires_at": auth["expires_at"]},
+    )
+    if not updated:
+        raise HTTPException(status_code=409, detail={"error": "state_precondition_failed", "id": application_id})
+    await audit.write(user_id, "application.approve", f"application:{application_id}",
+                      {"authorization_id": auth["id"], "materials_hash": materials_hash})
+    return {"application": updated, "authorization": auth}
+
+
+@router.post("/{application_id}/approve", status_code=200)
+async def approve_application(
+    application_id: str,
+    user: dict = Depends(get_current_user),
+):
+    return await _approve_single(user["id"], application_id)
+
+
+@router.post("/approve-batch", status_code=200)
+async def approve_batch(
+    req: BatchApproveRequest,
+    user: dict = Depends(get_current_user),
+):
+    """Approve N applications; per-application errors reported inline, others still processed."""
+    results: list[dict] = []
+    for app_id in req.application_ids or []:
+        try:
+            r = await _approve_single(user["id"], app_id)
+            results.append({"application_id": app_id, "ok": True, **r})
+        except HTTPException as e:
+            results.append({"application_id": app_id, "ok": False, "error": e.detail})
+    return {"results": results,
+            "summary": {"total": len(results),
+                        "approved": sum(1 for r in results if r["ok"]),
+                        "failed":   sum(1 for r in results if not r["ok"])}}
+
+
+@router.post("/{application_id}/revoke-authorization", status_code=200)
+async def revoke_authorization(application_id: str, user: dict = Depends(get_current_user)):
+    """Revoke the latest authorization and walk state back to awaiting_approval."""
+    db = get_db()
+    app_row = await db.applications.find_one({"id": application_id, "user_id": user["id"]}, {"_id": 0})
+    if not app_row:
+        raise HTTPException(status_code=404, detail="application_not_found")
+    if app_row["state"] != "approved":
+        raise HTTPException(status_code=409, detail={"error": "state_precondition_failed",
+                                                       "current": app_row["state"], "expected": "approved"})
+    revoked = await auth_svc.revoke_latest(user["id"], application_id)
+    if not revoked:
+        raise HTTPException(status_code=404, detail="no_active_authorization")
+    updated = await db.applications.find_one_and_update(
+        {"id": application_id, "user_id": user["id"], "state": "approved"},
+        {"$set": {"state": "awaiting_approval", "authorization_id": None,
+                  "authorization_expires_at": None, "updated_at": utc_now()}},
+        projection={"_id": 0},
+        return_document=True,
+    )
+    if not updated:
+        raise HTTPException(status_code=409, detail={"error": "state_precondition_failed"})
+    await audit.write(user["id"], "application.revoke_authorization",
+                      f"application:{application_id}", {"authorization_id": revoked["id"]})
+    return {"application": updated, "authorization": revoked}
+
+
+# ----------------------------------------------------------------------------------------
+# Submit + attest — the two-step guided-manual flow (also serves email_application).
+# ----------------------------------------------------------------------------------------
+
+def _today_period() -> str:
+    """UTC day bucket for daily-cap counting."""
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+
+async def _receipts_today(user_id: str) -> int:
+    day = _today_period()
+    start = datetime.strptime(day, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+    end = start + timedelta(days=1)
+    return await get_db().submission_receipts.count_documents({
+        "user_id": user_id, "ts": {"$gte": start, "$lt": end},
+    })
+
+
+async def _duplicate_receipt(user_id: str, company_id: str, req_ref: str) -> dict | None:
+    return await get_db().submission_receipts.find_one(
+        {"user_id": user_id, "company_id": company_id, "req_ref": req_ref, "supersedes": None},
+        {"_id": 0},
+    )
+
+
+def _reason_message(reason: str) -> str:
+    return {
+        "no_authorization":    "No active authorization. Approve this application first.",
+        "authorization_revoked": "Authorization was revoked. Re-approve to submit.",
+        "authorization_expired": "Authorization expired (72h TTL). Re-approve to submit.",
+        "authorization_no_expiry": "Authorization is missing an expiry. Re-approve to submit.",
+        "authorization_malformed": "Authorization is malformed. Contact support.",
+        "materials_changed": "Materials changed after approval. Re-approve to submit.",
+    }.get(reason, reason)
+
+
+async def _validate_authorization_and_gates(user_id: str, app_row: dict) -> tuple[dict, str, list[dict]]:
+    """Shared pre-submit / pre-attest validation. Returns (auth_row, materials_hash, accepted_lines)."""
+    accepted, approved_answers, _ = await _load_current_materials(user_id, app_row)
+    if not accepted:
+        raise HTTPException(status_code=409, detail={"error": "no_materials_to_submit",
+                                                       "message": "No accepted resume lines."})
+    current_hash = mh_svc.compute(accepted_lines=accepted, approved_answers=approved_answers)
+    auth = await auth_svc.latest_for_application(user_id, app_row["id"])
+    ok, reason = auth_svc.is_valid(auth, current_hash=current_hash)
+    if not ok:
+        detail: dict[str, Any] = {"error": reason, "message": _reason_message(reason)}
+        if reason == "materials_changed":
+            detail.update({
+                "current_materials_hash": current_hash,
+                "authorized_materials_hash": auth.get("materials_hash") if auth else None,
+            })
+        raise HTTPException(status_code=409, detail=detail)
+    return auth, current_hash, accepted
+
+
+async def _check_daily_cap(user_id: str) -> tuple[int, int]:
+    cfg = await subs_svc.get_plan_config(user_id)
+    today_count = await _receipts_today(user_id)
+    if today_count >= cfg.daily_submit_cap:
+        now = datetime.now(timezone.utc)
+        reset_at = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        raise HTTPException(status_code=409, detail={
+            "error": "daily_cap_reached",
+            "plan": cfg.slug,
+            "cap": cfg.daily_submit_cap,
+            "used_today": today_count,
+            "reset_at": reset_at.isoformat(),
+            "message": f"You've hit today's cap of {cfg.daily_submit_cap} submissions on the {cfg.label} plan. Resets at UTC midnight.",
+        })
+    return today_count, cfg.daily_submit_cap
+
+
+def _default_req_ref(app_row: dict) -> str:
+    """Employer-side reference. For SAMPLE + v0.1 we fall back to the job canonical_key.
+    Real ATS req IDs land when we plug into ATS APIs — the shape is unique per employer's job.
+    """
+    snap = app_row.get("job_snapshot") or {}
+    return snap.get("canonical_key") or app_row.get("job_id") or app_row["id"]
+
+
+@router.post("/{application_id}/submit", status_code=200)
+async def submit_application(application_id: str, user: dict = Depends(get_current_user)):
+    """approved → submitting. Presents the packet; the actual send happens on the employer's site.
+
+    Duplicate + authorization + daily-cap gates run at THIS boundary and again at attest.
+    """
+    db = get_db()
+    app_row = await db.applications.find_one({"id": application_id, "user_id": user["id"]}, {"_id": 0})
+    if not app_row:
+        raise HTTPException(status_code=404, detail="application_not_found")
+    if app_row["state"] != "approved":
+        raise HTTPException(status_code=409, detail={"error": "state_precondition_failed",
+                                                       "current": app_row["state"], "expected": "approved"})
+
+    company_id = app_row.get("company_id")
+    req_ref = _default_req_ref(app_row)
+    dup = await _duplicate_receipt(user["id"], company_id, req_ref)
+    if dup:
+        raise HTTPException(status_code=409, detail={
+            "error": "duplicate_receipt",
+            "message": "You already submitted an application for this employer/req.",
+            "prior_receipt": dup,
+        })
+
+    auth, current_hash, accepted = await _validate_authorization_and_gates(user["id"], app_row)
+    used_today, cap = await _check_daily_cap(user["id"])
+
+    updated = await atomic_transition(
+        user_id=user["id"], application_id=application_id,
+        expected_state="approved", new_state="submitting",
+        extra_set={"submit_started_at": utc_now()},
+    )
+    if not updated:
+        raise HTTPException(status_code=409, detail={"error": "state_precondition_failed"})
+    await audit.write(user["id"], "application.submit_started",
+                      f"application:{application_id}",
+                      {"authorization_id": auth["id"], "route": updated["route"]})
+
+    if updated["route"] == "manual_queue":
+        item = {
+            "id": str(uuid.uuid4()),
+            "user_id": user["id"],
+            "application_id": application_id,
+            "state": "queued",
+            "route": updated["route"],
+            "note": "queued for manual handling",
+            "created_at": utc_now(),
+        }
+        await db.manual_queue_items.insert_one(item)
+        item.pop("_id", None)
+        await audit.write(user["id"], "application.manual_queue_enqueued",
+                          f"application:{application_id}", {"item_id": item["id"]})
+
+    approved_answers_cur = db.screening_answers.find(
+        {"user_id": user["id"], "application_id": application_id, "approved": True}, {"_id": 0},
+    )
+    return {
+        "application": updated,
+        "packet": {
+            "origin_url": (await _load_job(updated["job_id"]) or {}).get("origin_url"),
+            "accepted_lines": accepted,
+            "approved_answers": [a async for a in approved_answers_cur],
+            "route": updated["route"],
+            "route_rationale": updated.get("route_rationale"),
+        },
+        "usage": {"used_today": used_today, "cap": cap},
+        "materials_hash": current_hash,
+        "materials_hash_short": current_hash[:10],
+    }
+
+
+@router.post("/{application_id}/attest", status_code=201)
+async def attest_submission(
+    application_id: str,
+    req: AttestRequest,
+    user: dict = Depends(require_consent("track_applications")),
+):
+    """submitting → submitted. Writes the immutable receipt.
+
+    Duplicate + daily-cap gates run again here in case something changed between submit
+    and attest.
+    """
+    db = get_db()
+    app_row = await db.applications.find_one({"id": application_id, "user_id": user["id"]}, {"_id": 0})
+    if not app_row:
+        raise HTTPException(status_code=404, detail="application_not_found")
+    if app_row["state"] != "submitting":
+        raise HTTPException(status_code=409, detail={"error": "state_precondition_failed",
+                                                       "current": app_row["state"], "expected": "submitting"})
+
+    company_id = app_row.get("company_id")
+    req_ref = _default_req_ref(app_row)
+    dup = await _duplicate_receipt(user["id"], company_id, req_ref)
+    if dup:
+        raise HTTPException(status_code=409, detail={
+            "error": "duplicate_receipt", "message": "Already submitted; no override.",
+            "prior_receipt": dup,
+        })
+    _auth, current_hash, _ = await _validate_authorization_and_gates(user["id"], app_row)
+    await _check_daily_cap(user["id"])
+
+    try:
+        receipt = await receipts_svc.insert(
+            user_id=user["id"], company_id=company_id, req_ref=req_ref,
+            application_id=application_id, job_id=app_row["job_id"],
+            materials_manifest_hash=current_hash,
+            submit_channel=app_row.get("route") or "guided_manual",
+        )
+    except receipts_svc.DuplicateReceipt:
+        prior = await _duplicate_receipt(user["id"], company_id, req_ref)
+        raise HTTPException(status_code=409, detail={
+            "error": "duplicate_receipt", "message": "Already submitted; no override.",
+            "prior_receipt": prior,
+        })
+
+    updated = await atomic_transition(
+        user_id=user["id"], application_id=application_id,
+        expected_state="submitting", new_state="submitted",
+        extra_set={"submitted_at": receipt["ts"]},
+    )
+    if not updated:
+        raise HTTPException(status_code=409, detail={"error": "state_precondition_failed"})
+    from domains.usage_meters import service as um
+    await um.increment_apps_submitted(user["id"])
+    await audit.write(user["id"], "application.submitted",
+                      f"application:{application_id}",
+                      {"receipt_id": receipt["id"], "confirm_method": req.confirm_method})
+    return {
+        "application": updated,
+        "receipt": {**receipt, "materials_hash_short": current_hash[:10]},
+        "duplicate_check": "clean",
+    }
+
+
+@router.get("/{application_id}/receipt")
+async def get_receipt(application_id: str, user: dict = Depends(get_current_user)):
+    receipt = await receipts_svc.find_effective(user_id=user["id"], application_id=application_id)
+    if not receipt:
+        raise HTTPException(status_code=404, detail="no_receipt")
+    receipt["materials_hash_short"] = (receipt.get("materials_manifest_hash") or "")[:10]
+    return receipt
+
+
+@router.get("/receipts/mine")
+async def list_my_receipts(user: dict = Depends(get_current_user)):
+    cur = get_db().submission_receipts.find({"user_id": user["id"]}, {"_id": 0}).sort("ts", -1)
+    receipts = [r async for r in cur]
+    for r in receipts:
+        r["materials_hash_short"] = (r.get("materials_manifest_hash") or "")[:10]
+    return {"receipts": receipts}
+
+
+@router.get("/duplicate-check")
+async def duplicate_check(company_id: str, req_ref: str, user: dict = Depends(get_current_user)):
+    dup = await _duplicate_receipt(user["id"], company_id, req_ref)
+    return {"has_prior": bool(dup), "prior_receipt": dup}

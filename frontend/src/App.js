@@ -12,11 +12,14 @@ import Feed from './pages/Feed';
 import JobDetail from './pages/JobDetail';
 import Applications from './pages/Applications';
 import ApplicationPrep from './pages/ApplicationPrep';
+import Approvals from './pages/Approvals';
+import Tracker from './pages/Tracker';
+import Analytics from './pages/Analytics';
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
 import RoleRoute from './components/RoleRoute';
 import {
-  Tracker, Analytics, Billing, Privacy,
+  Billing, Privacy,
 } from './pages/placeholders';
 
 export default function App() {
@@ -34,6 +37,7 @@ export default function App() {
         <Route path="/jobs/:jobId" element={<JobDetail />} />
         <Route path="/applications" element={<Applications />} />
         <Route path="/applications/:applicationId/prep" element={<ApplicationPrep />} />
+        <Route path="/approvals" element={<Approvals />} />
         <Route path="/tracker" element={<Tracker />} />
         <Route path="/analytics" element={<Analytics />} />
         <Route path="/billing" element={<Billing />} />

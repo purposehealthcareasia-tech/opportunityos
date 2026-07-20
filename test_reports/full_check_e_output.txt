@@ -1,0 +1,252 @@
+REBASE: 200 {'ok': True, 'fixture_user_id': 'c9f47fd8-fd59-4df9-8c9c-b7ff68fb4785', 'note': 'fixture-ead@opportunityos.dev re-baselined. Applications, hidden_jobs, match_scores, usage_meters, documents, resume_versions, score_feedback, claims, consent_records were wiped. All acceptance state re-seeded.'}
+LOGIN OK uid=c9f47fd8-fd59-4df9-8c9c-b7ff68fb4785
+
+===== FEED GEOMETRY =====
+totals: {'live_jobs': 15, 'passing': 9, 'excluded': 6, 'hidden': 0, 'excluded_by_reason': {'no_sponsorship_offered': 4, 'requires_us_person': 2}, 'unknown_by_reason': {}}
+excluded_by_reason: None
+
+===== SUBSCRIPTION (fixture=plus) =====
+{
+  "plan": "plus",
+  "state": "active",
+  "label": "Plus",
+  "daily_submit_cap": 15
+}
+
+App created: 48b2e429-5cc3-4d16-9056-38ef68f6690b
+PREPARE: 200
+
+===== APPROVE response =====
+{
+  "application": {
+    "id": "48b2e429-5cc3-4d16-9056-38ef68f6690b",
+    "user_id": "c9f47fd8-fd59-4df9-8c9c-b7ff68fb4785",
+    "job_id": "98109a0a-0d0c-4912-bf5f-ade4e3c97acc",
+    "company_id": "e3a90842-85b2-4e04-bf50-f016e1b75d7f",
+    "job_snapshot": {
+      "title": "Vehicle Systems Engineer",
+      "company_name": "SampleCo (demo)",
+      "canonical_key": "sampleco.demo::sample-01",
+      "is_sample": true
+    },
+    "state": "approved",
+    "route": "manual_queue",
+    "route_rationale": "Routing is pending a human review. Materials get prepared; a person confirms the path before send.",
+    "materials": {
+      "resume_version_id": "8900d377-2904-411b-a4a7-2920b7bf9d6a"
+    },
+    "authorization_id": "7aa14617-3d99-4427-a913-7ecf01f1160d",
+    "minutes_to_prepare": null,
+    "fields_corrected": null,
+    "created_at": "2026-07-20T11:01:31.806000",
+    "updated_at": "2026-07-20T11:01:38.834000",
+    "prepare_started_at": "2026-07-20T11:01:31.901000",
+    "authorization_expires_at": "2026-07-23T11:01:38.834000"
+  },
+  "authorization": {
+    "id": "7aa14617-3d99-4427-a913-7ecf01f1160d",
+    "user_id": "c9f47fd8-fd59-4df9-8c9c-b7ff68fb4785",
+    "kind": "application_submission",
+    "target": "48b2e429-5cc3-4d16-9056-38ef68f6690b",
+    "materials_hash": "d93dc2298779487a92195505b77acd5b9f1616cf3f3881922a3b0c0e561ce0c6",
+    "expires_at": "2026-07-23T11:01:38.834046+00:00",
+    "revoked_at": null,
+    "consent_ref": "55e55d21-4dc3-4479-8f39-bae495ebdd5f",
+    "created_at": "2026-07-20T11:01:38.834046+00:00",
+    "updated_at": "2026-07-20T11:01:38.834046+00:00"
+  }
+}
+
+===== SUBMIT response =====
+{
+  "application": {
+    "id": "48b2e429-5cc3-4d16-9056-38ef68f6690b",
+    "user_id": "c9f47fd8-fd59-4df9-8c9c-b7ff68fb4785",
+    "job_id": "98109a0a-0d0c-4912-bf5f-ade4e3c97acc",
+    "company_id": "e3a90842-85b2-4e04-bf50-f016e1b75d7f",
+    "job_snapshot": {
+      "title": "Vehicle Systems Engineer",
+      "company_name": "SampleCo (demo)",
+      "canonical_key": "sampleco.demo::sample-01",
+      "is_sample": true
+    },
+    "state": "submitting",
+    "route": "manual_queue",
+    "route_rationale": "Routing is pending a human review. Materials get prepared; a person confirms the path before send.",
+    "materials": {
+      "resume_version_id": "8900d377-2904-411b-a4a7-2920b7bf9d6a"
+    },
+    "authorization_id": "7aa14617-3d99-4427-a913-7ecf01f1160d",
+    "minutes_to_prepare": null,
+    "fields_corrected": null,
+    "created_at": "2026-07-20T11:01:31.806000",
+    "updated_at": "2026-07-20T11:01:38.937000",
+    "prepare_started_at": "2026-07-20T11:01:31.901000",
+    "authorization_expires_at": "2026-07-23T11:01:38.834000",
+    "submit_started_at": "2026-07-20T11:01:38.937000"
+  },
+  "packet": {
+    "origin_url": "https://sampleco.demo/careers/sample-01",
+    "accepted_lines": [
+      {
+        "line_id": "c411e317-b2f3-4b43-a3ff-631da6746a7d",
+        "text": "Perform systems engineering at Fixture Motors using MBSE methodologies and requirements decomposition workflows",
+        "claim_ids": [
+          "85d480d6-13a9-44b4-a6c7-eb9bd4a4f9e6",
+          "2c520df1-6db0-493c-b9d4-419f4ce9e47f",
+          "79da50f3-5e11-450a-ac6b-fe1929307bda"
+        ],
+        "status": "proposed",
+        "base_line_ref": null
+      },
+      {
+        "line_id": "c5f4281c-08e9-4c88-994c-b971f9783355",
+        "text": "Apply systems-level requirements engineering practices across multi-disciplinary technical domains",
+        "claim_ids": [
+          "a6b3e71b-251a-42f0-aceb-333042a83024",
+          "79da50f3-5e11-450a-ac6b-fe1929307bda",
+          "85d480d6-13a9-44b4-a6c7-eb9bd4a4f9e6"
+        ],
+        "status": "proposed",
+        "base_line_ref": null
+      },
+      {
+        "line_id": "1a8ebfe2-dae8-4c47-8792-3e2981f32c15",
+        "text": "Leverage MATLAB and Simulink for systems analysis and modeling workflows",
+        "claim_ids": [
+          "abb294c4-85f4-4c1d-8d71-6b87b986e3fc",
+          "c727acbf-e3c6-4ae3-9862-db8465771dfc",
+          "85d480d6-13a9-44b4-a6c7-eb9bd4a4f9e6"
+        ],
+        "status": "proposed",
+        "base_line_ref": null
+      },
+      {
+        "line_id": "520a30a4-6992-4ee3-9e34-950d018f14ac",
+        "text": "Hold MS in Mechanical Engineering from Test University, completed May 2020",
+        "claim_ids": [
+          "b2ce38cc-c801-43d4-a2d2-d52f67fd9194"
+        ],
+        "status": "proposed",
+        "base_line_ref": null
+      }
+    ],
+    "approved_answers": [
+      {
+        "user_id": "c9f47fd8-fd59-4df9-8c9c-b7ff68fb4785",
+        "application_id": "48b2e429-5cc3-4d16-9056-38ef68f6690b",
+        "question_id": "sampleco.demo::sample-01#q-visa",
+        "answer": "acknowledged",
+        "approved": true,
+        "category": "work_authorization",
+        "created_at": "2026-07-20T11:01:38.515000",
+        "id": "e5434fa9-8b68-4c67-a1e5-3027224932ad",
+        "kind": "sensitive_visa",
+        "order_hint": 3,
+        "provenance": "user",
+        "question_pattern": "work_authorization_status",
+        "sensitive": true,
+        "updated_at": "2026-07-20T11:01:38.515000"
+      },
+      {
+        "application_id": "48b2e429-5cc3-4d16-9056-38ef68f6690b",
+        "question_id": "sampleco.demo::sample-01#q-salary",
+        "user_id": "c9f47fd8-fd59-4df9-8c9c-b7ff68fb4785",
+        "answer": "acknowledged",
+        "approved": true,
+        "category": "compensation",
+        "created_at": "2026-07-20T11:01:38.617000",
+        "id": "c7cc6d75-720f-4dbf-8996-19337562ec4b",
+        "kind": "sensitive_salary",
+        "order_hint": 4,
+        "provenance": "user",
+        "question_pattern": "desired_base_salary_usd",
+        "sensitive": true,
+        "updated_at": "2026-07-20T11:01:38.617000"
+      }
+    ],
+    "route": "manual_queue",
+    "route_rationale": "Routing is pending a human review. Materials get prepared; a person confirms the path before send."
+  },
+  "usage": {
+    "used_today": 0,
+    "cap": 15
+  },
+  "materials_hash": "d93dc2298779487a92195505b77acd5b9f1616cf3f3881922a3b0c0e561ce0c6",
+  "materials_hash_short": "d93dc22987"
+}
+
+===== ATTEST response (FULL RECEIPT INSIDE) =====
+{
+  "application": {
+    "id": "48b2e429-5cc3-4d16-9056-38ef68f6690b",
+    "user_id": "c9f47fd8-fd59-4df9-8c9c-b7ff68fb4785",
+    "job_id": "98109a0a-0d0c-4912-bf5f-ade4e3c97acc",
+    "company_id": "e3a90842-85b2-4e04-bf50-f016e1b75d7f",
+    "job_snapshot": {
+      "title": "Vehicle Systems Engineer",
+      "company_name": "SampleCo (demo)",
+      "canonical_key": "sampleco.demo::sample-01",
+      "is_sample": true
+    },
+    "state": "submitted",
+    "route": "manual_queue",
+    "route_rationale": "Routing is pending a human review. Materials get prepared; a person confirms the path before send.",
+    "materials": {
+      "resume_version_id": "8900d377-2904-411b-a4a7-2920b7bf9d6a"
+    },
+    "authorization_id": "7aa14617-3d99-4427-a913-7ecf01f1160d",
+    "minutes_to_prepare": null,
+    "fields_corrected": null,
+    "created_at": "2026-07-20T11:01:31.806000",
+    "updated_at": "2026-07-20T11:01:39.041000",
+    "prepare_started_at": "2026-07-20T11:01:31.901000",
+    "authorization_expires_at": "2026-07-23T11:01:38.834000",
+    "submit_started_at": "2026-07-20T11:01:38.937000",
+    "submitted_at": "2026-07-20T11:01:39.040000"
+  },
+  "receipt": {
+    "id": "7f7953cf-c0f7-46cc-ae9f-97380340bfec",
+    "user_id": "c9f47fd8-fd59-4df9-8c9c-b7ff68fb4785",
+    "company_id": "e3a90842-85b2-4e04-bf50-f016e1b75d7f",
+    "req_ref": "sampleco.demo::sample-01",
+    "application_id": "48b2e429-5cc3-4d16-9056-38ef68f6690b",
+    "job_id": "98109a0a-0d0c-4912-bf5f-ade4e3c97acc",
+    "materials_manifest_hash": "d93dc2298779487a92195505b77acd5b9f1616cf3f3881922a3b0c0e561ce0c6",
+    "submit_channel": "manual_queue",
+    "supersedes": null,
+    "ts": "2026-07-20T11:01:39.040500+00:00",
+    "materials_hash_short": "d93dc22987"
+  },
+  "duplicate_check": "clean"
+}
+
+===== USAGE METER (after attest) =====
+{
+  "plan": "plus",
+  "state": "active",
+  "label": "Plus",
+  "daily_submit_cap": 15
+}
+
+
+########## DUPLICATE BLOCK TRANSCRIPT ##########
+POST /api/v1/jobs/98109a0a-0d0c-4912-bf5f-ade4e3c97acc/shortlist -> 409
+BODY: {"detail":{"error":"already_shortlisted"}}
+
+GET /api/v1/applications/duplicate-check -> 200
+{
+  "has_prior": true,
+  "prior_receipt": {
+    "id": "7f7953cf-c0f7-46cc-ae9f-97380340bfec",
+    "user_id": "c9f47fd8-fd59-4df9-8c9c-b7ff68fb4785",
+    "company_id": "e3a90842-85b2-4e04-bf50-f016e1b75d7f",
+    "req_ref": "sampleco.demo::sample-01",
+    "application_id": "48b2e429-5cc3-4d16-9056-38ef68f6690b",
+    "job_id": "98109a0a-0d0c-4912-bf5f-ade4e3c97acc",
+    "materials_manifest_hash": "d93dc2298779487a92195505b77acd5b9f1616cf3f3881922a3b0c0e561ce0c6",
+    "submit_channel": "manual_queue",
+    "supersedes": null,
+    "ts": "2026-07-20T11:01:39.040000"
+  }
+}

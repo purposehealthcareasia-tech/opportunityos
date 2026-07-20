@@ -23,6 +23,10 @@ from domains.applications.router import router as applications_router
 from domains.match_scores.router import router as matches_router
 from domains.usage_meters.router import router as usage_router
 from domains.screening_answers.router import router as screeners_router
+from domains.outcomes.service import router as outcomes_router
+from domains.subscriptions.service import router as subscriptions_router
+from domains.inbound.internal_router import router as inbound_internal_router
+from domains.analytics.service import router as analytics_router
 from domains.seeds.seeder import run_seeds
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -79,7 +83,7 @@ async def health():
     return {
         "ok": True,
         "mongo": mongo_ok,
-        "phase": 4,
+        "phase": 5,
         "policy_text_version": policy_version(),
     }
 
@@ -109,3 +113,7 @@ app.include_router(applications_router)
 app.include_router(matches_router)
 app.include_router(usage_router)
 app.include_router(screeners_router)
+app.include_router(outcomes_router)
+app.include_router(subscriptions_router)
+app.include_router(inbound_internal_router)
+app.include_router(analytics_router)

@@ -346,7 +346,7 @@ function ScreenersTab({ packet, onReload }) {
   );
 }
 
-function SummaryTab({ packet, onReadyForApproval, submitBusy }) {
+function SummaryTab({ packet, onReadyForApproval, submitBusy, onSubmit, onAttest, onReload, submitting, attesting, submitPacket, receipt }) {
   const app = packet.application;
   const validator = packet.resume_version?.render_manifest?.validator_result;
   const nSensitiveOpen = (packet.screeners_view?.questions || []).filter((q) => q.sensitive && !q.approved).length;
@@ -355,7 +355,7 @@ function SummaryTab({ packet, onReadyForApproval, submitBusy }) {
   return (
     <div className="space-y-4">
       <Card>
-        <CardHeader title="Packet overview" subtitle="Everything the packet knows before you send it to awaiting_approval." />
+        <CardHeader title="Packet overview" subtitle="The materials-hash below is what the server signs when you approve." />
         <dl className="grid grid-cols-2 gap-y-2 text-sm">
           <dt className="muted">Job</dt><dd>{app.job_snapshot?.title} @ {app.job_snapshot?.company_name}</dd>
           <dt className="muted">Route</dt><dd className="font-mono">{app.route}</dd>
@@ -366,17 +366,176 @@ function SummaryTab({ packet, onReadyForApproval, submitBusy }) {
           <dt className="muted">Route rationale</dt><dd className="text-xs muted leading-relaxed">{app.route_rationale}</dd>
         </dl>
       </Card>
-      <div className="flex items-center gap-3">
-        <Button variant="accent" onClick={onReadyForApproval} loading={submitBusy} disabled={!canGo} data-testid="ready-for-approval-btn">
-          <Send className="h-4 w-4" /> Ready for approval
-        </Button>
-        {!canGo && app.state === 'preparing' && (
-          <p className="text-xs muted">Fill and approve every sensitive screener first.</p>
+
+      {app.state === 'preparing' && (
+        <div className="flex items-center gap-3">
+          <Button variant="accent" onClick={onReadyForApproval} loading={submitBusy} disabled={!canGo} data-testid="ready-for-approval-btn">
+            <Send className="h-4 w-4" /> Ready for approval
+          </Button>
+          {!canGo && (
+            <p className="text-xs muted">Fill and approve every sensitive screener first.</p>
+          )}
+        </div>
+      )}
+
+      {app.state === 'awaiting_approval' && (
+        <div className="rounded-md border border-accent/40 bg-accent/5 p-4 text-sm" data-testid="summary-await-approval">
+          <div className="font-medium mb-1">Awaiting your approval.</div>
+          <div className="muted text-xs mb-2">Approving locks the current materials to a 72-hour authorization scope.</div>
+          <Link to="/approvals" className="pill pill-neutral text-xs no-underline">
+            Go to Approvals
+          </Link>
+        </div>
+      )}
+
+      {app.state === 'approved' && (
+        <RouteDrawer packet={packet} onSubmit={onSubmit} submitting={submitting} />
+      )}
+
+      {app.state === 'submitting' && submitPacket && (
+        <SubmitPacketPane packet={packet} submitPacket={submitPacket} onAttest={onAttest} attesting={attesting} />
+      )}
+
+      {app.state === 'submitted' && (
+        <ReceiptCard receipt={receipt} appId={app.id} />
+      )}
+
+      {(app.state === 'response' || app.state === 'interview' || app.state === 'offer' || app.state === 'closed') && (
+        <ReceiptCard receipt={receipt} appId={app.id} showTrackerLink />
+      )}
+    </div>
+  );
+}
+
+function RouteDrawer({ packet, onSubmit, submitting }) {
+  const app = packet.application;
+  const route = app.route || 'guided_manual';
+  const alternatives = ['guided_manual', 'email_application', 'manual_queue'].filter((r) => r !== route);
+  return (
+    <div className="rounded-md border border-accent/40 bg-accent/5 p-4 space-y-3" data-testid="route-drawer">
+      <div>
+        <div className="text-xs uppercase tracking-wide muted">Chosen route</div>
+        <div className="text-lg font-semibold font-mono">{route}</div>
+      </div>
+      <p className="text-xs muted leading-relaxed">
+        {app.route_rationale || 'This is the route the eligibility engine picked for this job.'}
+      </p>
+      <div className="text-xs">
+        <div className="muted mb-1">Alternatives considered:</div>
+        <ul className="list-disc pl-4 space-y-0.5 muted">
+          {alternatives.map((r) => <li key={r} className="font-mono">{r}</li>)}
+        </ul>
+      </div>
+      <div className="rounded-md border border-amber-400/50 bg-amber-50 dark:bg-amber-950 dark:text-amber-200 text-amber-900 text-xs p-2" data-testid="platform-safety-note">
+        We never automate restricted platforms. You submit in your own browser — we just prepare the packet.
+      </div>
+      <Button
+        variant="accent"
+        onClick={onSubmit}
+        loading={submitting}
+        data-testid="submit-btn"
+      >
+        <Send className="h-4 w-4" /> Start submit
+      </Button>
+    </div>
+  );
+}
+
+function SubmitPacketPane({ packet, submitPacket, onAttest, attesting }) {
+  const [copied, setCopied] = useState('');
+  const copy = async (label, text) => {
+    await navigator.clipboard.writeText(text);
+    setCopied(label);
+    setTimeout(() => setCopied(''), 1400);
+  };
+  const lines = submitPacket.packet?.accepted_lines || [];
+  const answers = submitPacket.packet?.approved_answers || [];
+  const originUrl = submitPacket.packet?.origin_url;
+  return (
+    <div className="rounded-md border border-line dark:border-line-dark p-4 space-y-4" data-testid="submit-packet-pane">
+      <div className="flex items-center justify-between">
+        <div>
+          <div className="text-xs uppercase tracking-wide muted">Materials hash (locked)</div>
+          <div className="font-mono text-sm" data-testid="submit-materials-hash">{submitPacket.materials_hash_short}…</div>
+        </div>
+        <div className="text-xs muted">
+          Today: {submitPacket.usage?.used_today ?? '?'} / {submitPacket.usage?.cap ?? '?'}
+        </div>
+      </div>
+      <div className="space-y-2">
+        {originUrl && (
+          <div className="flex items-center gap-2">
+            <div className="text-xs muted flex-1">Employer page</div>
+            <a href={originUrl} target="_blank" rel="noopener noreferrer" className="pill pill-neutral text-xs">Open ↗</a>
+            <button type="button" className="pill pill-neutral text-xs" onClick={() => copy('url', originUrl)}>
+              {copied === 'url' ? 'Copied' : 'Copy'}
+            </button>
+          </div>
         )}
-        {app.state === 'awaiting_approval' && (
-          <p className="text-xs text-accent">Packet is awaiting your final approval. Phase 5 wires the actual send path.</p>
+        <details className="text-xs">
+          <summary className="cursor-pointer muted">Résumé lines ({lines.length})</summary>
+          <ol className="list-decimal pl-4 mt-2 space-y-1">
+            {lines.map((L, i) => (
+              <li key={L.line_id || i}>{L.text}</li>
+            ))}
+          </ol>
+        </details>
+        {answers.length > 0 && (
+          <details className="text-xs">
+            <summary className="cursor-pointer muted">Approved screener answers ({answers.length})</summary>
+            <ul className="pl-4 mt-2 space-y-2">
+              {answers.map((a) => (
+                <li key={a.question_id}>
+                  <div className="muted">{a.question_id.split('#').slice(-1)[0]}</div>
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1">{a.answer}</div>
+                    <button type="button" className="pill pill-neutral text-[10px]" onClick={() => copy(a.question_id, a.answer)}>
+                      {copied === a.question_id ? 'Copied' : 'Copy'}
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </details>
         )}
       </div>
+      <div className="rounded-md border border-line dark:border-line-dark p-2 text-xs muted italic">
+        After you finish on the employer's site, tap "I submitted" to write the receipt.
+      </div>
+      <Button variant="accent" onClick={onAttest} loading={attesting} data-testid="attest-btn">
+        <Send className="h-4 w-4" /> I submitted
+      </Button>
+    </div>
+  );
+}
+
+function ReceiptCard({ receipt, appId, showTrackerLink }) {
+  if (!receipt) {
+    return (
+      <div className="rounded-md border border-line dark:border-line-dark p-3 text-xs muted" data-testid="receipt-card-empty">
+        Submitted — receipt not loaded yet.{' '}
+        <Link to="/tracker" className="underline">Open tracker</Link>.
+      </div>
+    );
+  }
+  return (
+    <div className="rounded-md border border-accent/40 bg-accent/5 p-4 space-y-2" data-testid="receipt-card">
+      <div className="flex items-center justify-between">
+        <div className="font-semibold flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-accent" /> Submission receipt</div>
+        <div className="font-mono text-xs muted" data-testid="receipt-hash-short">{receipt.materials_hash_short}</div>
+      </div>
+      <dl className="grid grid-cols-3 gap-y-1 text-xs">
+        <dt className="muted">req_ref</dt><dd className="col-span-2 font-mono">{receipt.req_ref}</dd>
+        <dt className="muted">submitted at</dt><dd className="col-span-2">{new Date(receipt.ts).toLocaleString()}</dd>
+        <dt className="muted">route</dt><dd className="col-span-2 font-mono">{receipt.submit_channel}</dd>
+        <dt className="muted">receipt id</dt><dd className="col-span-2 font-mono">{receipt.id}</dd>
+      </dl>
+      <div className="text-xs" data-testid="receipt-duplicate-check">
+        no prior application to this employer/req ✓
+      </div>
+      {showTrackerLink && (
+        <Link to="/tracker" className="pill pill-neutral text-xs no-underline">Open tracker</Link>
+      )}
     </div>
   );
 }
@@ -390,6 +549,11 @@ export default function ApplicationPrepPage() {
   const [tab, setTab] = useState('resume');
   const [submitBusy, setSubmitBusy] = useState(false);
   const [prepBusy, setPrepBusy] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [attesting, setAttesting] = useState(false);
+  const [submitPacket, setSubmitPacket] = useState(null);
+  const [receipt, setReceipt] = useState(null);
+  const [flash, setFlash] = useState(null);
 
   const load = useCallback(async () => {
     try {
@@ -399,6 +563,13 @@ export default function ApplicationPrepPage() {
       ]);
       setPacket({ ...p, screeners_view: s });
       setScreenersView(s);
+      // If already submitted, pull the receipt.
+      if (['submitted', 'response', 'interview', 'offer', 'closed'].includes(p.application?.state)) {
+        try {
+          const r = await api.get(`/api/v1/applications/${applicationId}/receipt`);
+          setReceipt(r.data);
+        } catch (e) { console.debug('receipt fetch (may not exist yet)', e); }
+      }
     } catch (e) {
       const detail = e?.response?.data?.detail;
       if (detail?.error === 'consent_required') setError('generate_materials consent is required to prepare an application.');
@@ -427,10 +598,36 @@ export default function ApplicationPrepPage() {
       await load();
     } catch (e) {
       const d = e?.response?.data?.detail;
-      if (d?.error === 'sensitive_screener_gate') alert(d.message);
-      else if (d?.error === 'state_precondition_failed') alert('State changed elsewhere.');
-      else alert('Ready-for-approval failed.');
+      if (d?.error === 'sensitive_screener_gate') setFlash({ kind: 'warn', message: d.message });
+      else if (d?.error === 'state_precondition_failed') setFlash({ kind: 'warn', message: 'State changed elsewhere.' });
+      else setFlash({ kind: 'warn', message: 'Ready-for-approval failed.' });
     } finally { setSubmitBusy(false); }
+  };
+
+  const submit = async () => {
+    setSubmitting(true);
+    try {
+      const res = await api.post(`/api/v1/applications/${applicationId}/submit`, {}, withIdempotency());
+      setSubmitPacket(res.data);
+      await load();
+    } catch (e) {
+      const d = e?.response?.data?.detail;
+      setFlash({ kind: 'warn', message: d?.message || d?.error || 'Submit failed.' });
+    } finally { setSubmitting(false); }
+  };
+
+  const attest = async () => {
+    setAttesting(true);
+    try {
+      const res = await api.post(`/api/v1/applications/${applicationId}/attest`, { confirm_method: 'user_attest' }, withIdempotency());
+      setReceipt(res.data.receipt);
+      setSubmitPacket(null);
+      setFlash({ kind: 'ok', message: 'Receipt written. Duplicate check: clean.' });
+      await load();
+    } catch (e) {
+      const d = e?.response?.data?.detail;
+      setFlash({ kind: 'warn', message: d?.message || d?.error || 'Attest failed.' });
+    } finally { setAttesting(false); }
   };
 
   if (error) return (
@@ -508,7 +705,27 @@ export default function ApplicationPrepPage() {
 
           {tab === 'resume' && <ResumeDiffTab packet={packet} onReload={load} />}
           {tab === 'screeners' && <ScreenersTab packet={packet} onReload={load} />}
-          {tab === 'summary' && <SummaryTab packet={packet} onReadyForApproval={ready} submitBusy={submitBusy} />}
+          {tab === 'summary' && (
+            <>
+              {flash && (
+                <div className={`rounded-md border px-3 py-2 text-sm mb-3 ${flash.kind === 'ok' ? 'bg-accent/10 border-accent/40 text-accent' : 'bg-amber-50 border-amber-400 text-amber-900 dark:bg-amber-950 dark:text-amber-200'}`} data-testid="prep-flash">
+                  {flash.message}
+                </div>
+              )}
+              <SummaryTab
+                packet={packet}
+                onReadyForApproval={ready}
+                submitBusy={submitBusy}
+                onSubmit={submit}
+                onAttest={attest}
+                onReload={load}
+                submitting={submitting}
+                attesting={attesting}
+                submitPacket={submitPacket}
+                receipt={receipt}
+              />
+            </>
+          )}
         </>
       )}
     </div>

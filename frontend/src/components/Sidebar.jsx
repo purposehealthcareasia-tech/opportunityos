@@ -7,6 +7,7 @@ import {
   ShieldCheck,
   Rss,
   SendHorizonal,
+  ClipboardCheck,
   ListTodo,
   BarChart3,
   CreditCard,
@@ -21,8 +22,9 @@ const SECTIONS = [
   { to: '/eligibility',  label: 'Eligibility',  Icon: ShieldCheck,     phase: 2, active: true  },
   { to: '/feed',         label: 'Feed',         Icon: Rss,             phase: 3, active: true  },
   { to: '/applications', label: 'Applications', Icon: SendHorizonal,   phase: 3, active: true  },
-  { to: '/tracker',      label: 'Tracker',      Icon: ListTodo,        phase: 5, active: false },
-  { to: '/analytics',    label: 'Analytics',    Icon: BarChart3,       phase: 5, active: false },
+  { to: '/approvals',    label: 'Approvals',    Icon: ClipboardCheck,  phase: 5, active: true  },
+  { to: '/tracker',      label: 'Tracker',      Icon: ListTodo,        phase: 5, active: true  },
+  { to: '/analytics',    label: 'Analytics',    Icon: BarChart3,       phase: 5, active: true  },
   { to: '/billing',      label: 'Billing',      Icon: CreditCard,      phase: 6, active: false },
   { to: '/privacy',      label: 'Privacy',      Icon: Lock,            phase: 2, active: false },
   { to: '/settings',     label: 'Settings',     Icon: SettingsIcon,    phase: 1, active: true  },
@@ -85,7 +87,7 @@ export function Sidebar({ isAdminOrSupport }) {
         </ul>
       </nav>
       <div className="px-4 py-3 border-t border-line dark:border-line-dark text-xs muted">
-        Phase 3 · Discovery
+        Phase 5 · Approve → Submit → Track
       </div>
     </aside>
   );

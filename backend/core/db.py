@@ -90,3 +90,25 @@ async def ensure_indexes() -> None:
     await db.screening_answers.create_index([("user_id", ASCENDING), ("application_id", ASCENDING)])
     await db.resume_versions.create_index([("user_id", ASCENDING), ("base", ASCENDING)])
     await db.resume_versions.create_index([("application_id", ASCENDING)])
+    # Phase 5 collections
+    # authorization_scopes already has an index above; add the (created_at DESC) for latest-lookup.
+    await db.authorization_scopes.create_index(
+        [("user_id", ASCENDING), ("target", ASCENDING), ("created_at", DESCENDING)],
+        name="auth_scope_latest_lookup",
+    )
+    await db.subscriptions.create_index("user_id", unique=True)
+    await db.outcomes.create_index([("user_id", ASCENDING), ("application_id", ASCENDING), ("ts", DESCENDING)])
+    # Idempotency for inbound webhook — one outcome per (user_id, ext_message_id).
+    await db.outcomes.create_index(
+        [("user_id", ASCENDING), ("ext_message_id", ASCENDING)],
+        unique=True,
+        partialFilterExpression={"ext_message_id": {"$type": "string"}},
+        name="uniq_outcome_per_user_ext_msg",
+    )
+    await db.interviews.create_index([("user_id", ASCENDING), ("application_id", ASCENDING)])
+    await db.manual_queue_items.create_index([("user_id", ASCENDING), ("state", ASCENDING)])
+    await db.manual_queue_items.create_index("application_id", unique=True)
+    # (user_id, ts) index for daily-cap counting is served by (user_id, company_id, req_ref) prefix + ts scan.
+    await db.submission_receipts.create_index([("user_id", ASCENDING), ("ts", DESCENDING)],
+                                              name="receipts_by_user_ts")
+

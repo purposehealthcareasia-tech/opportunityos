@@ -33,6 +33,16 @@ async def increment_apps_prepared(user_id: str, amount: int = 1) -> None:
     )
 
 
+async def increment_apps_submitted(user_id: str, amount: int = 1) -> None:
+    db = get_db()
+    await db.usage_meters.update_one(
+        {"user_id": user_id, "period": _period()},
+        {"$inc": {"apps_submitted": amount},
+         "$setOnInsert": {"user_id": user_id, "period": _period(), "jobs_processed": 0, "apps_prepared": 0}},
+        upsert=True,
+    )
+
+
 @router.get("/me")
 async def get_usage(user: dict = Depends(get_current_user)):
     doc = await get_db().usage_meters.find_one({"user_id": user["id"], "period": _period()}, {"_id": 0})
