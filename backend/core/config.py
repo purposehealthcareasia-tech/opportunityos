@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     STORAGE_ROOT: str = "/app/backend/storage"
     EMERGENT_LLM_KEY: str = ""
     MAX_UPLOAD_MB: int = 10
+    INTERNAL_SERVICE_TOKEN: str = ""
+    JOB_STALENESS_DAYS: int = 14
 
 
 @lru_cache

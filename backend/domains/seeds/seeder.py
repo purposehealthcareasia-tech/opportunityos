@@ -43,14 +43,39 @@ async def _upsert_sample_jobs() -> int:
     db = get_db()
     sample_company = await db.companies.find_one({"domain": "sampleco.demo"})
     company_id = sample_company["id"] if sample_company else None
+
+    # Phase 3: per-job structured requirements. Keeps have/gap deterministic for tests
+    # and lets the gate engine reason about experience_band + education_requirement.
+    REQ_BY_TITLE = {
+        "Vehicle Systems Engineer":              {"skills_required": ["mbse", "requirements", "systems"],          "degree_level": "BS", "years_min": 3},
+        "Battery Test Engineer":                 {"skills_required": ["daq", "python", "battery test benches"],    "degree_level": "BS", "years_min": 2},
+        "HIL Simulation Engineer":               {"skills_required": ["matlab", "simulink", "hil"],                "degree_level": "BS", "years_min": 4},
+        "Powertrain Controls Engineer":          {"skills_required": ["matlab", "simulink", "controls"],           "degree_level": "MS", "years_min": 5},
+        "Vehicle Dynamics Engineer":             {"skills_required": ["carmaker", "matlab", "vehicle dynamics"],   "degree_level": "BS", "years_min": 5},
+        "Battery Thermal Engineer":              {"skills_required": ["ansys", "1d simulation", "thermal"],        "degree_level": "BS", "years_min": 4},
+        "Mechanical Design Engineer":            {"skills_required": ["solidworks", "gd&t", "mechanical design"],  "degree_level": "BS", "years_min": 1},
+        "Vehicle Test Engineer":                 {"skills_required": ["daq", "test plans", "proving ground"],      "degree_level": "BS", "years_min": 2},
+        "Autonomy Systems Engineer":             {"skills_required": ["python", "ros", "autonomy"],                "degree_level": "MS", "years_min": 5},
+        "Applications Engineer - Simulation Tools": {"skills_required": ["matlab", "simulink", "customer support"], "degree_level": "BS", "years_min": 3},
+        "Model-Based Systems Engineer":          {"skills_required": ["sysml", "mbse", "requirements"],            "degree_level": "MS", "years_min": 4},
+        "Manufacturing Process Engineer":        {"skills_required": ["pfmea", "kaizen", "manufacturing"],         "degree_level": "BS", "years_min": 2},
+        "Fab Equipment Engineer":                {"skills_required": ["equipment", "yield", "mtbf"],               "degree_level": "BS", "years_min": 3},
+        "SIL Software Engineer":                 {"skills_required": ["python", "sil", "adas"],                    "degree_level": "BS", "years_min": 3},
+        "EV Systems Engineer":                   {"skills_required": ["ev systems", "hv distribution", "thermal"], "degree_level": "BS", "years_min": 3},
+    }
+
     for idx, j in enumerate(seed_data.SAMPLE_JOBS, start=1):
         canonical_key = f"sampleco.demo::sample-{idx:02d}"
+        req = dict(REQ_BY_TITLE.get(j["title"], {}))
+        req.setdefault("skills_required", [])
+        req.setdefault("licenses", [])
         await db.jobs.update_one(
             {"canonical_key": canonical_key},
             {
                 "$set": {
                     "company_id": company_id,
                     "company_name": "SampleCo (demo)",
+                    "company_domain": "sampleco.demo",
                     "source": "seed",
                     "origin_url": f"https://sampleco.demo/careers/sample-{idx:02d}",
                     "title": j["title"],
@@ -60,6 +85,7 @@ async def _upsert_sample_jobs() -> int:
                     "jd_text": j["jd"],
                     "apply_method": j["apply_method"],
                     "eligibility_requirements": j.get("eligibility", {}),
+                    "requirements": req,
                     "first_seen": utc_now(),
                     "last_verified": utc_now(),
                     "status": "live",

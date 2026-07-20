@@ -46,3 +46,19 @@ async def ensure_indexes() -> None:
     await db.idempotency_records.create_index("key", unique=True)
     # 7-day TTL on idempotency records
     await db.idempotency_records.create_index("created_at", expireAfterSeconds=60 * 60 * 24 * 7)
+    # Phase 3 collections
+    await db.applications.create_index([("user_id", ASCENDING), ("job_id", ASCENDING)])
+    # Partial unique: no more than one non-closed application per (user, job)
+    await db.applications.create_index(
+        [("user_id", ASCENDING), ("job_id", ASCENDING)],
+        unique=True,
+        partialFilterExpression={"state": {"$ne": "closed"}},
+        name="uniq_open_app_per_user_job",
+    )
+    await db.applications.create_index([("user_id", ASCENDING), ("state", ASCENDING)])
+    await db.match_scores.create_index([("user_id", ASCENDING), ("job_id", ASCENDING)], unique=True)
+    await db.match_scores.create_index([("user_id", ASCENDING), ("score", DESCENDING)])
+    await db.hidden_jobs.create_index([("user_id", ASCENDING), ("job_id", ASCENDING)], unique=True)
+    await db.usage_meters.create_index([("user_id", ASCENDING), ("period", ASCENDING)], unique=True)
+    await db.score_feedback.create_index([("user_id", ASCENDING), ("match_score_id", ASCENDING)])
+    await db.jobs.create_index("last_verified")

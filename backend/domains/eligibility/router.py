@@ -2,7 +2,7 @@ import uuid
 from fastapi import APIRouter, Depends
 from core.deps import require_consent, get_current_user
 from core.time_utils import utc_now
-from services.gate_engine import derive_flags, evaluate
+from services.gate_engine import derive_flags, evaluate, build_context
 from domains.eligibility.models import EligibilityPayload
 from domains.eligibility import repository as repo
 from domains.audit import service as audit
@@ -69,7 +69,8 @@ async def coverage_preview(user: dict = Depends(require_consent("discover_jobs")
     production cohorts (they're clearly badged is_sample:true in the response).
     """
     latest = await repo.latest_for_user(user["id"])
-    profile = {"status": latest.get("status") if latest else "unspecified"}
+    ctx = await build_context(user["id"])
+    profile_status = (latest or {}).get("status") or "unspecified"
 
     jobs = await repo.live_jobs()
     total = len(jobs)
@@ -81,7 +82,7 @@ async def coverage_preview(user: dict = Depends(require_consent("discover_jobs")
 
     per_job: list[dict] = []
     for j in jobs:
-        result = evaluate(profile, j)
+        result = evaluate(ctx, j)
         entry = {
             "job_id": j["id"],
             "canonical_key": j.get("canonical_key"),
@@ -106,8 +107,8 @@ async def coverage_preview(user: dict = Depends(require_consent("discover_jobs")
 
     return {
         "profile": {
-            "status": profile["status"],
-            "derived_flags": derive_flags(profile["status"]),
+            "status": profile_status,
+            "derived_flags": derive_flags(profile_status),
         },
         "totals": {
             "live_jobs": total,
