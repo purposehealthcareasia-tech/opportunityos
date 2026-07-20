@@ -92,5 +92,26 @@ A gate FAIL caps score at 25.
 - Topbar `UsageMeterChip` shows current month `jobs_processed` count.
 
 ## Testing
-- `pytest tests/` — 13 tests green (gate enumeration, weights, scoring caps, unique-index proofs, partial-open-application).
-- Golden set: `python3 -m tests.golden_resumes.golden_run` — 10 labeled synthetic résumés; target ≥95% field accuracy; report at `tests/golden_resumes/last_report.json`.
+- `pytest tests/` — 66 tests green after `sudo supervisorctl restart backend`.
+  On a persistent backend, run pytest right after a restart or the fixture user's
+  in-run mutations will cause ordering-sensitive tests in `test_fixture_acceptance_b.py`
+  to fail (fixture rebases on restart only).
+- Golden set: `python3 -m tests.golden_resumes.golden_run` — 10 labeled synthetic
+  résumés; target ≥95% field accuracy; last report at
+  `tests/golden_resumes/last_report.json`. Current: 98.95%.
+
+## Deterministic test fixture
+- Fixture user `fixture-ead@opportunityos.dev` / `Fixture!Test1` is RE-BASELINED on
+  every backend startup — applications/hidden_jobs/match_scores/usage_meters/documents/
+  resume_versions/score_feedback/claims/consent_records are wiped, then re-seeded to
+  the acceptance-check-B state (passport activated, all consents granted,
+  eligibility=ead_opt sealed, prefs Phoenix+Remote+$90k floor, claims incl. MS +
+  employment 2020-08→present + skills MATLAB/Simulink/SolidWorks).
+- Against the reshaped 15 SampleCo seeds this fixture yields exactly:
+  `feed.totals = {passing: 9, excluded: 6}`, fail_reasons
+  `{no_sponsorship_offered: 4, requires_us_person: 2}`. Coverage-preview identical.
+- **User Zero (`ujjwal@`) is a real seeded candidate and is NOT re-baselined.**
+  A one-time marker (`seed_migrations.key=user_zero_cleanup_v3`) applied a single
+  cleanup to remove tester pollution accumulated in earlier iterations. Claims +
+  consent_records + audit_logs are preserved (append-only rule).
+- **All future automated tests use the fixture user.**
