@@ -16,6 +16,11 @@ from domains.documents.router import router as documents_router
 from domains.claims.router import router as claims_router
 from domains.preferences.router import router as preferences_router
 from domains.eligibility.router import router as eligibility_router
+from domains.jobs.router import router as jobs_router
+from domains.jobs.internal_router import router as jobs_internal_router
+from domains.applications.router import router as applications_router
+from domains.match_scores.router import router as matches_router
+from domains.usage_meters.router import router as usage_router
 from domains.seeds.seeder import run_seeds
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -72,7 +77,7 @@ async def health():
     return {
         "ok": True,
         "mongo": mongo_ok,
-        "phase": 1,
+        "phase": 3,
         "policy_text_version": policy_version(),
     }
 
@@ -95,3 +100,8 @@ app.include_router(documents_router)
 app.include_router(claims_router)
 app.include_router(preferences_router)
 app.include_router(eligibility_router)
+app.include_router(jobs_router)
+app.include_router(jobs_internal_router)
+app.include_router(applications_router)
+app.include_router(matches_router)
+app.include_router(usage_router)

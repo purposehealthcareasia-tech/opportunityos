@@ -6,6 +6,9 @@ Model policy (Phase 2 pin):
 
 The SYSTEM prompt is deliberately anti-fabrication. If the model can't ground a fact in the text,
 it MUST omit that claim rather than hallucinate.
+
+Founder Directive #8 (Phase 3): per-task model-cost logging. Every call appends to `llm_costs`:
+  { user_id, task, model, tokens_in, tokens_out, cost_usd_est, ts, session_id }
 """
 import json
 import logging
@@ -14,12 +17,58 @@ import uuid
 from typing import Any
 from emergentintegrations.llm.chat import LlmChat, UserMessage
 from core.config import settings
+from core.db import get_db
+from core.time_utils import utc_now
 
 log = logging.getLogger("oppos.llm")
 
 PRIMARY_MODEL = "gpt-5"
 FALLBACK_MODEL = "gpt-4o"
 PROVIDER = "openai"
+
+# Public price cards (USD per 1K tokens) — used ONLY as estimates for cost ledger.
+# We record the estimate honestly; when the provider surfaces the true billed amount
+# the ledger can be reconciled offline. If a model isn't in the table we store 0 and a
+# note. NEVER guess; only estimate against published rack rate.
+_PRICE_TABLE_PER_1K = {
+    # OpenAI (approx, published Feb 2026)
+    "gpt-5":    {"in": 0.00500, "out": 0.01500, "source": "openai:public_2026-02"},
+    "gpt-4o":   {"in": 0.00250, "out": 0.01000, "source": "openai:public_2026-02"},
+}
+
+
+def _rough_tokens(text: str) -> int:
+    """Rough tokenizer proxy: ~4 chars/token English. Good enough for cost estimation."""
+    if not text:
+        return 0
+    return max(1, int(len(text) / 4))
+
+
+async def _write_cost_row(
+    *, user_id: str | None, task: str, model: str, tokens_in: int, tokens_out: int,
+    session_id: str, extra: dict[str, Any] | None = None,
+) -> None:
+    card = _PRICE_TABLE_PER_1K.get(model, {"in": 0.0, "out": 0.0, "source": "unknown_model"})
+    cost = (tokens_in / 1000.0) * card["in"] + (tokens_out / 1000.0) * card["out"]
+    row = {
+        "id": str(uuid.uuid4()),
+        "user_id": user_id,
+        "task": task,
+        "model": model,
+        "provider": PROVIDER,
+        "tokens_in_est": int(tokens_in),
+        "tokens_out_est": int(tokens_out),
+        "cost_usd_est": round(cost, 6),
+        "price_source": card.get("source"),
+        "session_id": session_id,
+        "ts": utc_now(),
+        "extra": extra or {},
+    }
+    try:
+        await get_db().llm_costs.insert_one(row)
+    except Exception:
+        log.exception("Failed to persist llm_costs row")
+
 
 ALLOWED_TYPES = {
     "identity", "contact", "location", "work_auth", "visa_timeline",
@@ -116,12 +165,17 @@ async def _call_model(model: str, text: str, session_id: str) -> tuple[str, str]
         session_id=session_id,
         system_message=SYSTEM_PROMPT,
     ).with_model(PROVIDER, model)
-    raw = await chat.send_message(UserMessage(text=f"RESUME TEXT (verbatim):\n---\n{text}\n---"))
-    return model, raw
+    prompt_body = f"RESUME TEXT (verbatim):\n---\n{text}\n---"
+    raw = await chat.send_message(UserMessage(text=prompt_body))
+    return model, raw, _rough_tokens(SYSTEM_PROMPT + prompt_body), _rough_tokens(raw or "")
 
 
-async def parse_resume_text(text: str, document_id: str) -> dict[str, Any]:
-    """Return {model_used, raw_len, claims}. Tries PRIMARY then FALLBACK on JSON failure."""
+async def parse_resume_text(text: str, document_id: str, user_id: str | None = None) -> dict[str, Any]:
+    """Return {model_used, raw_len, claims}. Tries PRIMARY then FALLBACK on JSON failure.
+
+    Founder Directive #8: appends per-attempt cost rows to `llm_costs` (even for the failed
+    primary attempt when we fall back — cost is real).
+    """
     text = (text or "").strip()
     if not text:
         return {"model_used": None, "claims": [], "raw_len": 0, "note": "empty_text"}
@@ -130,13 +184,32 @@ async def parse_resume_text(text: str, document_id: str) -> dict[str, Any]:
     last_error: Exception | None = None
     for candidate in (PRIMARY_MODEL, FALLBACK_MODEL):
         try:
-            model_used, raw = await _call_model(candidate, text, session)
+            model_used, raw, tokens_in, tokens_out = await _call_model(candidate, text, session)
+            await _write_cost_row(
+                user_id=user_id,
+                task="resume_parse",
+                model=model_used,
+                tokens_in=tokens_in,
+                tokens_out=tokens_out,
+                session_id=session,
+                extra={"document_id": document_id, "outcome": "success"},
+            )
             payload = _extract_json(raw)
             claims = _normalize_claims(payload)
             log.info("parse_resume_text OK model=%s claims=%d raw_len=%d", model_used, len(claims), len(raw))
             return {"model_used": model_used, "claims": claims, "raw_len": len(raw)}
         except Exception as e:
             last_error = e
+            # Best-effort cost row for the failed attempt so the ledger is complete.
+            await _write_cost_row(
+                user_id=user_id,
+                task="resume_parse",
+                model=candidate,
+                tokens_in=_rough_tokens(SYSTEM_PROMPT + text),
+                tokens_out=0,
+                session_id=session,
+                extra={"document_id": document_id, "outcome": "failed", "error": str(e)[:200]},
+            )
             log.warning("parse attempt failed model=%s err=%s", candidate, e)
             continue
     raise RuntimeError(f"parse_failed: {last_error}")

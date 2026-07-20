@@ -8,11 +8,14 @@ import Admin from './pages/Admin';
 import Passport from './pages/Passport';
 import Preferences from './pages/Preferences';
 import Eligibility from './pages/Eligibility';
+import Feed from './pages/Feed';
+import JobDetail from './pages/JobDetail';
+import Applications from './pages/Applications';
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
 import RoleRoute from './components/RoleRoute';
 import {
-  Feed, Applications, Tracker, Analytics, Billing, Privacy,
+  Tracker, Analytics, Billing, Privacy,
 } from './pages/placeholders';
 
 export default function App() {
@@ -27,6 +30,7 @@ export default function App() {
         <Route path="/preferences" element={<Preferences />} />
         <Route path="/eligibility" element={<Eligibility />} />
         <Route path="/feed" element={<Feed />} />
+        <Route path="/jobs/:jobId" element={<JobDetail />} />
         <Route path="/applications" element={<Applications />} />
         <Route path="/tracker" element={<Tracker />} />
         <Route path="/analytics" element={<Analytics />} />

@@ -130,6 +130,7 @@ async def user_import(user_id: str, url: str, title: str | None, company_name: s
     }
     await repo.insert(doc)
     await audit.write(user_id, "job.import", f"job:{doc['id']}", {"url": url, "host": host})
+    doc.pop("_id", None)
     return doc
 
 

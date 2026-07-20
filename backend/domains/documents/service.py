@@ -91,7 +91,7 @@ async def _parse_pipeline(document_id: str, user_id: str, s3_key: str, content_t
             await doc_repo.update_parse_status(document_id, status="failed", error="extracted_text_too_short")
             return
         await doc_repo.update_parse_status(document_id, status="parsing")
-        result = await parse_resume_text(text, document_id)
+        result = await parse_resume_text(text, document_id, user_id=user_id)
         model_used = result.get("model_used")
         raw_claims = result.get("claims", [])
         # Persist as DRAFT claims (user_approved=False, status="pending", verification level 0)

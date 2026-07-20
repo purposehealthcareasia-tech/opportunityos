@@ -1,0 +1,578 @@
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import {
+  Rss, ExternalLink, ShieldCheck, ShieldOff, AlertTriangle, Clock, MapPin, Building2,
+  Send, X, Info, ArrowRight, Ban, EyeOff, LinkIcon, TestTube2, HelpCircle,
+} from 'lucide-react';
+import { api, withIdempotency } from '../lib/api';
+import Card, { CardHeader } from '../components/ui/Card';
+import Button from '../components/ui/Button';
+import Input from '../components/ui/Input';
+import { LoadingBlock, ErrorBlock, EmptyBlock, ScopeRequiredPrompt } from '../lib/scope';
+
+const REASON_LABELS = {
+  requires_us_person: 'US-person required (ITAR)',
+  no_sponsorship_offered: 'No sponsorship offered',
+  work_auth_mismatch: 'Work-auth mismatch',
+  work_auth_unspecified: 'Work-auth unspecified',
+  below_salary_floor: 'Below your salary floor',
+  location_mismatch: 'Location mismatch',
+  employer_excluded: 'On your exclude list',
+  experience_below_band: 'Below years-of-experience band',
+  education_below_requirement: 'Below education requirement',
+  stem_opt_expires_soon: 'STEM OPT expires too soon',
+  duplicate_application: 'You already applied',
+  job_not_live: 'Not currently live',
+  job_stale: 'Not verified recently',
+  // unknowns
+  experience_missing: 'Experience dates missing',
+  clearance_unknown: 'Clearance unknown',
+  licensure_gap: 'License gap',
+  sponsorship_unknown: 'Sponsorship unstated',
+  education_unknown: 'Education claim missing',
+  location_unknown: 'Location unstated',
+  no_comp_posted: 'No comp posted',
+  stem_opt_end_missing: 'STEM OPT end missing',
+  stem_opt_end_unparseable: 'STEM OPT end unparseable',
+};
+
+function reasonLabel(code) {
+  return REASON_LABELS[code] || code;
+}
+
+function SampleBadge() {
+  return (
+    <span
+      className="pill pill-neutral !bg-amber-500/10 !border-amber-500/30 !text-amber-700 dark:!text-amber-400 font-medium"
+      title="Sample fixture. Excluded from every user-facing metric and cohort."
+      data-testid="sample-badge"
+    >
+      <TestTube2 className="h-3 w-3" /> SAMPLE
+    </span>
+  );
+}
+
+function RouteChip({ route }) {
+  const map = {
+    guided_manual: { label: 'Guided manual', tone: 'accent' },
+    email_application: { label: 'Email application', tone: 'accent' },
+    manual_queue: { label: 'Manual queue', tone: 'neutral' },
+  };
+  const cfg = map[route] || { label: route, tone: 'neutral' };
+  return <span className={`pill ${cfg.tone === 'accent' ? 'pill-accent' : 'pill-neutral'}`}>{cfg.label}</span>;
+}
+
+function ReasonChip({ code, tone = 'red' }) {
+  const cls = tone === 'red'
+    ? 'pill border-red-500/40 text-red-600 dark:text-red-400'
+    : 'pill pill-neutral';
+  const Icon = tone === 'red' ? AlertTriangle : HelpCircle;
+  return <span className={cls}><Icon className="h-3 w-3" /> {reasonLabel(code)}</span>;
+}
+
+function ScoreBadge({ score, confidence }) {
+  if (score == null) return null;
+  const pct = Math.max(0, Math.min(100, Math.round(score)));
+  const conf = Math.round((confidence || 0) * 100);
+  const tone = pct >= 70 ? 'bg-accent/15 text-accent border-accent/40'
+    : pct >= 45 ? 'bg-neutral-100 dark:bg-neutral-800 border-line dark:border-line-dark text-ink dark:text-ink-dark'
+    : 'bg-neutral-50 dark:bg-neutral-800/50 border-line dark:border-line-dark muted';
+  return (
+    <div
+      className={`inline-flex items-baseline gap-1 rounded-md border px-2 py-1 text-sm font-semibold ${tone}`}
+      data-testid="score-badge"
+      title={`Match score ${pct} · confidence ${conf}%`}
+    >
+      <span className="text-lg leading-none">{pct}</span>
+      <span className="text-[10px] muted">/100</span>
+      <span className="text-[10px] ml-1 muted">c{conf}</span>
+    </div>
+  );
+}
+
+function FreshnessChip({ ts }) {
+  if (!ts) return <span className="pill pill-neutral"><Clock className="h-3 w-3" /> unverified</span>;
+  const d = new Date(ts);
+  const days = Math.floor((Date.now() - d.getTime()) / 86400000);
+  const label = days <= 0 ? 'today' : days === 1 ? '1 day ago' : `${days} days ago`;
+  const tone = days <= 3 ? 'pill pill-accent' : days > 10 ? 'pill border-red-500/40 text-red-600 dark:text-red-400' : 'pill pill-neutral';
+  return <span className={tone}><Clock className="h-3 w-3" /> verified {label}</span>;
+}
+
+function StatusChip({ status }) {
+  const map = {
+    live: { label: 'Live', cls: 'pill pill-accent' },
+    stale: { label: 'Stale', cls: 'pill border-amber-500/40 text-amber-700 dark:text-amber-400' },
+    expired: { label: 'Expired', cls: 'pill border-red-500/40 text-red-600 dark:text-red-400' },
+    derived: { label: 'Needs origin', cls: 'pill pill-neutral' },
+  };
+  const cfg = map[status] || { label: status, cls: 'pill pill-neutral' };
+  return <span className={cfg.cls}>{cfg.label}</span>;
+}
+
+function LinkImportBox({ onImported }) {
+  const [url, setUrl] = useState('');
+  const [title, setTitle] = useState('');
+  const [company, setCompany] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const [help, setHelp] = useState(false);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!url.trim()) return;
+    setBusy(true); setError(null);
+    try {
+      const { data } = await api.post('/api/v1/jobs/import',
+        { url: url.trim(), title: title.trim() || null, company_name: company.trim() || null },
+        withIdempotency(),
+      );
+      setUrl(''); setTitle(''); setCompany('');
+      onImported?.(data);
+    } catch (e2) {
+      const detail = e2?.response?.data?.detail;
+      if (detail?.error === 'route_unavailable_platform_policy') {
+        setError({
+          kind: 'platform_policy',
+          host: detail.host,
+          message: detail.message,
+        });
+      } else if (detail?.error === 'invalid_url') {
+        setError({ kind: 'invalid_url' });
+      } else if (detail?.error === 'consent_required') {
+        setError({ kind: 'consent' });
+      } else {
+        setError({ kind: 'unknown' });
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader
+        title="Paste a job you found elsewhere"
+        subtitle="We import the URL, keep the employer's original posting as the source of truth, and never scrape aggregator sites."
+        action={
+          <button type="button" onClick={() => setHelp((h) => !h)} className="text-xs muted underline" data-testid="link-import-help-toggle">
+            {help ? 'Hide help' : 'How this works'}
+          </button>
+        }
+      />
+      {help && (
+        <div className="mb-4 rounded-md border border-line dark:border-line-dark p-3 text-xs muted leading-relaxed">
+          <p className="mb-2 font-medium text-ink dark:text-ink-dark">Finding the employer's original posting</p>
+          <ol className="list-decimal list-inside space-y-1">
+            <li>Search the role title + company on Google. The employer's own careers site usually ranks in the top 3.</li>
+            <li>Prefer URLs on the employer domain (e.g. <code>tesla.com/careers</code>) or their ATS (<code>boards.greenhouse.io</code>, <code>myworkdayjobs.com</code>, <code>lever.co</code>).</li>
+            <li>Avoid LinkedIn / Indeed / Handshake — we never operate on aggregator sites.</li>
+          </ol>
+        </div>
+      )}
+      <form onSubmit={submit} className="space-y-3">
+        <Input
+          label="Employer posting URL"
+          type="url"
+          placeholder="https://boards.greenhouse.io/<employer>/jobs/…"
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          data-testid="link-import-url"
+        />
+        <div className="grid md:grid-cols-2 gap-3">
+          <Input label="Title (optional)" value={title} onChange={(e) => setTitle(e.target.value)} data-testid="link-import-title" />
+          <Input label="Company (optional)" value={company} onChange={(e) => setCompany(e.target.value)} data-testid="link-import-company" />
+        </div>
+        {error?.kind === 'platform_policy' && (
+          <div className="rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-sm" data-testid="link-import-blocked">
+            <div className="flex items-start gap-2">
+              <Ban className="h-4 w-4 text-amber-600 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="font-medium">We don't operate on <code>{error.host}</code>.</p>
+                <p className="muted mt-0.5">{error.message}</p>
+                <p className="muted mt-2">Try the employer's own careers site or their ATS URL (Greenhouse, Workday, Lever, etc.).</p>
+              </div>
+            </div>
+          </div>
+        )}
+        {error?.kind === 'invalid_url' && <ErrorBlock message="That doesn't look like a URL we can parse." />}
+        {error?.kind === 'consent' && <ErrorBlock message="Grant discover_jobs consent to import links." />}
+        {error?.kind === 'unknown' && <ErrorBlock message="Import failed. Please try again." />}
+        <div className="flex items-center justify-end">
+          <Button type="submit" variant="accent" loading={busy} disabled={!url.trim()} data-testid="link-import-submit">
+            <LinkIcon className="h-4 w-4" /> Import posting
+          </Button>
+        </div>
+      </form>
+    </Card>
+  );
+}
+
+function JobCard({ job, onShortlist, onHide, onExplain, busy }) {
+  return (
+    <div className="card p-5 space-y-3" data-testid={`job-card-${job.id}`}>
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <Link to={`/jobs/${job.id}`} className="text-base font-semibold text-ink dark:text-ink-dark hover:underline" data-testid={`job-title-link-${job.id}`}>
+              {job.title}
+            </Link>
+            {job.is_sample && <SampleBadge />}
+            <StatusChip status={job.status} />
+          </div>
+          <div className="text-sm muted mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="inline-flex items-center gap-1"><Building2 className="h-3 w-3" />{job.company_name}</span>
+            {job.geo && <span className="inline-flex items-center gap-1"><MapPin className="h-3 w-3" />{job.geo}</span>}
+            {job.comp && <span>· {job.comp}</span>}
+          </div>
+        </div>
+        <ScoreBadge score={job.score} confidence={job.confidence} />
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <RouteChip route={job.route?.route} />
+        <FreshnessChip ts={job.last_verified} />
+        {job.taxonomy_family && <span className="pill pill-neutral">{job.taxonomy_family}</span>}
+        {(job.top_reasons || []).slice(0, 3).map((r) => (
+          <span key={r.factor} className={`pill ${r.direction === 'positive' ? 'pill-accent' : 'pill-neutral'}`}>
+            {r.direction === 'positive' ? '+' : '·'} {r.factor.replaceAll('_', ' ')}
+          </span>
+        ))}
+      </div>
+
+      <div className="flex items-center justify-between pt-1">
+        <button type="button" onClick={() => onExplain(job)} className="text-xs muted underline" data-testid={`job-explain-btn-${job.id}`}>
+          Why this score?
+        </button>
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="ghost" onClick={() => onHide(job)} disabled={busy}>
+            <EyeOff className="h-3 w-3" /> Hide
+          </Button>
+          <Button size="sm" variant="accent" onClick={() => onShortlist(job)} loading={busy} data-testid={`job-shortlist-btn-${job.id}`}>
+            <Send className="h-3 w-3" /> Shortlist
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ExcludedCard({ job }) {
+  return (
+    <div className="rounded-card border border-line dark:border-line-dark p-4 bg-white/60 dark:bg-neutral-900/60" data-testid={`excluded-card-${job.id}`}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <Link to={`/jobs/${job.id}`} className="text-sm font-medium text-ink dark:text-ink-dark hover:underline">
+              {job.title}
+            </Link>
+            {job.is_sample && <SampleBadge />}
+          </div>
+          <div className="text-xs muted mt-0.5">{job.company_name}</div>
+        </div>
+      </div>
+      <div className="flex flex-wrap gap-1 mt-2">
+        {(job.fail_reasons || []).map((r) => <ReasonChip key={r} code={r} tone="red" />)}
+        {(job.unknown_reasons || []).map((r) => <ReasonChip key={r} code={r} tone="neutral" />)}
+      </div>
+    </div>
+  );
+}
+
+function MatchExplainModal({ jobId, onClose }) {
+  const [data, setData] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [fbSent, setFbSent] = useState(null);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const [{ data: score }, { data: job }] = await Promise.all([
+          api.get(`/api/v1/matches/for-job/${jobId}`),
+          api.get(`/api/v1/jobs/${jobId}`),
+        ]);
+        if (alive) setData({ score, job });
+      } catch {
+        if (alive) setError('Could not load explanation.');
+      }
+    })();
+    return () => { alive = false; };
+  }, [jobId]);
+
+  const sendFeedback = async (helpful) => {
+    setBusy(true);
+    try {
+      await api.post(`/api/v1/matches/for-job/${jobId}/feedback`, { helpful }, withIdempotency());
+      setFbSent(helpful);
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 backdrop-blur-sm p-4 animate-fadeIn" onClick={onClose}>
+      <div className="card max-w-2xl w-full p-6 max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()} data-testid="match-explain-modal">
+        <div className="flex items-start justify-between gap-4 mb-4">
+          <div>
+            <h3 className="text-base font-semibold">Why this score</h3>
+            <p className="text-xs muted mt-0.5">
+              Score is a weighted composite. UNKNOWN factors are renormalized out honestly — they never inflate confidence.
+            </p>
+          </div>
+          <button type="button" onClick={onClose} className="btn btn-ghost !p-1.5" aria-label="Close" data-testid="match-explain-close"><X className="h-4 w-4" /></button>
+        </div>
+        {!data && !error && <LoadingBlock />}
+        {error && <ErrorBlock message={error} onRetry={onClose} />}
+        {data && (
+          <>
+            <div className="flex items-center gap-4 pb-4 border-b border-line dark:border-line-dark">
+              <ScoreBadge score={data.score.score} confidence={data.score.confidence} />
+              <div className="text-xs muted">weights_version <span className="font-mono">{data.score.weights_version}</span> · used weight {Math.round((data.score.confidence || 0) * 100)}%</div>
+            </div>
+            <div className="mt-4 space-y-3">
+              {(data.score.reason_codes || []).map((r) => (
+                <FactorRow key={r.factor} r={r} />
+              ))}
+            </div>
+            <div className="mt-6 pt-4 border-t border-line dark:border-line-dark">
+              <p className="text-xs muted mb-2">Was this explanation useful?</p>
+              <div className="flex items-center gap-2">
+                <Button size="sm" variant={fbSent === true ? 'accent' : 'secondary'} onClick={() => sendFeedback(true)} loading={busy && fbSent !== false} data-testid="match-feedback-helpful">Yes</Button>
+                <Button size="sm" variant={fbSent === false ? 'accent' : 'secondary'} onClick={() => sendFeedback(false)} loading={busy && fbSent !== true} data-testid="match-feedback-unhelpful">Not really</Button>
+                {fbSent !== null && <span className="text-xs muted ml-2">Thanks — recorded.</span>}
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function FactorRow({ r }) {
+  const pct = r.value == null ? null : Math.max(0, Math.min(1, r.value)) * 100;
+  const isUnknown = r.direction === 'unknown' || r.value == null || r.weight_applied === 0;
+  const barCls = isUnknown ? 'bg-neutral-300 dark:bg-neutral-700'
+    : r.direction === 'positive' ? 'bg-accent' : 'bg-red-500/70';
+  return (
+    <div>
+      <div className="flex items-center justify-between text-sm">
+        <span className="font-medium">{r.factor.replaceAll('_', ' ')}</span>
+        <span className="text-xs muted">
+          {isUnknown ? 'UNKNOWN' : `${Math.round(pct)}%`}
+          {r.weight_applied ? ` · weight ${r.weight_applied}` : ' · weight renormalized out'}
+        </span>
+      </div>
+      <div className="mt-1 h-1.5 rounded-full bg-neutral-100 dark:bg-neutral-800 overflow-hidden">
+        <div className={`h-full ${barCls}`} style={{ width: isUnknown ? '18%' : `${pct}%`, opacity: isUnknown ? 0.6 : 1 }} />
+      </div>
+      <p className="text-xs muted mt-1">{r.detail}</p>
+    </div>
+  );
+}
+
+export default function FeedPage() {
+  const [state, setState] = useState({ loading: true, error: null, data: null, needsScope: false, passportBlocked: false });
+  const [busy, setBusy] = useState(null);
+  const [explainJobId, setExplainJobId] = useState(null);
+  const [imports, setImports] = useState([]);
+  const [flash, setFlash] = useState(null);
+  const nav = useNavigate();
+
+  const load = useCallback(async () => {
+    setState((s) => ({ ...s, loading: true, error: null, needsScope: false, passportBlocked: false }));
+    try {
+      const { data } = await api.get('/api/v1/jobs/feed');
+      setState({ loading: false, error: null, data, needsScope: false, passportBlocked: false });
+    } catch (e) {
+      const detail = e?.response?.data?.detail;
+      if (detail?.error === 'consent_required') {
+        setState({ loading: false, error: null, data: null, needsScope: true, passportBlocked: false });
+      } else if (detail?.error === 'passport_not_activated') {
+        setState({ loading: false, error: null, data: null, needsScope: false, passportBlocked: true });
+      } else {
+        setState({ loading: false, error: 'Could not load your feed.', data: null, needsScope: false, passportBlocked: false });
+      }
+    }
+  }, []);
+
+  const loadImports = useCallback(async () => {
+    try {
+      const { data } = await api.get('/api/v1/jobs/imports/me');
+      setImports(data.imports || []);
+    } catch { /* ignore, likely consent gate */ }
+  }, []);
+
+  useEffect(() => { load(); loadImports(); }, [load, loadImports]);
+
+  const passing = useMemo(() => state.data?.passing || [], [state.data]);
+  const excluded = useMemo(() => state.data?.excluded || [], [state.data]);
+  const totals = state.data?.totals || {};
+
+  // SAMPLE-safe metric: exclude sample rows from user-facing count of "opportunities passing"
+  const passingReal = useMemo(() => passing.filter((j) => !j.is_sample), [passing]);
+  const passingSample = passing.length - passingReal.length;
+
+  const shortlist = async (job) => {
+    setBusy(job.id);
+    try {
+      await api.post(`/api/v1/jobs/${job.id}/shortlist`, {}, withIdempotency());
+      setFlash({ kind: 'ok', msg: `Shortlisted "${job.title}". Track it in Applications.` });
+      await load();
+    } catch (e) {
+      const d = e?.response?.data?.detail;
+      if (d?.error === 'already_shortlisted') setFlash({ kind: 'warn', msg: 'You already have an open application for this job.' });
+      else setFlash({ kind: 'err', msg: 'Could not shortlist.' });
+    } finally { setBusy(null); }
+  };
+
+  const hide = async (job) => {
+    const reason = window.prompt('Why hide this job? (e.g., not_interested, location, comp)') || 'not_interested';
+    setBusy(job.id);
+    try {
+      await api.post(`/api/v1/jobs/${job.id}/hide`, { reason }, withIdempotency());
+      await load();
+    } finally { setBusy(null); }
+  };
+
+  if (state.needsScope) {
+    return (
+      <div className="max-w-4xl mx-auto space-y-6">
+        <h1 className="text-2xl font-semibold flex items-center gap-2"><Rss className="h-5 w-5" /> Opportunity feed</h1>
+        <ScopeRequiredPrompt scope="discover_jobs" description="The feed shows live jobs your Passport passes eligibility for, scored honestly. It only runs after you grant discover_jobs." onGranted={load} />
+      </div>
+    );
+  }
+
+  if (state.passportBlocked) {
+    return (
+      <div className="max-w-4xl mx-auto space-y-6">
+        <h1 className="text-2xl font-semibold flex items-center gap-2"><Rss className="h-5 w-5" /> Opportunity feed</h1>
+        <div className="card p-6" data-testid="passport-not-activated">
+          <div className="flex items-start gap-3">
+            <ShieldOff className="h-5 w-5 text-accent" />
+            <div>
+              <p className="text-sm font-semibold">Activate your Passport first</p>
+              <p className="text-sm muted mt-1 max-w-lg leading-relaxed">
+                The feed only turns on when your Passport is activated — we don't want you browsing jobs
+                against unverified claims. Head to Passport, approve at least one identity claim plus one
+                education or employment claim, then hit Activate.
+              </p>
+              <Button variant="accent" className="mt-3" onClick={() => nav('/passport')} data-testid="go-passport-btn">Go to Passport <ArrowRight className="h-4 w-4" /></Button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-w-6xl mx-auto space-y-6 animate-fadeIn" data-testid="feed-page">
+      <div className="flex items-baseline justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold flex items-center gap-2"><Rss className="h-5 w-5" /> Opportunity feed</h1>
+          <p className="muted text-sm mt-1 max-w-2xl">Live jobs your Passport passes eligibility for. Excluded jobs are shown too — with reasons — because that intelligence is the product.</p>
+        </div>
+        <div className="text-xs muted">
+          weights_version <span className="font-mono">{state.data?.weights_version || '—'}</span>
+        </div>
+      </div>
+
+      {flash && (
+        <div className={`rounded-md px-3 py-2 text-sm border ${
+          flash.kind === 'ok' ? 'border-accent/40 bg-accent/5 text-accent'
+          : flash.kind === 'warn' ? 'border-amber-500/40 bg-amber-500/5 text-amber-700 dark:text-amber-400'
+          : 'border-red-500/40 bg-red-500/5 text-red-700 dark:text-red-400'
+        }`}>
+          {flash.msg}
+          <button type="button" onClick={() => setFlash(null)} className="ml-3 text-xs underline">dismiss</button>
+        </div>
+      )}
+
+      <div className="grid md:grid-cols-3 gap-3">
+        <div className="card p-4">
+          <div className="text-xs muted">Opportunities passing all gates</div>
+          <div className="text-2xl font-semibold mt-1" data-testid="feed-totals-passing-real">{passingReal.length}</div>
+          <div className="text-[11px] muted mt-1">Excludes {passingSample} SAMPLE row(s) from the count — they're shown, not measured.</div>
+        </div>
+        <div className="card p-4">
+          <div className="text-xs muted">Excluded (with reasons)</div>
+          <div className="text-2xl font-semibold mt-1" data-testid="feed-totals-excluded">{excluded.length}</div>
+          <div className="text-[11px] muted mt-1">Includes SAMPLE rows — badged, never counted in production cohorts.</div>
+        </div>
+        <div className="card p-4">
+          <div className="text-xs muted">Total live jobs seen</div>
+          <div className="text-2xl font-semibold mt-1">{(totals.passing || 0) + (totals.excluded || 0)}</div>
+          <div className="text-[11px] muted mt-1">Feed is fresh-only. Anything older than 14 days is auto-marked stale.</div>
+        </div>
+      </div>
+
+      {state.loading && <LoadingBlock label="Scoring your feed…" />}
+      {state.error && <ErrorBlock message={state.error} onRetry={load} />}
+
+      {!state.loading && !state.error && (
+        <>
+          <section>
+            <div className="flex items-baseline justify-between mb-3">
+              <h2 className="text-lg font-semibold">Passing your gates ({passing.length})</h2>
+              <span className="text-xs muted">Sorted by score</span>
+            </div>
+            {passing.length === 0 ? (
+              <EmptyBlock
+                title="Nothing passes all your gates yet"
+                hint="Check the excluded list below — it explains why. Adjust eligibility or preferences to widen the pool honestly."
+              />
+            ) : (
+              <div className="grid md:grid-cols-2 gap-3">
+                {passing.map((j) => (
+                  <JobCard
+                    key={j.id}
+                    job={j}
+                    busy={busy === j.id}
+                    onShortlist={shortlist}
+                    onHide={hide}
+                    onExplain={(job) => setExplainJobId(job.id)}
+                  />
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section>
+            <h2 className="text-lg font-semibold mb-3">Excluded — the intelligence layer ({excluded.length})</h2>
+            <div className="grid md:grid-cols-2 gap-2">
+              {excluded.map((j) => <ExcludedCard key={j.id} job={j} />)}
+            </div>
+          </section>
+        </>
+      )}
+
+      <section className="pt-4 border-t border-line dark:border-line-dark">
+        <h2 className="text-lg font-semibold mb-3 flex items-center gap-2"><LinkIcon className="h-4 w-4" /> Manual import</h2>
+        <p className="muted text-sm mb-3 max-w-2xl">Found something not in our feed? Paste the employer's original posting. We don't operate on LinkedIn, Indeed, or Handshake — please find the original URL.</p>
+        <LinkImportBox onImported={loadImports} />
+        {imports.length > 0 && (
+          <div className="mt-4">
+            <h3 className="text-sm font-semibold mb-2">Your imports ({imports.length})</h3>
+            <ul className="divide-y divide-line dark:divide-line-dark" data-testid="imports-list">
+              {imports.map((i) => (
+                <li key={i.id} className="py-2 flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <Link to={`/jobs/${i.id}`} className="text-sm text-ink dark:text-ink-dark hover:underline">{i.title}</Link>
+                    <div className="text-xs muted flex items-center gap-1 mt-0.5">
+                      <ExternalLink className="h-3 w-3" />
+                      <a href={i.origin_url} target="_blank" rel="noreferrer" className="hover:underline">{i.origin_url}</a>
+                    </div>
+                  </div>
+                  <StatusChip status={i.status} />
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </section>
+
+      {explainJobId && <MatchExplainModal jobId={explainJobId} onClose={() => setExplainJobId(null)} />}
+    </div>
+  );
+}

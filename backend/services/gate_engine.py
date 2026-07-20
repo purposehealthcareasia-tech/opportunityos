@@ -5,22 +5,26 @@ identical gate results for the same (user, job) pair. Do not fork this file.
 
 FEATURE ALLOWLIST: gates and scoring must not use zip code or age proxies. Ever.
 
-Gate order (short-circuit only on gate 1 vacancy_open); every other gate contributes to
-gates[] even if an earlier gate failed, so the UI can show a complete verdict.
+14-gate contract (Founder Directive #3):
 
   1. vacancy_open           — job.status == 'live' and not stale
-  2. duplicate_check        — no non-closed application for (user, job)
-  3. work_auth              — job.eligibility_requirements.accepted_statuses vs candidate status
-  4. sponsorship            — sponsor-needed candidate vs employer offers_sponsorship
-  5. stem_opt_viability     — where dates present, plausible start window
-  6. itar                   — requires_us_person vs candidate status
-  7. security_clearance     — job requires clearance vs candidate holds clearance
-  8. licensure              — job requires listed license vs candidate holds it
-  9. location_onsite        — job geo vs preferences (locations / remote_ok)
- 10. experience_band        — years_min vs candidate approved employment years
- 11. education_requirement  — degree_level vs candidate approved education level
- 12. salary_floor           — user prefs floor vs posted comp range
- 13. employer_exclusions    — company domain in user's exclude list
+  2. authorization_scope    — per-application submit authorization (INTERFACE ONLY in Phase 3; enforced at submit-time in Phase 5)
+  3. duplicate_check        — no non-closed application for (user, job)
+  4. work_auth              — job.eligibility_requirements.accepted_statuses vs candidate status
+  5. sponsorship            — sponsor-needed candidate vs employer offers_sponsorship
+  6. stem_opt_viability     — E-Verify/STEM-OPT window vs plausible start
+  7. itar                   — requires_us_person vs candidate status
+  8. security_clearance     — job requires clearance vs candidate holds clearance
+  9. licensure              — job requires listed license vs candidate holds it
+ 10. location_onsite        — job geo vs preferences (locations / remote_ok)
+ 11. experience_band        — years_min vs candidate approved employment years
+ 12. education_requirement  — degree_level vs candidate approved education level
+ 13. salary_floor           — user prefs floor vs posted comp range
+ 14. employer_exclusions    — company domain in user's exclude list
+
+Duplicate + authorization_scope are the two "submit-time" gates; duplicate is fully
+enforced today because we have an applications collection. authorization_scope is
+enumerated today but always "pass" — Phase 5 activates it.
 """
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -303,8 +307,27 @@ def _gate_employer_exclusions(ctx: dict, job: dict) -> GateResult:
     return GateResult("employer_exclusions", "pass")
 
 
+def _gate_authorization_scope(ctx: dict, job: dict) -> GateResult:
+    """Gate #14 — INTERFACE ONLY in Phase 3.
+
+    Per Founder Directive #3: authorization-scope enforcement runs at approval/submit time
+    (lands with Phase 5 submit path). Feed/coverage-preview always report "pass" here so the
+    gate slot is enumerated in the response and downstream code paths can rely on 14 gates,
+    but no user is blocked from browsing on authorization-scope grounds today.
+
+    When Phase 5 wires submit, this gate will read `authorization_scopes` and confirm the user
+    has granted a per-application submit authorization matching (job_id, materials manifest hash).
+    """
+    return GateResult(
+        "authorization_scope",
+        "pass",
+        detail="Interface only in Phase 3. Enforced at submit-time (lands with Phase 5).",
+    )
+
+
 GATES = [
     _gate_vacancy_open,
+    _gate_authorization_scope,   # #14 — interface only; enforced at submit-time
     _gate_duplicate,
     _gate_work_auth,
     _gate_sponsorship,

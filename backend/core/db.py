@@ -48,11 +48,16 @@ async def ensure_indexes() -> None:
     await db.idempotency_records.create_index("created_at", expireAfterSeconds=60 * 60 * 24 * 7)
     # Phase 3 collections
     await db.applications.create_index([("user_id", ASCENDING), ("job_id", ASCENDING)])
-    # Partial unique: no more than one non-closed application per (user, job)
+    # Partial unique: no more than one non-closed application per (user, job).
+    # Mongo partial indexes don't support $ne, so enumerate allowed "open" states explicitly.
+    OPEN_STATES = [
+        "shortlisted", "preparing", "awaiting_approval", "approved",
+        "submitting", "submitted", "response", "interview", "offer",
+    ]
     await db.applications.create_index(
         [("user_id", ASCENDING), ("job_id", ASCENDING)],
         unique=True,
-        partialFilterExpression={"state": {"$ne": "closed"}},
+        partialFilterExpression={"state": {"$in": OPEN_STATES}},
         name="uniq_open_app_per_user_job",
     )
     await db.applications.create_index([("user_id", ASCENDING), ("state", ASCENDING)])
@@ -62,3 +67,14 @@ async def ensure_indexes() -> None:
     await db.usage_meters.create_index([("user_id", ASCENDING), ("period", ASCENDING)], unique=True)
     await db.score_feedback.create_index([("user_id", ASCENDING), ("match_score_id", ASCENDING)])
     await db.jobs.create_index("last_verified")
+    # Phase 3 receipts contract (Founder Directive #2). Empty until Phase 5 wires submission.
+    # UNIQUE compound index on (user_id, company_id, req_ref) prevents duplicate receipts by design.
+    # Application-layer immutability enforced in `domains/submission_receipts/service.py` (no update path).
+    await db.submission_receipts.create_index(
+        [("user_id", ASCENDING), ("company_id", ASCENDING), ("req_ref", ASCENDING)],
+        unique=True,
+        name="uniq_receipt_per_user_company_req",
+    )
+    # LLM cost ledger (Founder Directive #8) — per-task, per-model.
+    await db.llm_costs.create_index([("user_id", ASCENDING), ("ts", DESCENDING)])
+    await db.llm_costs.create_index([("task", ASCENDING), ("ts", DESCENDING)])

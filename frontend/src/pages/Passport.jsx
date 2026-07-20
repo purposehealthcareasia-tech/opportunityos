@@ -368,6 +368,78 @@ function ActivationBanner({ status, onActivate, activating }) {
   );
 }
 
+function DocumentHistory() {
+  const [docs, setDocs] = useState(null);
+  const [error, setError] = useState('');
+
+  const load = useCallback(async () => {
+    try {
+      const { data } = await api.get('/api/v1/documents/me');
+      setDocs(data.documents || []);
+    } catch (e) {
+      const detail = e?.response?.data?.detail;
+      if (detail?.error !== 'consent_required') setError('Could not load your document history.');
+    }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  if (docs === null && !error) return null;
+  return (
+    <Card>
+      <CardHeader
+        title="Résumé history"
+        subtitle="Every résumé you've uploaded, with parse status and model used. We never delete history — supersedes-only."
+        action={<button type="button" onClick={load} className="text-xs muted underline" data-testid="doc-history-refresh">Refresh</button>}
+      />
+      {error && <ErrorBlock message={error} onRetry={load} />}
+      {docs && docs.length === 0 && (
+        <p className="muted text-sm">No résumés uploaded yet.</p>
+      )}
+      {docs && docs.length > 0 && (
+        <ul className="divide-y divide-line dark:divide-line-dark" data-testid="doc-history-list">
+          {docs.map((d) => {
+            const isDone = d.parse_status === 'completed';
+            const isFail = d.parse_status === 'failed';
+            const StatusIcon = isDone ? CheckCircle2 : isFail ? XCircle : Loader2;
+            const iconCls = isDone ? 'text-accent' : isFail ? 'text-red-500' : 'text-accent animate-spin';
+            return (
+              <li key={d.id} className="py-3 flex items-center justify-between gap-3" data-testid={`doc-history-row-${d.id}`}>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <FileText className="h-4 w-4 muted" />
+                    <span className="text-sm font-medium truncate">{d.original_filename || 'resume'}</span>
+                    <span className="pill pill-neutral">{Math.round((d.size_bytes || 0) / 1024)} KB</span>
+                  </div>
+                  <div className="text-xs muted mt-1 flex items-center gap-2 flex-wrap">
+                    <StatusIcon className={`h-3 w-3 ${iconCls}`} />
+                    <span className="font-mono">{d.parse_status}</span>
+                    {d.parse_meta?.model_used && (
+                      <>
+                        <span>·</span>
+                        <span>model <span className="font-mono">{d.parse_meta.model_used}</span></span>
+                      </>
+                    )}
+                    {typeof d.parse_meta?.inserted_claim_count === 'number' && (
+                      <>
+                        <span>·</span>
+                        <span>{d.parse_meta.inserted_claim_count} claims created</span>
+                      </>
+                    )}
+                    <span>·</span>
+                    <span>{new Date(d.created_at).toLocaleString()}</span>
+                  </div>
+                  {d.parse_error && <p className="text-xs text-red-600 mt-1">{d.parse_error}</p>}
+                </div>
+                <span className="text-[10px] muted font-mono truncate" title={d.sha256}>{(d.sha256 || '').slice(0, 10)}</span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </Card>
+  );
+}
+
 export default function PassportPage() {
   const [tab, setTab] = useState('review');
   const [groups, setGroups] = useState([]);
@@ -470,7 +542,12 @@ export default function PassportPage() {
         ))}
       </div>
 
-      {tab === 'upload' && <UploadPanel onCompleted={() => { setTab('review'); reload(); }} />}
+      {tab === 'upload' && (
+        <>
+          <UploadPanel onCompleted={() => { setTab('review'); reload(); }} />
+          <DocumentHistory />
+        </>
+      )}
 
       {tab === 'review' && (
         loading ? <LoadingBlock /> :

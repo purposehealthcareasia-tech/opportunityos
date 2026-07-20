@@ -19,8 +19,8 @@ const SECTIONS = [
   { to: '/passport',     label: 'Passport',     Icon: IdCard,          phase: 2, active: true  },
   { to: '/preferences',  label: 'Preferences',  Icon: Sliders,         phase: 2, active: true  },
   { to: '/eligibility',  label: 'Eligibility',  Icon: ShieldCheck,     phase: 2, active: true  },
-  { to: '/feed',         label: 'Feed',         Icon: Rss,             phase: 3, active: false },
-  { to: '/applications', label: 'Applications', Icon: SendHorizonal,   phase: 4, active: false },
+  { to: '/feed',         label: 'Feed',         Icon: Rss,             phase: 3, active: true  },
+  { to: '/applications', label: 'Applications', Icon: SendHorizonal,   phase: 3, active: true  },
   { to: '/tracker',      label: 'Tracker',      Icon: ListTodo,        phase: 5, active: false },
   { to: '/analytics',    label: 'Analytics',    Icon: BarChart3,       phase: 5, active: false },
   { to: '/billing',      label: 'Billing',      Icon: CreditCard,      phase: 6, active: false },
@@ -85,7 +85,7 @@ export function Sidebar({ isAdminOrSupport }) {
         </ul>
       </nav>
       <div className="px-4 py-3 border-t border-line dark:border-line-dark text-xs muted">
-        Phase 1 · Foundation
+        Phase 3 · Discovery
       </div>
     </aside>
   );

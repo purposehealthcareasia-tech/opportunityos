@@ -43,6 +43,7 @@ async def shortlist(user_id: str, job: dict) -> dict:
         "id": str(uuid.uuid4()),
         "user_id": user_id,
         "job_id": job["id"],
+        "company_id": job.get("company_id"),
         "job_snapshot": {
             "title": job.get("title"),
             "company_name": job.get("company_name"),
@@ -80,3 +81,48 @@ async def list_my_apps(user: dict = Depends(get_current_user)):
     cur = get_db().applications.find({"user_id": user["id"]}, {"_id": 0}).sort("created_at", -1)
     apps = [a async for a in cur]
     return {"applications": apps}
+
+
+from pydantic import BaseModel  # noqa: E402
+from domains.applications.repository import atomic_transition, InvalidTransition, ALLOWED_TRANSITIONS  # noqa: E402
+from fastapi import HTTPException, status  # noqa: E402
+
+
+class StateTransitionRequest(BaseModel):
+    expected_state: str
+    new_state: str
+
+
+@router.patch("/{application_id}/state")
+async def transition_state(
+    application_id: str,
+    req: StateTransitionRequest,
+    user: dict = Depends(get_current_user),
+):
+    """Atomic state transition with expected-state precondition.
+
+    Founder Directive #4: prevents read-modify-write races. If DB state != expected_state, the
+    update is rejected with 409 conflict.
+    """
+    try:
+        updated = await atomic_transition(
+            user_id=user["id"],
+            application_id=application_id,
+            expected_state=req.expected_state,
+            new_state=req.new_state,
+        )
+    except InvalidTransition as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"error": "invalid_transition", "from": e.from_state, "to": e.to_state,
+                    "allowed_from_here": sorted(ALLOWED_TRANSITIONS.get(e.from_state, set()))},
+        )
+    if not updated:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"error": "state_precondition_failed",
+                    "message": "The application's current state does not match expected_state, or it doesn't exist."},
+        )
+    await audit.write(user["id"], "application.transition", f"application:{application_id}",
+                      {"from": req.expected_state, "to": req.new_state})
+    return updated

@@ -2,7 +2,7 @@
 
 > Read by testing agents and fork runs. Keep in sync with `domains/seeds/seeder.py`.
 
-**Preview base URL:** `https://af7cc636-8506-4548-af82-a1a50aae0158.preview.emergentagent.com`
+**Preview base URL:** `https://lynk-preview-2.preview.emergentagent.com`
 
 ---
 
@@ -29,7 +29,7 @@ _Note for testers:_ Phase 2 does NOT auto-approve any of User Zero's seeded clai
 
 ## Curl smoke test
 ```bash
-BASE="https://af7cc636-8506-4548-af82-a1a50aae0158.preview.emergentagent.com"
+BASE="https://lynk-preview-2.preview.emergentagent.com"
 curl -s -X POST "$BASE/api/v1/auth/login" \
   -H 'Content-Type: application/json' \
   -d '{"email":"ujjwal@opportunityos.dev","password":"Passport!Test0"}'

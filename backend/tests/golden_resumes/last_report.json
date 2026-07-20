@@ -1,0 +1,92 @@
+{
+  "n_fixtures": 10,
+  "total_labeled_fields": 95,
+  "total_hits": 94,
+  "overall_accuracy": 0.9895,
+  "target": 0.95,
+  "passed_target": true,
+  "per_fixture": [
+    {
+      "slug": "resume_01",
+      "total": 12,
+      "hits": 11,
+      "accuracy": 0.9167,
+      "misses": [
+        "education:MIT"
+      ],
+      "n_claims": 14
+    },
+    {
+      "slug": "resume_02",
+      "total": 11,
+      "hits": 11,
+      "accuracy": 1.0,
+      "misses": [],
+      "n_claims": 12
+    },
+    {
+      "slug": "resume_03",
+      "total": 11,
+      "hits": 11,
+      "accuracy": 1.0,
+      "misses": [],
+      "n_claims": 13
+    },
+    {
+      "slug": "resume_04",
+      "total": 9,
+      "hits": 9,
+      "accuracy": 1.0,
+      "misses": [],
+      "n_claims": 9
+    },
+    {
+      "slug": "resume_05",
+      "total": 11,
+      "hits": 11,
+      "accuracy": 1.0,
+      "misses": [],
+      "n_claims": 12
+    },
+    {
+      "slug": "resume_06",
+      "total": 9,
+      "hits": 9,
+      "accuracy": 1.0,
+      "misses": [],
+      "n_claims": 10
+    },
+    {
+      "slug": "resume_07",
+      "total": 8,
+      "hits": 8,
+      "accuracy": 1.0,
+      "misses": [],
+      "n_claims": 9
+    },
+    {
+      "slug": "resume_08",
+      "total": 8,
+      "hits": 8,
+      "accuracy": 1.0,
+      "misses": [],
+      "n_claims": 9
+    },
+    {
+      "slug": "resume_09",
+      "total": 8,
+      "hits": 8,
+      "accuracy": 1.0,
+      "misses": [],
+      "n_claims": 8
+    },
+    {
+      "slug": "resume_10",
+      "total": 8,
+      "hits": 8,
+      "accuracy": 1.0,
+      "misses": [],
+      "n_claims": 9
+    }
+  ]
+}

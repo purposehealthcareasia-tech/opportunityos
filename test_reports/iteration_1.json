@@ -1,0 +1,57 @@
+{
+  "summary": "Phase 3 backend fully validated. 42/42 pytest tests pass (13 pre-existing gate/index tests + 29 new integration tests hitting the running preview API + real MongoDB). Golden-set LLM harness ran 10 fixtures @ 98.95% accuracy (target 95%, passed_target=true). All Founder Directives #1-#9 exercised: internal ingest 401/403 semantics + 503 code path, submission_receipts immutability (no mutation calls in service), 14-gate enumeration in exact spec order, authorization_scope always pass with 'Interface only in Phase 3' detail, gate parity coverage-preview vs feed, feed passport_not_activated gate, link-import 409 for linkedin/indeed/handshake + 201 derived for greenhouse, duplicate ingest resiliency + direct Mongo DuplicateKeyError, shortlist duplicate protection (409 already_shortlisted), atomic state transitions with 200/409/400 semantics, match_scores read + feedback, usage_meter only counts NEW scores, Idempotency-Key replay on shortlist AND state PATCH (X-Idempotent-Replay:true, byte-identical body, single row inserted), 15 SampleCo sample_jobs with complete requirements payload, llm_costs collection has 20 rows with all required fields including user_id.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase3_integration.py",
+    "/app/backend/tests/test_gate_engine.py",
+    "/app/backend/tests/test_indexes.py",
+    "/app/test_reports/pytest/phase3_all_results.xml",
+    "/app/backend/tests/golden_resumes/last_report.json"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "internal_router.py correctly ordering: 503 (no token configured) checked BEFORE 401 (missing header) and 403 (wrong header) — matches Founder Directive #1 exactly.",
+    "applications/repository.atomic_transition uses find_one_and_update with expected-state precondition — no read-modify-write race window. Correct implementation of Founder Directive #4.",
+    "core/db.py partial unique index on applications is well-formed (partialFilterExpression enumerates OPEN_STATES, since Mongo partial indexes don't support $ne). Closed apps correctly excluded so a user can re-apply after closing.",
+    "gate_engine.py has authorization_scope hard-coded to 'pass' with the exact required detail string ('Interface only in Phase 3. Enforced at submit-time (lands with Phase 5).') — parity contract holds.",
+    "match_scores.upsert() returns bool for was_new; feed calls increment_jobs_processed only when scored_new_count > 0 — usage_meter cannot inflate via repeated feed calls. Verified empirically in test_usage_meter_increments_only_for_new_scores.",
+    "services/llm.py logs a cost row on BOTH success and failure attempts (2 _write_cost_row calls per parse attempt path). documents/service.py correctly passes user_id into parse_resume_text.",
+    "submission_receipts/service.py has zero mutation calls (asserted by test_submission_receipts_service_has_no_update_or_delete). Application-layer immutability enforced.",
+    "OpenAPI parameter names differ from spec text but structurally identical — spec says /api/v1/jobs/{id} but actual is /api/v1/jobs/{job_id}. Test updated to use the actual parameter names; this is not a bug, just a minor spec/impl doc drift.",
+    "Minor observation: user_import canonical_key uses `import::{user_id}::{uuid}` format which correctly satisfies canonical_key regex, but if two users import the exact same URL there'll be two derived rows. Acceptable in v0.1 since resolver ties them later.",
+    "Idempotency middleware works cleanly for both POST /shortlist (201) and PATCH /state (200) — both replays return byte-identical body and X-Idempotent-Replay:true. No duplicate DB rows created."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase3_integration.py (new — 29 tests, HTTP+Mongo integration)"
+  ],
+  "success_rate": {"backend": "100% (42/42)", "frontend": "not tested (per Founder Directive #9)"},
+  "test_credentials": "User Zero: ujjwal@opportunityos.dev / Passport!Test0. Admin: admin@opportunityos.dev / Admin!Console1. Support: support@opportunityos.dev / Support!Console1. INTERNAL_SERVICE_TOKEN sourced from /app/backend/.env (never printed).",
+  "seed_data_creation": "Created and cleaned up 6 ephemeral qatest.com::qa-* jobs and 3 greenhouse imports during ingest + import tests. Seeded one direct match_scores row for User Zero on sample_job[0] to exercise GET/feedback endpoints when natural feed produces no passing rows (User Zero has no approved skill/education claims in seed → gates return UNKNOWN → nothing passes). This is expected behavior per Phase 2 seeding rules.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "The Phase 3 backend is fully green. Test file /app/backend/tests/test_phase3_integration.py is the regression suite. Run with: `cd /app/backend && python3 -m pytest tests -v`. Golden-set harness (real GPT-5 calls, ~30s + $ cost): `cd /app/backend && python3 -m tests.golden_resumes.golden_run`. NOTE: User Zero's seeded claims start as pending — feed passing[] will be empty until at least one identity claim and one education/employment claim are approved (via admin console or /api/v1/claims/{id}/approve). The match_score test uses a direct Mongo insert to work around this. If a future test needs feed.passing to be non-empty for User Zero, approve those claims first. Frontend not exercised per Founder Directive #9.",
+  "golden_set_result": {
+    "n_fixtures": 10,
+    "total_labeled_fields": 95,
+    "total_hits": 94,
+    "overall_accuracy": 0.9895,
+    "target": 0.95,
+    "passed_target": true,
+    "misses": ["resume_01: education:MIT (institution match miss)"]
+  },
+  "llm_cost_ledger_evidence": {
+    "collection": "llm_costs",
+    "rows_present": 20,
+    "row_fields": ["id", "user_id", "task", "model", "provider", "tokens_in_est", "tokens_out_est", "cost_usd_est", "price_source", "session_id", "ts", "extra"],
+    "user_id_key_present": true,
+    "logs_on_failure_too": true
+  }
+}
