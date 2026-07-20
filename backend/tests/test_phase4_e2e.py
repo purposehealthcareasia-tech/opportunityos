@@ -30,8 +30,8 @@ try:
 except FileNotFoundError:
     pass
 
-FIXTURE_EMAIL = "fixture-ead@opportunityos.dev"
-FIXTURE_PASSWORD = "Fixture!Test1"
+FIXTURE_EMAIL = os.environ.get("FIXTURE_TEST_EMAIL", "fixture-ead@opportunityos.dev")
+FIXTURE_PASSWORD = os.environ.get("FIXTURE_TEST_PASSWORD", "Fixture!Test1")
 
 
 @pytest.fixture(scope="module")

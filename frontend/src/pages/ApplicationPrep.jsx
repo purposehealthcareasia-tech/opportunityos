@@ -226,7 +226,7 @@ function ResumeDiffTab({ packet, onReload }) {
               <div className="font-medium text-red-700 dark:text-red-400 mb-1">Rejected by the validator ({validator.rejected_lines.length})</div>
               <ul className="space-y-1">
                 {validator.rejected_lines.slice(0, 5).map((r, i) => (
-                  <li key={i}>
+                  <li key={`${i}-${(r.text || '').slice(0, 32)}`}>
                     <span className="italic">"{r.text.slice(0, 80)}…"</span> — reasons: {r.reasons.map(rlabel).join(', ')}
                   </li>
                 ))}

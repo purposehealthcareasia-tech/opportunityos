@@ -528,6 +528,10 @@ export default function PassportPage() {
   };
 
   const totalClaims = useMemo(() => groups.reduce((n, g) => n + g.claims.length, 0), [groups]);
+  const missingClaimTypes = useMemo(
+    () => CLAIM_TYPE_ORDER.filter((t) => !groups.find((g) => g.type === t)),
+    [groups],
+  );
 
   return (
     <div className="max-w-5xl mx-auto space-y-6 animate-fadeIn">
@@ -587,7 +591,7 @@ export default function PassportPage() {
             <div className="pt-6 border-t border-line dark:border-line-dark">
               <p className="text-xs muted mb-3">Missing a category? Add it manually.</p>
               <div className="flex flex-wrap gap-2">
-                {CLAIM_TYPE_ORDER.filter((t) => !groups.find((g) => g.type === t)).map((t) => (
+                {missingClaimTypes.map((t) => (
                   <button key={t} type="button" onClick={() => setManualModal({ type: t, sensitivity: 'normal' })} className="pill pill-neutral hover:bg-neutral-100 dark:hover:bg-neutral-800">
                     <Plus className="h-3 w-3" /> {t}
                   </button>
