@@ -210,7 +210,14 @@ export default function ApplicationsPage() {
                   </div>
                   <TimelinePreview state={a.state} />
                 </div>
-                <div className="flex-shrink-0">
+                <div className="flex-shrink-0 flex flex-col items-end gap-2">
+                  <Link
+                    to={`/applications/${a.id}/prep`}
+                    className="text-xs underline muted hover:text-ink dark:hover:text-ink-dark"
+                    data-testid={`application-prep-link-${a.id}`}
+                  >
+                    Open prep →
+                  </Link>
                   <TransitionMenu app={a} onTransition={transition} busy={busyId === a.id} />
                 </div>
               </div>

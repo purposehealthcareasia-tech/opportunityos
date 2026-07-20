@@ -69,6 +69,55 @@ async def _upsert_sample_jobs() -> int:
         req = dict(REQ_BY_TITLE.get(j["title"], {}))
         req.setdefault("skills_required", [])
         req.setdefault("licenses", [])
+        # Phase 4 — deterministic screener set. Every SAMPLE job carries the SAME shape:
+        #   2 normal questions, 1 visa (sensitive), 1 salary (sensitive), 1 demographic (static-only)
+        # …so tests can assert the sensitive/demographic UX regardless of which sample they hit.
+        screener_questions = [
+            {
+                "id": f"{canonical_key}#q-yoe-matlab",
+                "kind": "normal",
+                "category": "years_of_experience",
+                "question_pattern": "years_of_experience:matlab",
+                "text": "How many years of hands-on experience do you have with MATLAB or Simulink?",
+                "order_hint": 1,
+            },
+            {
+                "id": f"{canonical_key}#q-relocate",
+                "kind": "normal",
+                "category": "logistics",
+                "question_pattern": "willing_to_relocate",
+                "text": f"Are you willing to relocate to {j['geo']}? Please describe any timing constraints.",
+                "order_hint": 2,
+            },
+            {
+                "id": f"{canonical_key}#q-visa",
+                "kind": "sensitive_visa",
+                "category": "work_authorization",
+                "question_pattern": "work_authorization_status",
+                "text": "Are you legally authorized to work in the United States now, and will you require sponsorship for employment visa status in the future?",
+                "order_hint": 3,
+            },
+            {
+                "id": f"{canonical_key}#q-salary",
+                "kind": "sensitive_salary",
+                "category": "compensation",
+                "question_pattern": "desired_base_salary_usd",
+                "text": "What is your desired base salary range (annual, USD)?",
+                "order_hint": 4,
+            },
+            {
+                "id": f"{canonical_key}#q-eeo-block",
+                "kind": "demographic",
+                "category": "eeo",
+                "question_pattern": "eeo_static_notice",
+                "text": (
+                    "Employers may ask about gender, race/ethnicity, veteran status, and disability "
+                    "on their own forms. OpportunityOS never stores, generates, or suggests answers "
+                    "to these. Answer them directly on the employer's site if you choose to."
+                ),
+                "order_hint": 5,
+            },
+        ]
         await db.jobs.update_one(
             {"canonical_key": canonical_key},
             {
@@ -86,6 +135,7 @@ async def _upsert_sample_jobs() -> int:
                     "apply_method": j["apply_method"],
                     "eligibility_requirements": j.get("eligibility", {}),
                     "requirements": req,
+                    "screener_questions": screener_questions,
                     "first_seen": utc_now(),
                     "last_verified": utc_now(),
                     "status": "live",
@@ -294,6 +344,7 @@ async def _rebase_fixture_user() -> str:
         "preferences", "eligibility_profiles", "applications", "hidden_jobs",
         "match_scores", "usage_meters", "documents", "resume_versions",
         "score_feedback", "claims", "consent_records",
+        "ai_generations", "screening_answers",
     ]
     for coll in to_wipe:
         await db[coll].delete_many({"user_id": user_id})
@@ -359,6 +410,28 @@ async def _rebase_fixture_user() -> str:
     })
     # Activate passport.
     await db.users.update_one({"id": user_id}, {"$set": {"passport_activated": True}})
+    # Seed a base resume_version derived from approved claims (Phase 4 diff needs a base to
+    # compare against).
+    from services.llm import template_fallback_lines
+    approved = [c for c in docs if c.get("status") == "approved"]
+    base_lines = template_fallback_lines(approved)
+    base_manifest = [
+        {"line_id": str(uuid.uuid4()), "text": L["text"], "claim_ids": L["claim_ids"],
+         "status": "accepted", "base_line_ref": None}
+        for L in base_lines
+    ]
+    await db.resume_versions.insert_one({
+        "id": str(uuid.uuid4()),
+        "user_id": user_id,
+        "application_id": None,
+        "name": "base",
+        "base": True,
+        "render_manifest": {"lines": base_manifest},
+        "s3_key": None,
+        "sha256": None,
+        "created_at": now,
+        "updated_at": now,
+    })
     # Audit row.
     await db.audit_logs.insert_one({
         "id": str(uuid.uuid4()),

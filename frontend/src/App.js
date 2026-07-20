@@ -11,6 +11,7 @@ import Eligibility from './pages/Eligibility';
 import Feed from './pages/Feed';
 import JobDetail from './pages/JobDetail';
 import Applications from './pages/Applications';
+import ApplicationPrep from './pages/ApplicationPrep';
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
 import RoleRoute from './components/RoleRoute';
@@ -32,6 +33,7 @@ export default function App() {
         <Route path="/feed" element={<Feed />} />
         <Route path="/jobs/:jobId" element={<JobDetail />} />
         <Route path="/applications" element={<Applications />} />
+        <Route path="/applications/:applicationId/prep" element={<ApplicationPrep />} />
         <Route path="/tracker" element={<Tracker />} />
         <Route path="/analytics" element={<Analytics />} />
         <Route path="/billing" element={<Billing />} />

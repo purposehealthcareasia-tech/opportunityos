@@ -34,6 +34,9 @@ _PRICE_TABLE_PER_1K = {
     # OpenAI (approx, published Feb 2026)
     "gpt-5":    {"in": 0.00500, "out": 0.01500, "source": "openai:public_2026-02"},
     "gpt-4o":   {"in": 0.00250, "out": 0.01000, "source": "openai:public_2026-02"},
+    # Anthropic Claude (approx, published Feb 2026)
+    "claude-sonnet-4-5-20250929": {"in": 0.00300, "out": 0.01500, "source": "anthropic:public_2026-02"},
+    "claude-sonnet-4-6":          {"in": 0.00300, "out": 0.01500, "source": "anthropic:public_2026-02"},
 }
 
 
@@ -213,3 +216,222 @@ async def parse_resume_text(text: str, document_id: str, user_id: str | None = N
             log.warning("parse attempt failed model=%s err=%s", candidate, e)
             continue
     raise RuntimeError(f"parse_failed: {last_error}")
+
+
+# =====================================================================================
+# Phase 4 — Grounded tailoring generation
+# =====================================================================================
+
+TAILOR_PROVIDER = "anthropic"
+TAILOR_MODEL = "claude-sonnet-4-5-20250929"
+
+TAILOR_SYSTEM_PROMPT = """You are OpportunityOS's grounded résumé tailoring engine.
+
+You produce résumé bullet lines that are STRICTLY grounded in a candidate's APPROVED Career
+Passport claims. You never invent facts.
+
+HARD RULES (violation = failure — the server-side validator will reject and mark this
+generation failed):
+
+1. Every "text" you emit MUST reference the exact claim IDs (from the CLAIMS list below)
+   whose values back that text. Multiple IDs are fine when multiple claims contribute.
+2. NEVER assert a fact — number, date, tool, employer, title, degree, location, cert —
+   that is not present in the value of at least one referenced claim.
+3. If a claim's `sensitivity` is "sealed", DO NOT surface its literal value in `text`.
+   You may still use non-sensitive parts of the same claim's context.
+4. If the user's instruction asks for something NOT supported by the approved claims,
+   DO NOT invent it. Skip that fact silently — the server has already refused the
+   instruction where appropriate, so if you receive it, treat it as a request for
+   related grounded content.
+5. Prefer conciseness. Emit 5–8 lines max. Each line should read like a strong résumé
+   bullet: verb + object + evidence.
+6. Never emit demographic content (gender, race, age, ethnicity, religion, disability,
+   veteran, orientation) even if a claim contains such info. Those categories are
+   OUT OF SCOPE forever.
+7. Return VALID JSON only, matching the schema. No prose, no markdown fences.
+
+SCHEMA:
+{
+  "lines": [
+    { "text": "<résumé bullet, present tense unless the claim is past employment>",
+      "claim_ids": ["<uuid>", "..."] }
+  ]
+}
+
+If you cannot produce ANY grounded line (empty approved claims, or no relevant coverage),
+return {"lines": []}.
+"""
+
+
+def _build_tailor_user_message(*, jd_text: str, claims: list[dict], instruction: str | None) -> str:
+    """Compact the JD + claim rows into a single prompt.
+
+    Sealed claims are shown with placeholder value {value:"[sealed]"} — the model sees the
+    ID and type so it can reference them for context (e.g., "eligible for STEM OPT" as a
+    metadata cue) but never sees the literal sealed value.
+    """
+    lines = ["JD (verbatim):", "---", (jd_text or "").strip(), "---", "", "APPROVED CLAIMS:"]
+    for c in claims:
+        ctype = c.get("type")
+        cid = c.get("id")
+        sensitivity = (c.get("sensitivity") or "").lower()
+        value = c.get("value")
+        if sensitivity == "sealed":
+            display_value = "[sealed]"
+        else:
+            display_value = value
+        lines.append(f"- id={cid} type={ctype} value={json.dumps(display_value, ensure_ascii=False)}")
+    lines.append("")
+    if instruction:
+        lines.append("USER INSTRUCTION (respect grounding):")
+        lines.append(instruction.strip())
+    else:
+        lines.append("USER INSTRUCTION: (none)")
+    return "\n".join(lines)
+
+
+def _extract_lines_payload(raw: str) -> list[dict]:
+    payload = _extract_json(raw)
+    lines = payload.get("lines")
+    if not isinstance(lines, list):
+        raise ValueError("no_lines_array")
+    out: list[dict] = []
+    for L in lines:
+        if not isinstance(L, dict):
+            continue
+        text = L.get("text")
+        cids = L.get("claim_ids")
+        if not isinstance(text, str) or not isinstance(cids, list):
+            continue
+        out.append({"text": text.strip(), "claim_ids": [str(x) for x in cids if isinstance(x, (str, int))]})
+    return out
+
+
+async def _call_claude(model: str, system_prompt: str, user_prompt: str, session_id: str) -> tuple[str, str, int, int]:
+    key = settings.EMERGENT_LLM_KEY
+    if not key:
+        raise RuntimeError("EMERGENT_LLM_KEY not set")
+    chat = LlmChat(
+        api_key=key,
+        session_id=session_id,
+        system_message=system_prompt,
+    ).with_model(TAILOR_PROVIDER, model)
+    raw = await chat.send_message(UserMessage(text=user_prompt))
+    return model, raw, _rough_tokens(system_prompt + user_prompt), _rough_tokens(raw or "")
+
+
+async def generate_tailored_lines(
+    *,
+    user_id: str,
+    application_id: str,
+    jd_text: str,
+    approved_claims: list[dict],
+    instruction: str | None = None,
+) -> dict[str, Any]:
+    """Return {model_used, prompt_hash, tokens_in, tokens_out, lines: [{text, claim_ids}]}.
+
+    The caller (application prepare / regenerate flow) is responsible for running the
+    validator, persisting the ai_generations row, and choosing template fallback on
+    validation failure.
+    """
+    session = f"tailor-{application_id}-{uuid.uuid4().hex[:6]}"
+    user_prompt = _build_tailor_user_message(jd_text=jd_text, claims=approved_claims, instruction=instruction)
+    prompt_hash = _hash_prompt(TAILOR_SYSTEM_PROMPT + "\n" + user_prompt)
+    try:
+        model_used, raw, tokens_in, tokens_out = await _call_claude(
+            TAILOR_MODEL, TAILOR_SYSTEM_PROMPT, user_prompt, session,
+        )
+        await _write_cost_row(
+            user_id=user_id, task="tailor_resume",
+            model=model_used, tokens_in=tokens_in, tokens_out=tokens_out,
+            session_id=session, extra={"application_id": application_id, "outcome": "success"},
+        )
+        try:
+            lines = _extract_lines_payload(raw)
+        except Exception as e:
+            log.warning("tailor generation returned malformed JSON: %s", e)
+            lines = []
+        return {
+            "model_used": model_used, "prompt_hash": prompt_hash,
+            "tokens_in_est": tokens_in, "tokens_out_est": tokens_out,
+            "lines": lines, "raw_len": len(raw or ""),
+        }
+    except Exception as e:
+        await _write_cost_row(
+            user_id=user_id, task="tailor_resume",
+            model=TAILOR_MODEL, tokens_in=_rough_tokens(TAILOR_SYSTEM_PROMPT + user_prompt),
+            tokens_out=0, session_id=session,
+            extra={"application_id": application_id, "outcome": "failed", "error": str(e)[:200]},
+        )
+        log.exception("tailor generation failed")
+        return {
+            "model_used": TAILOR_MODEL, "prompt_hash": prompt_hash,
+            "tokens_in_est": _rough_tokens(TAILOR_SYSTEM_PROMPT + user_prompt), "tokens_out_est": 0,
+            "lines": [], "raw_len": 0, "error": str(e)[:200],
+        }
+
+
+import hashlib  # noqa: E402
+
+
+def _hash_prompt(text: str) -> str:
+    return hashlib.sha256((text or "").encode("utf-8")).hexdigest()
+
+
+# =====================================================================================
+# Phase 4 — Template fallback (NO LLM). Deterministic bullet builder using approved claim
+# values. Used when the model output fails validation twice.
+# =====================================================================================
+
+def template_fallback_lines(approved_claims: list[dict]) -> list[dict]:
+    """Build 3–6 grounded template lines directly from approved claim values.
+
+    ZERO LLM. ZERO fabrication. Each line references its source claim IDs.
+    Never surfaces sealed values.
+    """
+    lines: list[dict] = []
+
+    # Group by type
+    by_type: dict[str, list[dict]] = {}
+    for c in approved_claims or []:
+        if (c.get("sensitivity") or "").lower() == "sealed":
+            continue
+        by_type.setdefault(c.get("type"), []).append(c)
+
+    # Employment lines (most recent first if we can order)
+    employments = by_type.get("employment") or []
+    for emp in employments[:2]:
+        v = emp.get("value") or {}
+        company = v.get("company") or "employer"
+        role = v.get("role") or "engineer"
+        summary = (v.get("summary") or "").strip()
+        parts = [f"{role} at {company}"]
+        if summary:
+            parts.append(f"— {summary}")
+        text = ". ".join(parts).strip(". ").strip() + "."
+        lines.append({"text": text, "claim_ids": [emp["id"]]})
+
+    # Skills — one aggregated line pulling from the top ~5 skill claims
+    skills = by_type.get("skill") or []
+    if skills:
+        top = skills[:5]
+        names = [((c.get("value") or {}).get("name") or "").strip() for c in top]
+        names = [n for n in names if n]
+        if names:
+            lines.append({
+                "text": "Core skills: " + ", ".join(names) + ".",
+                "claim_ids": [c["id"] for c in top],
+            })
+
+    # Education
+    for edu in (by_type.get("education") or [])[:1]:
+        v = edu.get("value") or {}
+        degree = v.get("degree") or ""
+        field = v.get("field") or ""
+        institution = v.get("institution") or ""
+        bits = [x for x in [degree, ("in " + field) if field else "", ("from " + institution) if institution else ""] if x]
+        if bits:
+            lines.append({"text": " ".join(bits) + ".", "claim_ids": [edu["id"]]})
+
+    return lines
+

@@ -78,3 +78,15 @@ async def ensure_indexes() -> None:
     # LLM cost ledger (Founder Directive #8) — per-task, per-model.
     await db.llm_costs.create_index([("user_id", ASCENDING), ("ts", DESCENDING)])
     await db.llm_costs.create_index([("task", ASCENDING), ("ts", DESCENDING)])
+    # Phase 4 collections
+    await db.ai_generations.create_index([("user_id", ASCENDING), ("ts", DESCENDING)])
+    await db.ai_generations.create_index([("application_id", ASCENDING), ("ts", DESCENDING)])
+    await db.screening_answers.create_index(
+        [("user_id", ASCENDING), ("application_id", ASCENDING), ("question_id", ASCENDING)],
+        unique=True,
+        partialFilterExpression={"application_id": {"$type": "string"}},
+        name="uniq_answer_per_app_question",
+    )
+    await db.screening_answers.create_index([("user_id", ASCENDING), ("application_id", ASCENDING)])
+    await db.resume_versions.create_index([("user_id", ASCENDING), ("base", ASCENDING)])
+    await db.resume_versions.create_index([("application_id", ASCENDING)])
