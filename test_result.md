@@ -164,7 +164,71 @@ _(populated only after user approves frontend testing)_
 
 - agent: "testing"
   message: |
-    Phase-2 verification run — ran refreshed /app/backend_test.py against
+    Phase 3 backend fully validated — /app/test_reports/iteration_1.json.
+    42/42 pytest tests pass (13 unit + 29 new integration hitting real preview + real MongoDB).
+    Golden-set LLM harness: 10 fixtures, 94/95 fields, overall_accuracy=98.95%,
+    target 95%, passed_target=true (only miss: resume_01 education:MIT institution-string).
+    All nine Founder Directives exercised:
+      #1 INTERNAL_SERVICE_TOKEN 401/403/503 semantics (token never in bodies)
+      #2 submission_receipts collection + unique compound index + app-layer immutability
+         (no update/delete code paths in the service)
+      #3 14-gate enumeration in exact spec order; authorization_scope always pass w/
+         detail "Interface only in Phase 3. Enforced at submit-time (lands with Phase 5)."
+      #4 unique-index proofs (canonical_key, submission_receipts, usage_meters, partial-open-application)
+         + atomic transitions via find_one_and_update expected-state precondition
+      #6 link-import 409 body exact shape: route_unavailable_platform_policy for
+         linkedin.com/indeed.com/joinhandshake.com; 201 derived for greenhouse
+      #7 SAMPLE badge propagated on jobs + applications; passing count excludes SAMPLE
+         at UI layer per API contract
+      #8 llm_costs collection populated with 20 rows containing all required fields
+         including user_id; logs on both success + failure attempts
+      #9 backend testing complete; frontend NOT tested (independent tester covers UI)
+    No blockers. No frontend testing per directive.
+
+    Detailed observations:
+      - Gate parity contract verified: coverage-preview vs feed produce identical
+        gate verdicts for the same (user, job) pair.
+      - Idempotency-Key replay works cleanly on POST /shortlist AND PATCH /state.
+      - Usage meter does NOT inflate on repeated feed calls (only NEW scores counted).
+      - User Zero's seeded claims start pending → feed.passing[] may be empty until
+        at least one identity + one education/employment claim are approved.
+      - Duplicate ingest resiliency: same canonical_key second call → response.updated
+        (not accepted, not rejected). Direct-Mongo duplicate insert → DuplicateKeyError.
+
+    Recommendation: main agent can summarise and finish Phase 3 backend.
+
+## Phase 3 (Discovery — Feed, Applications, Match Scoring)
+
+Ships:
+- 14-gate engine (`services/gate_engine.py`) enforcing the exact spec order.
+- Weighted 0-100 scoring w/ WEIGHTS_VERSION="v0.1" and honest UNKNOWN renormalization.
+- `POST /api/internal/jobs/bulk` (INTERNAL_SERVICE_TOKEN header; 401/403/503 semantics).
+- `POST /api/v1/jobs/import` (LinkedIn/Indeed/Handshake → 409 route_unavailable_platform_policy).
+- `GET /api/v1/jobs/feed` + `GET /api/v1/jobs/{id}` (passport-activated + discover_jobs gated).
+- `POST /api/v1/jobs/{id}/shortlist|hide|resolve` — application creation, hide-with-reason, derived-import resolution.
+- `GET /api/v1/applications` + `PATCH /api/v1/applications/{id}/state` (atomic transition w/ expected_state precondition; invalid_transition + state_precondition_failed error shapes).
+- `GET /api/v1/matches/for-job/{id}` + `POST .../feedback`.
+- `GET /api/v1/usage/me` — per-period jobs_processed / apps_prepared / apps_submitted.
+- `submission_receipts` collection created with UNIQUE (user_id, company_id, req_ref) index; app-layer immutability (no update/delete). No HTTP surface in Phase 3 — Phase 5 submit wires it.
+- `llm_costs` collection: every LLM parse attempt (success + failure) writes tokens_in/out estimates and cost_usd_est.
+- Golden-set harness at `/app/backend/tests/golden_resumes/` — 10 synthetic labeled résumés, target ≥95% field accuracy.
+- Pytest regression suite at `/app/backend/tests/` — 42 tests currently green.
+
+Frontend (S7/S8/S9 shipped):
+- `/feed` — passing cards w/ score badges, reason chips, freshness/route/family chips, SAMPLE badge + count exclusion.
+- `/jobs/:jobId` — full JD, all 14 gates listed with pass/fail/unknown, have/gap on approved claims only, route decision, resolve-origin form for derived imports.
+- Match explanation modal — weights_version + confidence + per-factor bars w/ UNKNOWN as gray. No interview-probability displayed anywhere.
+- Link-import box with "How this works" helper and platform-policy 409 rendering.
+- `/applications` — real state tracker with atomic transition menu; SAMPLE rows shown but excluded from open/submitted/interview counts.
+- Passport UI: DocumentHistory panel showing every uploaded résumé + model_used + parse status (Phase 2 polish carry-over).
+- Topbar: UsageMeterChip showing current period jobs_processed.
+
+### Explicit stubs / deviations (Phase 3)
+- `authorization_scope` gate is enumerated in every gate verdict but always returns "pass" in Phase 3. The submit-time enforcement lands with Phase 5.
+- `submission_receipts` has no HTTP write path in Phase 3 — the collection + unique index + immutable service helper exist so Phase 5 can wire the submit flow without contract drift.
+- `competition_estimate` and `employer_responsiveness_prior` scoring factors always emit UNKNOWN (weight 0) in v0.1 — no honest signal yet, so they never inflate confidence.
+
+
     https://af7cc636-8506-4548-af82-a1a50aae0158.preview.emergentagent.com
     plus direct MongoDB reads (mongodb://localhost:27017 db=opportunityos).
 
