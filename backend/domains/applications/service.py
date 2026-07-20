@@ -641,6 +641,7 @@ async def export_resume(
 # Phase 5 — Approve, Revoke-authorization, Submit, Attest, Receipts
 # ========================================================================================
 from datetime import datetime, timedelta, timezone  # noqa: E402
+from fastapi.encoders import jsonable_encoder  # noqa: E402
 from domains.authorizations import service as auth_svc  # noqa: E402
 from domains.submission_receipts import service as receipts_svc  # noqa: E402
 from domains.subscriptions import service as subs_svc  # noqa: E402
@@ -872,11 +873,11 @@ async def submit_application(application_id: str, user: dict = Depends(get_curre
     req_ref = _default_req_ref(app_row)
     dup = await _duplicate_receipt(user["id"], company_id, req_ref)
     if dup:
-        raise HTTPException(status_code=409, detail={
-            "error": "duplicate_receipt",
+        raise HTTPException(status_code=409, detail=jsonable_encoder({
+            "error": "duplicate_application",
             "message": "You already submitted an application for this employer/req.",
             "prior_receipt": dup,
-        })
+        }))
 
     auth, current_hash, accepted = await _validate_authorization_and_gates(user["id"], app_row)
     used_today, cap = await _check_daily_cap(user["id"])
@@ -948,10 +949,10 @@ async def attest_submission(
     req_ref = _default_req_ref(app_row)
     dup = await _duplicate_receipt(user["id"], company_id, req_ref)
     if dup:
-        raise HTTPException(status_code=409, detail={
-            "error": "duplicate_receipt", "message": "Already submitted; no override.",
+        raise HTTPException(status_code=409, detail=jsonable_encoder({
+            "error": "duplicate_application", "message": "Already submitted; no override.",
             "prior_receipt": dup,
-        })
+        }))
     _auth, current_hash, _ = await _validate_authorization_and_gates(user["id"], app_row)
     await _check_daily_cap(user["id"])
 
@@ -964,10 +965,10 @@ async def attest_submission(
         )
     except receipts_svc.DuplicateReceipt:
         prior = await _duplicate_receipt(user["id"], company_id, req_ref)
-        raise HTTPException(status_code=409, detail={
-            "error": "duplicate_receipt", "message": "Already submitted; no override.",
+        raise HTTPException(status_code=409, detail=jsonable_encoder({
+            "error": "duplicate_application", "message": "Already submitted; no override.",
             "prior_receipt": prior,
-        })
+        }))
 
     updated = await atomic_transition(
         user_id=user["id"], application_id=application_id,

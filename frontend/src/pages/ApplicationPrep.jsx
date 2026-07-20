@@ -612,7 +612,15 @@ export default function ApplicationPrepPage() {
       await load();
     } catch (e) {
       const d = e?.response?.data?.detail;
-      setFlash({ kind: 'warn', message: d?.message || d?.error || 'Submit failed.' });
+      if (d?.error === 'duplicate_application' && d?.prior_receipt) {
+        setReceipt(d.prior_receipt);
+        setFlash({
+          kind: 'warn',
+          message: `Already submitted to this employer/req on ${new Date(d.prior_receipt.ts).toLocaleString()}. No override — this app can't be resubmitted.`,
+        });
+      } else {
+        setFlash({ kind: 'warn', message: d?.message || d?.error || 'Submit failed.' });
+      }
     } finally { setSubmitting(false); }
   };
 

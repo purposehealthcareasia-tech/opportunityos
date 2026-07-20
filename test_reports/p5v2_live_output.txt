@@ -1,0 +1,88 @@
+======================================================================
+SCENARIO P0 — duplicate-submit → 409 with JSON-parseable prior_receipt
+======================================================================
+rebase: 200
+approve: 200 state= approved
+first attest: 201
+original receipt id: 360f3621-f135-4a9c-95ce-c910924b99d4
+force-state-back-to-approved matched: 1
+duplicate submit status: 409
+duplicate submit raw response body:
+{"detail":{"error":"duplicate_application","message":"You already submitted an application for this employer/req.","prior_receipt":{"id":"360f3621-f135-4a9c-95ce-c910924b99d4","user_id":"c9f47fd8-fd59-4df9-8c9c-b7ff68fb4785","company_id":"e3a90842-85b2-4e04-bf50-f016e1b75d7f","req_ref":"sampleco.demo::sample-01","application_id":"419ae93a-6de9-4fa8-8b77-cfc355acd7a4","job_id":"98109a0a-0d0c-4912-bf5f-ade4e3c97acc","materials_manifest_hash":"7041649e400031b7d79c2fb7ceab82eeb0adf3a5bb3bfb0e375524b639fefc32","submit_channel":"manual_queue","supersedes":null,"ts":"2026-07-20T11:35:21.689000"}}}
+--- json.loads round-trip ---
+{
+  "detail": {
+    "error": "duplicate_application",
+    "message": "You already submitted an application for this employer/req.",
+    "prior_receipt": {
+      "id": "360f3621-f135-4a9c-95ce-c910924b99d4",
+      "user_id": "c9f47fd8-fd59-4df9-8c9c-b7ff68fb4785",
+      "company_id": "e3a90842-85b2-4e04-bf50-f016e1b75d7f",
+      "req_ref": "sampleco.demo::sample-01",
+      "application_id": "419ae93a-6de9-4fa8-8b77-cfc355acd7a4",
+      "job_id": "98109a0a-0d0c-4912-bf5f-ade4e3c97acc",
+      "materials_manifest_hash": "7041649e400031b7d79c2fb7ceab82eeb0adf3a5bb3bfb0e375524b639fefc32",
+      "submit_channel": "manual_queue",
+      "supersedes": null,
+      "ts": "2026-07-20T11:35:21.689000"
+    }
+  }
+}
+P0 assertions PASS: 409, duplicate_application, prior_receipt.ts is str
+
+======================================================================
+SCENARIO P1 — interview scheduling advances funnel
+======================================================================
+rebase: 200
+approve: 200 state= approved
+attest: 201 state= submitted
+outcomes response: 201 app_state= response
+schedule_interview status: 201
+{
+  "transition": {
+    "from": "response",
+    "to": "interview"
+  },
+  "transition_error": null,
+  "application_state": "interview"
+}
+funnel sample bucket: {'prepared': 1, 'submitted': 1, 'response': 1, 'interview': 1, 'offer': 0, 'closed': 0}
+qualified: 200 True
+funnel qi_total after QI confirm: 1
+P1 assertions PASS: transition to interview + sample.interview>=1 + qi_total>=1
+
+======================================================================
+SCENARIO P1 EDGE — schedule from illegal state (approved)
+======================================================================
+rebase: 200
+approve: 200 state= approved
+status: 201
+{
+  "transition": null,
+  "transition_error": "state_source_not_eligible_for_interview",
+  "application_state": "approved",
+  "outcome": {
+    "id": "4a27a4d8-6f08-425a-85f1-d5505fc1965e",
+    "user_id": "c9f47fd8-fd59-4df9-8c9c-b7ff68fb4785",
+    "application_id": "b4ee03eb-32fc-437e-8692-d9dcf26c0f4a",
+    "event": "interview_scheduled",
+    "source": "manual",
+    "note": "stage=phone_screen",
+    "ext_message_id": null,
+    "ts": "2026-07-20T11:35:40.504744+00:00"
+  },
+  "interview": {
+    "id": "a23c3ee3-45c0-4679-b2e6-865865e7679e",
+    "user_id": "c9f47fd8-fd59-4df9-8c9c-b7ff68fb4785",
+    "application_id": "b4ee03eb-32fc-437e-8692-d9dcf26c0f4a",
+    "stage": "phone_screen",
+    "scheduled_at": null,
+    "qualified": null,
+    "source": "manual",
+    "created_at": "2026-07-20T11:35:40.504178+00:00",
+    "updated_at": "2026-07-20T11:35:40.504178+00:00"
+  }
+}
+P1 EDGE assertions PASS: 201, transition_error surfaced, row+outcome persisted
+
+ALL LIVE SCENARIOS PASSED

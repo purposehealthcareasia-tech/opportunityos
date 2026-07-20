@@ -252,6 +252,27 @@ def test_tracker_outcomes_and_qi():
                       headers=_auth_header(token), json={"event": "response"}, timeout=10)
     assert r.status_code == 201
     assert r.json()["application_state"] == "response"
+
+    # P1 fix — scheduling an interview advances the funnel from response → interview.
+    r = requests.post(f"{BASE_URL}/api/v1/applications/{app_id}/interviews",
+                      headers=_auth_header(token), json={"stage": "recruiter_screen"}, timeout=10)
+    assert r.status_code == 201, r.text
+    body = r.json()
+    iv_id = body["interview"]["id"]
+    assert body["transition"] == {"from": "response", "to": "interview"}, body
+    assert body["application_state"] == "interview"
+    # Funnel now counts it.
+    fn = requests.get(f"{BASE_URL}/api/v1/analytics/funnel", headers=_auth_header(token), timeout=10).json()
+    # Fixture-seeded job is SAMPLE — so it lands in the sample bucket, not personal totals.
+    assert fn["sample"]["interview"] >= 1 or fn["totals"]["interview"] >= 1, fn
+
+    # QI confirm still works.
+    r = requests.post(f"{BASE_URL}/api/v1/interviews/{iv_id}/qualified",
+                      headers=_auth_header(token), json={"qualified": True}, timeout=10)
+    assert r.status_code == 200
+    assert r.json()["qualified"] is True
+
+    # From `interview`, walk forward to closed via outcome log.
     r = requests.post(f"{BASE_URL}/api/v1/applications/{app_id}/outcomes",
                       headers=_auth_header(token), json={"event": "rejected"}, timeout=10)
     assert r.status_code == 201
@@ -260,14 +281,22 @@ def test_tracker_outcomes_and_qi():
                       headers=_auth_header(token), json={"event": "response"}, timeout=10)
     assert r.status_code == 409
     assert r.json()["detail"]["error"] == "invalid_transition"
+
+
+def test_schedule_interview_from_illegal_state_rejects_transition_but_persists_row():
+    """P1 spec: scheduling from a non-{submitted,response} state must NOT crash and must
+    NOT silently succeed the transition. The interview row + outcome are still persisted
+    (append-only), but application state is unchanged and transition_error is surfaced."""
+    _rebase()
+    token, _ = _login()
+    app_id, _ = _drive_to_approved(token)  # state = approved
     r = requests.post(f"{BASE_URL}/api/v1/applications/{app_id}/interviews",
-                      headers=_auth_header(token), json={"stage": "recruiter_screen"}, timeout=10)
-    assert r.status_code == 201
-    iv_id = r.json()["id"]
-    r = requests.post(f"{BASE_URL}/api/v1/interviews/{iv_id}/qualified",
-                      headers=_auth_header(token), json={"qualified": True}, timeout=10)
-    assert r.status_code == 200
-    assert r.json()["qualified"] is True
+                      headers=_auth_header(token), json={"stage": "phone_screen"}, timeout=10)
+    assert r.status_code == 201, r.text
+    body = r.json()
+    assert body["transition"] is None
+    assert body["transition_error"] == "state_source_not_eligible_for_interview"
+    assert body["application_state"] == "approved"
 
 
 # ============================================================
@@ -354,3 +383,42 @@ def test_track_applications_consent_gate():
     body = r.json()["detail"]
     assert body["error"] == "consent_required"
     assert body["scope"] == "track_applications"
+
+
+# ============================================================
+# Test 9 — P0 fix: duplicate submit returns 409 (not 500) with parseable JSON
+# ============================================================
+def test_duplicate_submit_returns_409_with_parseable_prior_receipt():
+    """Fix-directive P0: the duplicate branch used to embed a raw datetime in the
+    HTTPException detail → starlette serialization TypeError → 500. Now the entire
+    detail is passed through fastapi.encoders.jsonable_encoder so the client sees a
+    proper 409 with a JSON-parseable prior_receipt (ts is an ISO-8601 string)."""
+    _rebase()
+    token, _ = _login()
+    app_id, _ = _drive_to_approved(token)
+    # First submit+attest — persists a receipt.
+    requests.post(f"{BASE_URL}/api/v1/applications/{app_id}/submit",
+                  headers=_auth_header(token, idem=f"p0-sub-{app_id}"), json={}, timeout=15)
+    r = requests.post(f"{BASE_URL}/api/v1/applications/{app_id}/attest",
+                      headers=_auth_header(token, idem=f"p0-att-{app_id}"), json={}, timeout=15)
+    assert r.status_code == 201
+
+    # Force the state back to approved so we can hit the submit-time duplicate branch.
+    # (Without this, the 2nd submit fails at the state precondition, which is a different code path.)
+    db = _sync_db()
+    db.applications.update_one({"id": app_id}, {"$set": {"state": "approved"}})
+
+    r = requests.post(f"{BASE_URL}/api/v1/applications/{app_id}/submit",
+                      headers=_auth_header(token, idem=f"p0-dup-sub-{app_id}"), json={}, timeout=15)
+    # This MUST be a proper 409 — never 500 — and the body must be JSON-parseable.
+    assert r.status_code == 409, f"expected 409, got {r.status_code}: {r.text[:300]}"
+    body = r.json()  # would raise if not parseable JSON
+    detail = body["detail"]
+    assert detail["error"] == "duplicate_application"
+    assert isinstance(detail["prior_receipt"], dict)
+    # The prior receipt ts must be an ISO-8601 STRING (not a datetime that starlette can't serialize).
+    assert isinstance(detail["prior_receipt"]["ts"], str), detail["prior_receipt"]
+    # Sanity: the hash and req_ref round-trip.
+    assert detail["prior_receipt"]["req_ref"]
+    assert len(detail["prior_receipt"]["materials_manifest_hash"]) == 64
+

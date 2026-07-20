@@ -1,0 +1,110 @@
+{
+  "summary": "Phase 5 fix-directive round 1 VERIFIED end-to-end. Backend pytest: 119/119 green (12 phase5 e2e + 3 receipts_immutability + all prior phases; 170s run, --ignore=tests/golden_resumes). P0 fix confirmed live: forcing state back to 'approved' via pymongo after a first submit+attest and re-submitting hits the duplicate-check branch — server returns HTTP 409 (NEVER 500), body is JSON-parseable, detail.error=='duplicate_application', detail.prior_receipt is a dict, detail.prior_receipt.ts is an ISO-8601 string (e.g. '2026-07-20T11:35:21.689000'). Full verbatim body captured below and in /app/test_reports/p5v2_live_output.txt. P1 fix confirmed live: after driving submitted→response, POST /api/v1/applications/{id}/interviews {stage:'recruiter_screen'} → 201 with body.transition == {from:'response', to:'interview'}, body.application_state=='interview', body.outcome.event=='interview_scheduled'. GET /api/v1/analytics/funnel then reports sample.interview==1 (SAMPLE-seeded job lands in sample bucket, not personal totals; totals.interview stays 0 as designed). POST /interviews/{iv_id}/qualified {qualified:true} → 200 qualified=true; funnel qi_total incremented to 1 (exposed at response ROOT, not nested under sample — see minor code-review note). P1 EDGE confirmed: scheduling from state='approved' returns 201 with transition==null, transition_error=='state_source_not_eligible_for_interview', application_state=='approved' (unchanged), AND the interview row + interview_scheduled outcome are both persisted in Mongo (append-only ledger). 4 UI screenshots persisted to /app/test_reports/p5v2-*.png — every requested element rendered verbatim (10-char hash, 'no prior application to this employer/req ✓', forward-address stub, card in interview column, analytics-sample-note with SAMPLE bucket text).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_phase5_e2e.py",
+    "/app/backend/tests/test_receipts_immutability.py",
+    "/app/test_reports/pytest/phase5_v2_results.xml",
+    "/app/test_reports/p5v2_live_capture.py",
+    "/app/test_reports/p5v2_live_output.txt"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Minor spec-wording gap in review request: it says '`sample.qi_total` after: qi_total >= 1' but the implementation exposes `qi_total` at the root of the /analytics/funnel response (not nested inside the `sample` object). Numerically qi_total is 1 after the QI confirm — functional intent (counting the qualified interview) is satisfied. Consider either (a) mirroring qi_total inside `sample` for symmetry with sample.interview, or (b) updating spec docs to reflect the actual root-level shape. Not a bug — surfaced so the wire contract stays consistent with docs.",
+    "In domains/outcomes/service.py::schedule_interview, when current state is one not in {submitted, response, interview}, transition_error is set to 'state_source_not_eligible_for_interview' — good. But an InvalidTransition raised inside the try block quietly logs and sets transition_error='invalid_transition' WITHOUT returning a 409 or a specific error body, unlike the /outcomes endpoint which raises 409. This is deliberate (append-only interview row) and correct per spec, but the divergence in status semantics between /outcomes (409 on invalid) and /interviews (201 with transition_error string) is worth documenting for API consumers so they know to always inspect body.transition_error even on 201."
+  ],
+  "updated_files": [
+    "/app/test_reports/p5v2_live_capture.py (new — live-API capture script for P0/P1/P1-edge)",
+    "/app/test_reports/prep_state_for_screenshots.py (new — helper driver)",
+    "/app/test_reports/p5v2_live_output.txt (new — verbatim response bodies)",
+    "/app/test_reports/pytest/phase5_v2_results.xml (new — 119/119 junit)",
+    "/app/test_reports/p5v2-receipt-card.png",
+    "/app/test_reports/p5v2-tracker-response.png",
+    "/app/test_reports/p5v2-tracker-interview.png",
+    "/app/test_reports/p5v2-analytics-sample.png"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "fixture-ead@opportunityos.dev / Fixture!Test1; INTERNAL_SERVICE_TOKEN & MONGO_URL/DB_NAME read from /app/backend/.env",
+  "seed_data_creation": "None persistent. Fixture rebase wipes and reseeds on each test. Duplicate-submit test uses a pymongo-sync tamper (applications.state = 'approved') as legitimate test scaffolding to hit the submit-time duplicate branch — same trick called out in the review request.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Phase 5 fix-directive round 1 is closed. P0 duplicate-submit 409 fix + P1 interview-scheduling funnel-advance fix + P1-edge illegal-state persistence are all green end-to-end. Backend 119/119 pytest, live captures reproduced, 4 screenshots persisted at /app/test_reports/p5v2-*.png (and copied from /root/.emergent/automation_output — browser tool captures as jpeg internally, copied to .png on disk per request naming). qi_total is at root of funnel response, not nested under sample (minor spec-vs-impl wording mismatch, flagged in code review comments — not a bug). Frontend token key remains 'oppos.token'. Screener question IDs contain '#' and must be URL-encoded.",
+  "artifacts": {
+    "duplicate_submit_409_body_verbatim": {
+      "http_status": 409,
+      "body": {
+        "detail": {
+          "error": "duplicate_application",
+          "message": "You already submitted an application for this employer/req.",
+          "prior_receipt": {
+            "id": "360f3621-f135-4a9c-95ce-c910924b99d4",
+            "user_id": "c9f47fd8-fd59-4df9-8c9c-b7ff68fb4785",
+            "company_id": "e3a90842-85b2-4e04-bf50-f016e1b75d7f",
+            "req_ref": "sampleco.demo::sample-01",
+            "application_id": "419ae93a-6de9-4fa8-8b77-cfc355acd7a4",
+            "job_id": "98109a0a-0d0c-4912-bf5f-ade4e3c97acc",
+            "materials_manifest_hash": "7041649e400031b7d79c2fb7ceab82eeb0adf3a5bb3bfb0e375524b639fefc32",
+            "submit_channel": "manual_queue",
+            "supersedes": null,
+            "ts": "2026-07-20T11:35:21.689000"
+          }
+        }
+      },
+      "assertions_passed": [
+        "status_code == 409 (not 500)",
+        "json.loads(response.text) succeeds",
+        "detail.error == 'duplicate_application'",
+        "isinstance(detail.prior_receipt, dict) == True",
+        "isinstance(detail.prior_receipt.ts, str) == True (ISO-8601)",
+        "len(detail.prior_receipt.materials_manifest_hash) == 64"
+      ]
+    },
+    "interview_transition_response_verbatim": {
+      "http_status": 201,
+      "transition": {"from": "response", "to": "interview"},
+      "transition_error": null,
+      "application_state": "interview",
+      "outcome.event": "interview_scheduled",
+      "funnel_sample_after_schedule": {"prepared": 1, "submitted": 1, "response": 1, "interview": 1, "offer": 0, "closed": 0},
+      "qi_confirm_status": 200,
+      "qi_confirm_qualified": true,
+      "funnel_qi_total_after_qi_confirm": 1
+    },
+    "interview_illegal_state_response_verbatim": {
+      "http_status": 201,
+      "transition": null,
+      "transition_error": "state_source_not_eligible_for_interview",
+      "application_state": "approved",
+      "outcome": {
+        "event": "interview_scheduled",
+        "source": "manual",
+        "note": "stage=phone_screen",
+        "persisted_in_outcomes_collection": true
+      },
+      "interview": {
+        "stage": "phone_screen",
+        "qualified": null,
+        "persisted_in_interviews_collection": true
+      }
+    },
+    "screenshots_persisted_paths": [
+      "/app/test_reports/p5v2-receipt-card.png",
+      "/app/test_reports/p5v2-tracker-response.png",
+      "/app/test_reports/p5v2-tracker-interview.png",
+      "/app/test_reports/p5v2-analytics-sample.png"
+    ],
+    "screenshot_evidence_text": {
+      "receipt_card": "receipt-hash-short='d65071d074' (10 chars) + receipt-duplicate-check='no prior application to this employer/req ✓' (exact match)",
+      "tracker_response": "tracker-count-response='1', card 'Vehicle S...' visible in RESPONSE column, forward-address-label='INBOUND PARSING — labeled stub in v0.1; log updates manually' (exact match)",
+      "tracker_interview": "tracker-count-interview='1', same card now in INTERVIEW column with interview_scheduled outcome badge",
+      "analytics_sample": "analytics-sample-note text='SAMPLE — excluded from your metrics. These rows come from the seeded demo employers used for the guided tour. · SAMPLE bucket: prepared=1, submitted=1.'"
+    },
+    "backend_regression": {
+      "command": "cd /app/backend && python3 -m pytest tests/ -q --ignore=tests/golden_resumes",
+      "result": "119 passed in 170.03s",
+      "junit_xml": "/app/test_reports/pytest/phase5_v2_results.xml"
+    }
+  },
+  "rca of the issue": "N/A — both patches (P0 and P1) hold. P0: applications/service.py now wraps the duplicate-check HTTPException detail in fastapi.encoders.jsonable_encoder, so the raw pymongo datetime in prior_receipt.ts is serialized to an ISO-8601 string before starlette JSON-encodes the response (previously starlette hit a TypeError on the raw datetime and fell through to a 500). P1: outcomes/service.py::schedule_interview now (a) inserts the interview row, (b) appends an APPEND-ONLY interview_scheduled outcome, and (c) attempts atomic_transition from {submitted,response} → 'interview'; illegal source states return transition_error='state_source_not_eligible_for_interview' and still persist the row + outcome (append-only ledger). Verified by pytest suite + live-API capture + Playwright UI screenshots."
+}

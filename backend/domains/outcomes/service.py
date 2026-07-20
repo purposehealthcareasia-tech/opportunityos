@@ -215,6 +215,17 @@ async def schedule_interview(
     req: ScheduleInterviewRequest,
     user: dict = Depends(require_consent("track_applications")),
 ):
+    """Schedule an interview + advance the funnel to `interview`.
+
+    Spec (Phase 5 Fix Directive P1): a scheduled interview means the application is at
+    the Interview stage. This endpoint:
+      1. Inserts the interviews row.
+      2. Appends an APPEND-ONLY `interview_scheduled` outcome.
+      3. Atomically transitions application.state to `interview` when the current state
+         is `submitted` or `response`. Illegal source states are 409 with
+         `allowed_from_here` surfaced — the interview row + outcome are STILL persisted
+         (append-only ledger) so the user can correct application state manually.
+    """
     db = get_db()
     app_row = await db.applications.find_one({"id": application_id, "user_id": user["id"]}, {"_id": 0})
     if not app_row:
@@ -235,7 +246,46 @@ async def schedule_interview(
     await audit.write(user["id"], "interview.scheduled", f"application:{application_id}",
                       {"interview_id": doc["id"], "stage": req.stage})
     doc.pop("_id", None)
-    return doc
+
+    # Append the outcome ledger row (append-only).
+    outcome = await _insert_outcome(
+        user_id=user["id"], application_id=application_id,
+        event="interview_scheduled", source="manual",
+        note=f"stage={req.stage}",
+    )
+
+    # Advance to `interview` when legal. Interview must come from submitted or response.
+    current = app_row["state"]
+    transition = None
+    transition_error = None
+    if current == "interview":
+        transition = {"from": current, "to": "interview", "no_op": True}
+    elif current in {"submitted", "response"}:
+        try:
+            updated = await atomic_transition(
+                user_id=user["id"], application_id=application_id,
+                expected_state=current, new_state="interview",
+            )
+            if updated:
+                transition = {"from": current, "to": "interview"}
+                app_row = updated
+            else:
+                transition_error = "state_precondition_failed"
+        except InvalidTransition as ie:
+            transition_error = "invalid_transition"
+            await audit.write(user["id"], "interview.transition_rejected",
+                              f"application:{application_id}",
+                              {"from": ie.from_state, "to": ie.to_state})
+    else:
+        transition_error = "state_source_not_eligible_for_interview"
+
+    return {
+        "interview": doc,
+        "outcome": outcome,
+        "transition": transition,
+        "transition_error": transition_error,
+        "application_state": app_row["state"],
+    }
 
 
 @router.post("/interviews/{interview_id}/qualified")
