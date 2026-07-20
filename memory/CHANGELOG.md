@@ -56,3 +56,12 @@
 - **P0 SECURITY** — `/api/v1/admin/users/{id}` was returning the target user's raw `password_hash` (bcrypt). Added `SENSITIVE_USER_FIELDS = {"password_hash", "password", "totp_secret", "recovery_codes"}` constant + `_sanitize_user()` helper in `domains/admin/service.py`. The user projection now excludes those fields at the driver level, and the sanitizer scrubs again post-fetch (defence-in-depth). Sweep of every admin endpoint confirmed no `password_hash` / `totp_secret` / bcrypt-marker string leaks anywhere. New pytest `test_admin_user_detail_never_leaks_password_hash` locks the invariant in for both admin and support roles.
 - **P1 PROVABLE SEALED MASKING** — admin user-detail now surfaces `eligibility_profile` with sealed data fields (`status`, `dates`, `notes`, `derived_flags`) replaced by the mask literal `"•••• (sealed)"` (matches PRD §Sealed fields). Sealed claims already returned the mask literal; alignment to the PRD wording is done here. Frontend `Admin.jsx` shows the new masked block. New pytest `test_admin_user_detail_masks_sealed_data` inserts a sentinel sealed claim, verifies both admin and support see the mask literal, and asserts the raw sentinel value never appears anywhere in the response body.
 - Mask literal changed from `"🔒 masked (sealed sensitivity)"` to `"•••• (sealed)"` to match `PRD.md` §Sealed fields.
+
+## 2026-02-20 · v0.1 CERTIFIED — security-invariants module (test-only)
+
+- Added `tests/test_security_invariants.py` — parametrised regression that enumerates every admin/user response endpoint and asserts no credential/secret marker (password_hash / password / totp_secret / recovery_codes / csrf_token / session_id / `$2[aby]$` bcrypt-prefix) ever appears in a response body.
+- 18/18 tests green. Full backend regression: 173/173 pytest.
+- Adding a new admin/user GET endpoint from now on requires appending it to `ADMIN_READ_ENDPOINTS` or `USER_SELF_ENDPOINTS` in that module. Adding a new credential column on `users` requires appending it to `CREDENTIAL_KEYS`.
+- `test_admin_service_lists_all_known_credential_fields` cross-checks that `SENSITIVE_USER_FIELDS` in `domains/admin/service.py` stays in sync with the invariants registry.
+
+**v0.1 close-out complete.** Final commit: recorded at write-time.

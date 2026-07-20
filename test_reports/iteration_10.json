@@ -1,0 +1,39 @@
+{
+  "summary": "v0.1 CERTIFIED final check — new security-invariants pytest module verified. 18/18 parametrised tests PASS in tests/test_security_invariants.py (9 admin-read × implicit dual-role scan + 6 user-self reads + 2 admin user-detail deep scans + 1 sensitivity-registry cross-check = 18 test IDs). Full backend regression sweep 173/173 PASS (0 failing) — no phase-1..6 test regressed from the new module addition. Module design verified: ADMIN_READ_ENDPOINTS lists all 9 admin GETs, USER_SELF_ENDPOINTS lists the 6 required user-self reads, CREDENTIAL_KEYS includes JSON quoted-key forms for password_hash / password / totp_secret / recovery_codes / csrf_token / session_id, SENSITIVE_TOKEN_PATTERNS includes the bcrypt-prefix regex `$2[aby]$`, and the sensitivity-registry test greps domains/admin/service.py for `\"password_hash\"`, `\"password\"`, `\"totp_secret\"`, `\"recovery_codes\"`. Prod-deploy dry check confirmed: domains/admin/service.py:45 `SENSITIVE_USER_FIELDS = {\"password_hash\", \"password\", \"totp_secret\", \"recovery_codes\"}`; get_user_detail (line 127) both (a) projects credential fields out at the driver level (line 133) and (b) still calls `_sanitize_user(row)` (line 137) as defence-in-depth. PRD.md §v0.1 CERTIFIED (line 8) contains 2026-02-20 date, final commit ref `f51ce95b`, acceptance A–I 100% PASS pointer, pytest count 173/173, 5 deviations of record, 4-stub inventory pointer. PRD.md §Sealed fields now references the new pytest security-invariants module (line 66). CHANGELOG.md line 60 has the 2026-02-20 v0.1 CERTIFIED — security-invariants module entry. This is purely additive; no product code changed.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/v1/admin/health", "issue": "(carried over from iteration 8/9) legacy 'audit_events' naming vs 'audit_logs' in privacy export bundle — not in scope of this test-only close-out."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_security_invariants.py",
+    "/app/test_reports/pytest/security_invariants.xml",
+    "/app/test_reports/pytest/full_iter10.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "test_security_invariants.py is a clean, well-scoped guard module. Parametrisation is explicit, fixtures are module-scoped (fast), and the two-fold defence (JSON-quoted-key substring + bcrypt regex) is a solid mix of structural + value-level checks.",
+    "TestSensitivityRegistry.test_admin_service_lists_all_known_credential_fields greps the file source rather than importing the constant. That is fragile to refactors (e.g., moving SENSITIVE_USER_FIELDS into a shared module). Consider `from domains.admin.service import SENSITIVE_USER_FIELDS` and asserting set membership — same guarantee, refactor-safe.",
+    "USER_SELF_ENDPOINTS test currently accepts any status code (200 or 4xx) and only scans the body — that is intentional per the docstring (consent_required 403 is legitimate). Good documented decision, no change needed.",
+    "The admin-read scan asserts 200 for BOTH admin AND support on every listed endpoint. This double-confirms Phase-6's 'support = read-only' contract as a side effect. Nice.",
+    "Consider adding /api/v1/admin/users/{id} explicitly to ADMIN_READ_ENDPOINTS (currently covered by TestAdminUserDetailDeepScan but not in the flat list) so the invariants matrix is a single source of truth. Low priority."
+  ],
+  "updated_files": [
+    "/app/test_reports/iteration_10.json (new)",
+    "/app/test_reports/pytest/security_invariants.xml (new — junit for the 18 invariants)",
+    "/app/test_reports/pytest/full_iter10.xml (new — junit for the 173-test regression sweep)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "n/a (backend only)"},
+  "test_credentials": "admin@opportunityos.dev / Admin!Console1 · support@opportunityos.dev / Support!Console1 · fixture-ead@opportunityos.dev / Fixture!Test1. CI_TEST_ISSUER_ENABLED=true in preview .env (Bearer path).",
+  "seed_data_creation": "None. Purely read-only invariants tests.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "v0.1 is CERTIFIED. tests/test_security_invariants.py is the permanent guard against credential leakage on admin/user response surfaces. Any future admin GET or new credential column on `users` MUST update ADMIN_READ_ENDPOINTS / CREDENTIAL_KEYS / SENSITIVE_TOKEN_PATTERNS or the sensitivity-registry test will fail. Full backend suite runs in ~3.5 min and passes 173/173. See /app/memory/PRD.md §v0.1 CERTIFIED for the frozen close-out contract.",
+  "rca of the issue": "N/A — no bugs. Additive test-only change verified green."
+}

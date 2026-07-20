@@ -3,12 +3,47 @@
 **Codename in repo:** LYNK.
 **Web-first.** Backend: FastAPI @ 8001. Frontend: React @ 3000. DB: MongoDB. Ingress: all backend under `/api/*`.
 
+---
+
+## ✅ v0.1 CERTIFIED — 2026-02-20
+
+**Final commit (pre-security-invariants):** `f51ce95b`
+**Final commit (with security-invariants module):** captured as the next auto-commit on top of this write.
+**Acceptance Run A–I:** 100 % PASS (see `/app/test_reports/p6-acceptance-run.md`).
+**Backend pytest sweep:** **173 / 173** green — 119 phases-1-through-5 + 34 phase-6 acceptance + 2 close-out fix + 18 security invariants.
+**Test reports:** `iteration_5..9.json`, junit `pytest/phase6_iter{8,9}.xml`, sanitized user-detail body `p9-admin-user-detail-body.json`.
+
+### Deviations of record (frozen at v0.1)
+1. **Auth**: internal JWT+bcrypt with Phase-6 httpOnly-cookie transport migration. Spec originally called for Clerk. Isolated in `domains/auth/*` and `core/{sessions,security,deps}.py` — swappable.
+2. **Storage**: `LocalDiskStorage` under `/app/backend/storage`. `documents` rows still carry `s3_key + sha256` for a mechanical S3/Postgres migration later.
+3. **Database**: MongoDB with compensating requirements (unique indexes proven by pytest on `canonical_key`, `submission_receipts`, `usage_meters`, partial-open-application, `sessions.session_id`). Spec originally called for Postgres.
+4. **CI Bearer path**: `CI_TEST_ISSUER_ENABLED=true` in the preview `.env` so pytest can keep using `Authorization: Bearer …`. Production `.env` MUST set this to `false` and `PROD_MODE=true`; server refuses to start if both are true.
+5. **Sealed masking literal**: `"•••• (sealed)"` (matches PRD §Sealed fields below). No unmask capability exists in v0.1 by design.
+
+### Stub inventory pointer
+- **Stripe** — TEST-mode via `emergentintegrations`; `/api/webhook/stripe` verification is a labeled stub. Activation: swap `STRIPE_API_KEY` to a live key + wire real signature verification.
+- **Inbound response webhook** — `/api/internal/inbound/response` (X-Service-Token gated). Activation: rotate the internal token + wire a real inbound parser.
+- **Observability** — `/api/v1/admin/observability/{events,errors}` endpoints return payloads tagged `label: "INTERNAL STUB — Sentry/PostHog equivalent"`. Activation: replace stub writes with SDK calls.
+- **Anti-virus scan on uploads** — `av_status="skipped_v0.1"` on every uploaded document. Activation: wire a real AV pipeline pre-parse.
+
+### What must NOT change without a new brief
+- Product laws in §Product law
+- Sealed-field masking (no unmask path — spec-frozen at v0.1)
+- Immutable receipts (append-only, no update / delete surface)
+- Consent ledger append-only rule
+- Fixture geometry (9 passing / 6 excluded on fixture-ead@ with the seeded 15 SampleCo jobs)
+
+**No further product changes without a new brief.**
+
+---
+
 ## Product law
 - Candidate-fiduciary. Consent-first. Every state-changing action is authenticated, idempotent, audited.
 - Optimize for **qualified interviews**, never application volume.
 - The **Career Passport** (approved claims) is the ONLY factual source of truth. No shadow inference gets written back to it.
 - No scraping. No password harvesting. No invented facts. No auto-submit without approval.
 - Feature allowlist: zip code / age proxies FORBIDDEN in gates or scoring.
+
 
 ## Roles
 `user` (default), `support`, `admin`. Admin/support gated via `admin_users` collection.
@@ -26,7 +61,9 @@ Consent ledger is APPEND-ONLY. Revocation = new row with `granted=false`. No del
 Every state-changing endpoint (POST/PUT/PATCH/DELETE under `/api/v1/*`) accepts `Idempotency-Key`. Middleware replays the byte-identical body per (user, method, path, key) — no duplicate side effects, no duplicate audit rows.
 
 ## Sealed fields
-Claims with `sensitivity="sealed"` serialize as `"•••• (sealed)"` for anyone who is not the owning user — including admin and support.
+Claims with `sensitivity="sealed"` serialize as `"•••• (sealed)"` for anyone who is not the owning user — including admin and support. The eligibility_profile (when `sensitivity="sealed"`) applies the same mask to its data fields (`status`, `dates`, `notes`, `derived_flags`). No unmask capability exists in v0.1 — future JIT-elevation designs must be a NEW route, not a mutation of `get_user_detail`.
+
+Security invariants: pytest module `tests/test_security_invariants.py` enumerates every admin/user response endpoint and asserts no `password_hash` / `password` / `totp_secret` / `recovery_codes` / `csrf_token` / `session_id` / bcrypt-hash marker (`$2[aby]$`) appears anywhere in the response body. Adding a new admin GET or a new credential column requires updating that module.
 
 ## Phase roadmap
 - **Phase 1 (shipped):** Foundation — auth, consent ledger, audit, idempotency, sealed serializer, seeds, gated admin route.
