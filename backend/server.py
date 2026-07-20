@@ -27,6 +27,11 @@ from domains.outcomes.service import router as outcomes_router
 from domains.subscriptions.service import router as subscriptions_router
 from domains.inbound.internal_router import router as inbound_internal_router
 from domains.analytics.service import router as analytics_router
+from domains.billing.service import router as billing_router, webhook_router as billing_webhook_router
+from domains.privacy.service import router as privacy_router, sweep_expired_deletions
+from domains.admin.service import router as admin_router
+from domains.support.service import router as support_router
+from domains.observability.service import router as observability_router
 from domains.seeds.seeder import run_seeds
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -42,6 +47,13 @@ async def lifespan(_app: FastAPI):
         log.info("Seed complete: %s", counts)
     except Exception:
         log.exception("Seeder failed")
+    # Phase 6 — sweep expired deletion_pending users on boot. Fires each restart.
+    try:
+        swept = await sweep_expired_deletions()
+        if swept:
+            log.info("Deletion sweep hard-deleted %d user(s).", swept)
+    except Exception:
+        log.exception("Deletion sweep failed")
     yield
     log.info("OpportunityOS backend shutting down…")
 
@@ -83,7 +95,7 @@ async def health():
     return {
         "ok": True,
         "mongo": mongo_ok,
-        "phase": 5,
+        "phase": 6,
         "policy_text_version": policy_version(),
     }
 
@@ -117,3 +129,9 @@ app.include_router(outcomes_router)
 app.include_router(subscriptions_router)
 app.include_router(inbound_internal_router)
 app.include_router(analytics_router)
+app.include_router(billing_router)
+app.include_router(billing_webhook_router)
+app.include_router(privacy_router)
+app.include_router(admin_router)
+app.include_router(support_router)
+app.include_router(observability_router)

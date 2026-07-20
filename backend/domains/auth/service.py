@@ -69,6 +69,17 @@ async def login(req: LoginRequest) -> dict:
     user = await user_repo.by_email(req.email.lower())
     if not user or not verify_password(req.password, user.get("password_hash", "")):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid_credentials")
+    # Phase 6 — soft-delete gate. deletion_pending accounts can log in ONLY via the
+    # restore path; the token they receive is scoped by the /privacy/account/restore route.
+    # For v0.1 we hard-block login and expose the restore instruction in the 403 detail.
+    if user.get("deletion_pending_at"):
+        raise HTTPException(status_code=403, detail={
+            "error": "account_deletion_pending",
+            "scheduled_for": (user.get("deletion_scheduled_for") or "").isoformat()
+                if hasattr(user.get("deletion_scheduled_for"), "isoformat")
+                else user.get("deletion_scheduled_for"),
+            "message": "This account is pending deletion. Contact support to restore before the window closes.",
+        })
     admin_row = await get_db().admin_users.find_one({"user_id": user["id"]})
     role = admin_row["role"] if admin_row else "user"
     token = create_access_token(user["id"])

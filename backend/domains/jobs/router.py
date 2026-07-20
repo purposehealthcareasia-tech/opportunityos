@@ -39,6 +39,14 @@ def _shape_job_card(job: dict, score_row: dict | None) -> dict:
 
 @router.get("/feed")
 async def feed(user: dict = Depends(require_consent("discover_jobs"))):
+    # Phase 6 — feed_enabled feature flag (§C.4). Flag OFF returns an honest 503 the UI
+    # renders as "temporarily disabled by operations".
+    from services import feature_flags as ff
+    if not await ff.is_enabled("feed_enabled", default=True):
+        raise HTTPException(status_code=503, detail={
+            "error": "feature_disabled", "flag": "feed_enabled",
+            "message": "Feed temporarily disabled by operations. Please try again in a few minutes.",
+        })
     # Also require the passport to be activated. We surface an honest error the UI can render as a
     # passport-activation gate (distinct from consent gate).
     fresh = await get_db().users.find_one({"id": user["id"]}, {"passport_activated": 1, "_id": 0})

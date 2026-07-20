@@ -45,5 +45,12 @@ async def increment_apps_submitted(user_id: str, amount: int = 1) -> None:
 
 @router.get("/me")
 async def get_usage(user: dict = Depends(get_current_user)):
-    doc = await get_db().usage_meters.find_one({"user_id": user["id"], "period": _period()}, {"_id": 0})
-    return doc or {"user_id": user["id"], "period": _period(), "jobs_processed": 0, "apps_prepared": 0, "apps_submitted": 0}
+    """Live usage snapshot with the three VERBATIM meter definitions (spec §A.3)."""
+    from services import plan_caps
+    snap = await plan_caps.usage_snapshot(user["id"])
+    snap["meter_definitions_verbatim"] = {
+        "jobs_processed": "discovered+verified+scored for you",
+        "applications_prepared": "tailored packets awaiting your approval",
+        "apps_submitted": "sent with receipt",
+    }
+    return snap

@@ -111,4 +111,12 @@ async def ensure_indexes() -> None:
     # (user_id, ts) index for daily-cap counting is served by (user_id, company_id, req_ref) prefix + ts scan.
     await db.submission_receipts.create_index([("user_id", ASCENDING), ("ts", DESCENDING)],
                                               name="receipts_by_user_ts")
+    # Phase 6 collections
+    await db.feature_flags.create_index("name", unique=True)
+    await db.payment_transactions.create_index("session_id", unique=True)
+    await db.payment_transactions.create_index([("user_id", ASCENDING), ("created_at", DESCENDING)])
+    await db.support_tickets.create_index([("user_id", ASCENDING), ("created_at", DESCENDING)])
+    await db.export_jobs.create_index([("user_id", ASCENDING), ("created_at", DESCENDING)])
+    await db.internal_analytics_events.create_index([("ts", DESCENDING)])
+    await db.internal_error_events.create_index([("ts", DESCENDING)])
 
