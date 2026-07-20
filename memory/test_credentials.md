@@ -11,7 +11,9 @@
 - **Password:** `Passport!Test0`
 - **Role:** `user`
 - **Persona:** Ujjwal Singla — Phoenix, AZ — automotive systems engineer
-- **Passport state:** all claims `user_approved=false`, `verification_level=0`, work-authorization claim is `sealed`.
+- **Passport state:** all 16 seeded claims start `status:"pending"`, `user_approved:false`, `verification_level:0`. Work-authorization claim is `sealed` (owner sees real value; admin/support see the masked `•••• (sealed)` placeholder).
+
+_Note for testers:_ Phase 2 does NOT auto-approve any of User Zero's seeded claims. You must approve at least one `identity` claim AND one `education` or `employment` claim before `/api/v1/passport/activate` will succeed. User Zero has both types available in the pending pile.
 
 ## Admin
 - **Email:** `admin@opportunityos.dev`

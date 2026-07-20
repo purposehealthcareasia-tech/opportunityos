@@ -87,17 +87,75 @@ Base URL for external checks: `https://af7cc636-8506-4548-af82-a1a50aae0158.prev
 - LLM: not used in Phase 1. `EMERGENT_LLM_KEY` confirmed available. Wiring lands in Phase 4.
 - Billing (Stripe): deferred to Phase 6.
 
-### Backend testing agent handoff
+## Phase 2 (Career Passport, Preferences, Eligibility)
 
-Please verify all 16 rows above and stress-test:
-1. Signup + login + me with a fresh email.
-2. Consent grant/revoke/re-grant cycle for a non-required scope and for `process_career_data`.
-3. Idempotency replay (same key returns identical body; audit rows do NOT duplicate).
-4. Role gating (user → 403 on admin routes; admin/support → 200).
-5. Sealed masking for admin/support vs the owner.
-6. Seed counts (13 taxonomy, 26 companies, 15 sample jobs is_sample=true, User Zero with claims all user_approved=false).
+Extends the foundation with: `documents`, `claims` lifecycle, `preferences`, `eligibility_profiles`, `resume_versions`, and the gate engine.
 
-Credentials in `/app/memory/test_credentials.md`.
+- **LLM parse pipeline (real):** primary `gpt-5`, fallback `gpt-4o` via `emergentintegrations` + `EMERGENT_LLM_KEY`. Strict anti-fabrication system prompt. Every parsed claim persists `source={kind:"resume_parse", document_id, model}`, `confidence`, `user_approved=false`, `status="pending"`, `verification.level=0`.
+- **Claim lifecycle:** approve, reject, bulk-approve (per type or per id list), edit (creates version+1 with `superseded_by` link on the old row — old row is never mutated), manual create (user_provided, immediately approved).
+- **Passport activation:** server-checked. Requires ≥1 approved `identity` claim + ≥1 approved `education` or `employment` claim. `POST /api/v1/passport/activate` flips `users.passport_activated=true`, audited.
+- **Preferences:** append-only version rows; latest wins. Typeahead endpoints `/api/v1/taxonomy` and `/api/v1/companies?q=` back the S5 UI. Salary floor labeled *private — never shared with employers*.
+- **Eligibility:** owner-only endpoint. Sealed by design (no admin/support endpoint exists in this phase). Statuses: citizen, permanent_resident, ead_opt, stem_opt, h1b, tn, other, unspecified. Derived flags computed deterministically server-side: `itar_excluded`, `e_verify_need`, `sponsorship_need`.
+- **Gate engine v0** (`services/gate_engine.py`): three ordered gates — `work_auth`, `itar`, `sponsorship`. Each returns pass / fail(reason_code) / unknown. Reason codes: `requires_us_person`, `no_sponsorship_offered`, `work_auth_mismatch`, `work_auth_unspecified`.
+- **Sample-job eligibility fixtures:** 2 jobs flagged `requires_us_person=true` (Autonomy Systems Engineer, Fab Equipment Engineer), 4 jobs `offers_sponsorship=false` (Battery Test, Battery Thermal, Vehicle Test, Manufacturing Process). Remaining 9 open.
+- **Coverage preview** (`GET /api/v1/eligibility/coverage-preview`): consent-gated on `discover_jobs`. Runs the gate engine across all live jobs; returns totals + per-job reasons.
+
+### Phase 2 backend test evidence (curl, executed against localhost:8001)
+
+| Check | Result |
+|---|---|
+| Unsupported file type rejected (400 `unsupported_type`) | PASS |
+| DOCX upload → `parse_status: queued → parsing → completed` (real LLM) | PASS (~30s end-to-end; gpt-5 primary) |
+| Parse output: 17 claims, ALL `user_approved:false`, `status:"pending"`, `verification.level:0`, `source.model:"gpt-5"`, confidences populated | PASS |
+| Anti-fabrication: no facts appeared that weren't in the DOCX text (spot-checked all 17) | PASS |
+| Claim approve (single) + idempotency replay (byte-identical, X-Idempotent-Replay: true) | PASS |
+| Claim edit → new version (v2) with `source.kind:"user_edited", from_claim_id, from_version`; old row `superseded_by=new_id`; old row VALUE untouched | PASS |
+| Bulk-approve type=`skill` → 8 approved in one call, single audit row | PASS |
+| Manual claim create (type=certification) → `source.user_provided`, `status:"approved"`, `user_approved:true`, `verification.level:0` | PASS |
+| Activation blocked → 400 `activation_requirements_not_met` with `missing_categories:["identity","education_or_employment"]` and hint | PASS |
+| Activation succeeds after both requirements met → `users.passport_activated=true`, `passport.activate` audit row | PASS |
+| Preferences: same Idempotency-Key → replay (v1); different key → v2; latest returns v2 with salary_floor stored | PASS |
+| Taxonomy typeahead returns 13 families with synonyms; company typeahead q=tsmc returns TSMC Arizona only | PASS |
+| Eligibility save (status=ead_opt) → server derives `{itar_excluded:true, e_verify_need:true, sponsorship_need:true}`, `sealed:true`, `version:1` | PASS |
+| Coverage preview blocked → 403 `consent_required` scope=`discover_jobs`; after grant → 200 with real totals | PASS |
+| Coverage totals for ead_opt: live_jobs=15, passing=9, excluded `requires_us_person:2` (Autonomy, Fab Equipment) + `no_sponsorship_offered:4` (Battery Test, Battery Thermal, Vehicle Test, Manufacturing Process) — matches fixture EXACTLY | PASS |
+| Coverage totals for citizen: passing=15 (all sample jobs pass) | PASS |
+| Consent revoke on `process_career_data` → 403 on both `/api/v1/documents/resume` and `/api/v1/claims`; re-grant → 200 | PASS |
+| User Zero owner view: 16 claims, ALL pending, sealed `work_auth` value visible ONLY to owner (`_sealed:undefined`); admin view masks it (`_sealed:true`) | PASS |
+| PDF/DOCX are the only accepted mime types (validated at handler level) | PASS |
+
+### LLM parse evidence (single sample)
+
+Input: `/tmp/aditi_resume.docx` (~37 KB, 6 paragraph sections, self-authored test resume).
+Model used: **`gpt-5`** (primary; recorded in `parse_meta.model_used` and every claim's `source.model`).
+Output: **17 grounded claims**:
+
+- 1 × identity: `{name: "Aditi Rao"}` (conf 0.99)
+- 1 × contact: `{email: "aditi.rao.testuser@example.com", phone: "+1-555-0100"}` (conf 0.99)
+- 1 × location: `{city: "Boston", state: "MA"}` (conf 0.95)
+- 1 × link: `{kind: "linkedin", url: "linkedin.com/in/aditi-rao-testuser"}` (conf 0.95)
+- 2 × education (MIT MS ME 2024, IIT Bombay BTech ME 2022) (conf 0.98 each)
+- 2 × employment (Rivian battery systems engineer, Zoox battery test intern) (conf 0.98 / 0.95)
+- 1 × project (Cell-level busbar redesign, 18% joint-resistance reduction) (conf 0.95)
+- 8 × skill (MATLAB, Simulink, Python, Ansys, GD&T, LabVIEW, DAQ instrumentation, Battery test benches)
+
+**No fabrication observed** — every claim traced back to a substring in the DOCX text.
+
+### Known defects
+None on the backend Phase 2 acceptance criteria.
+
+### Explicit stubs / deviations
+- Anti-virus (`av_status`) is honestly labeled `"skipped_v0.1"` on every uploaded document. AV integration deferred; interface preserved.
+- Background task runner is `services/queue_stub.py` — asyncio + `asyncio.Semaphore(4)`. Swappable for Celery / RQ / SQS later without touching callers.
+- `resume_versions.render_manifest` is populated with `{claims: []}` at parse time; the real tailoring manifest lands in Phase 4.
+- No admin/support endpoint exists for `eligibility_profiles`. That is intentional — the profile is sealed and Phase 2 has no need for a staff view. When it lands, it MUST route through the sealed serializer.
+
+### Frontend
+- `/passport` = tabbed S3 (upload with progress stages: uploading → queued → extracting → parsing → completed + failure state) + S4 (grouped claim review, sealed section rendered separately with lock explainer, activation banner with server-checked checklist, manual add for missing categories, bulk-approve, edit, reject).
+- `/preferences` = S5 with taxonomy-backed typeahead, chip lists, remote toggle, private salary floor, 3-way search intensity, employer include/exclude.
+- `/eligibility` = S6 with 8 statuses, conditional date fields per status, live client-side derived-flags preview, save & preview button, coverage preview panel that shows an inline `ScopeRequiredPrompt` when `discover_jobs` is missing and refetches after grant.
+- Sidebar now marks Passport / Preferences / Eligibility as active; Feed / Applications / Tracker / Analytics / Billing / Privacy remain honest "coming in Phase N" placeholders.
+- Design law upheld: no gradients, no fake counters, no fabricated stats, first-class light+dark, functional loading/empty/error states everywhere.
 
 ## Frontend Tests
 _(populated only after user approves frontend testing)_

@@ -31,17 +31,19 @@ Every state-changing action writes an APPEND-ONLY `audit_logs` row: `{actor, act
 Claims with `sensitivity="sealed"` (e.g., work authorization) serialize as `"•••• (sealed)"` for anyone who is not the owning user — including admin and support.
 
 ## Roadmap phases (planning only)
-- **Phase 1 (this phase):** Foundation — auth, consent ledger, audit, idempotency, sealed serializer, seed data, premium design shell, gated admin route. No AI. No jobs feed. No billing.
-- Phase 2: Career Passport ingestion & approval flow.
-- Phase 3: Jobs feed, discovery, matching.
-- Phase 4: Grounded AI generation (resume tailoring, cover letter). Model pinning: parsing = `gpt-5` (fallback `gpt-4o`), generation + validator = `claude-sonnet-4`. All records write actual model string into `ai_generations`.
+- **Phase 1 (shipped):** Foundation — auth, consent ledger, audit, idempotency, sealed serializer, seed data, premium design shell, gated admin route.
+- **Phase 2 (shipped):** Career Passport ingestion & approval flow — resume upload, real LLM parse (gpt-5, fallback gpt-4o), claim lifecycle (approve/reject/edit versioning with `superseded_by`), preferences, eligibility (sealed) + gate engine v0 + coverage preview.
+- Phase 3: Jobs feed, discovery, matching (extends gate engine, employer green-lane rules).
+- Phase 4: Grounded AI generation (resume tailoring, cover letter). Models: `claude-sonnet-4` for generation + validator. All records write actual model string into `ai_generations`.
 - Phase 5: Application tracker, analytics.
 - Phase 6: Admin console + billing (Stripe — container `STRIPE_API_KEY` noted).
 
 ## Integrations
-- **LLM:** `EMERGENT_LLM_KEY` via `emergentintegrations` — used from Phase 4 onward.
+- **LLM:** `EMERGENT_LLM_KEY` via `emergentintegrations`. Phase 2 wires resume parsing pinned to primary `gpt-5` with automatic fallback to `gpt-4o`. Actual model string is persisted on every parsed claim's `source.model` and on `documents.parse_meta.model_used`.
 - **Storage:** local disk at `/app/backend/storage` behind a `StorageService` interface (S3-compatible surface — `s3_key` + `sha256` on `documents`).
 - **Email / analytics / error tracking:** internal stubs with preserved interfaces.
+- **Background task queue:** `services/queue_stub.py` — asyncio-based, bounded by a semaphore. Swappable for Celery/RQ/SQS later.
+- **Anti-virus scan:** honestly labeled `av_status="skipped_v0.1"` on every uploaded document — no AV wired in yet.
 - **Billing:** deferred to Phase 6.
 
 ## Deviations of record
