@@ -456,7 +456,7 @@ function SubmitPacketPane({ packet, submitPacket, onAttest, attesting }) {
       <div className="flex items-center justify-between">
         <div>
           <div className="text-xs uppercase tracking-wide muted">Materials hash (locked)</div>
-          <div className="font-mono text-sm" data-testid="submit-materials-hash">{submitPacket.materials_hash_short}…</div>
+          <div className="font-mono text-sm" data-testid="submit-materials-hash">{submitPacket.materials_hash_short}</div>
         </div>
         <div className="text-xs muted">
           Today: {submitPacket.usage?.used_today ?? '?'} / {submitPacket.usage?.cap ?? '?'}

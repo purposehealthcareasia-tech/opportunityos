@@ -33,7 +33,7 @@ Claims with `sensitivity="sealed"` serialize as `"•••• (sealed)"` for an
 - **Phase 2 (shipped):** Career Passport ingestion & approval flow — resume upload, real LLM parse (gpt-5, fallback gpt-4o), claim lifecycle (approve/reject/edit with `superseded_by`), preferences, eligibility (sealed) + gate engine v0 + coverage preview.
 - **Phase 3 (shipped):** 14-gate engine, weighted 0-100 scoring, jobs feed, link import (blocks LinkedIn/Indeed/Handshake), applications tracker with atomic state transitions, usage meters, submission-receipts contract (empty; index proven), LLM cost ledger, golden-set harness.
 - **Phase 4 (shipped — 2026-02):** Grounded AI generation (Claude Sonnet 4.5 tailoring + deterministic validator firewall, NO LLM in the reject path), Application Prep flow S10/S11/S12 (validator chip, resume diff with accept/revert + PDF/DOCX export, screeners with sensitive/demographic rules), two-attempt LLM pipeline with template fallback, screener library, ai_generations audit ledger. 104/104 pytest green + full frontend flow verified.
-- Phase 5: Application submit path, tracker analytics, submission_receipts activation.
+- **Phase 5 (shipped — 2026-02):** Approval + authorization (S13, `authorization_scopes` with 72h TTL, batch approve, revoke), route drawer + guided-manual submit + attest (S14/S15) writing IMMUTABLE `submission_receipts` (unique index on user_id+company_id+req_ref; no update/delete surface anywhere), duplicate guard with NO self-serve override, materials-hash lock (sha256 of accepted-lines+approved-answers; edits after approve → 409 materials_changed), daily-submit-cap enforcement (free 3 / plus 15 / pro 25 / max 40; fixture-ead seeded to plus), tracker kanban Prepared→Submitted→Response→Interview→Offer→Closed (S16) with append-only outcomes, illegal-transition-still-persists-outcome contract, QI confirm flow, labeled inbound-parse forward-address stub + `/api/internal/inbound/response` webhook (X-Service-Token gate + idempotent by ext_message_id), personal analytics funnel (S17) with SAMPLE bucket separated + no cohort stats + honest empty states. 117/117 pytest green + full frontend flow verified via testing agent.
 - Phase 6: Admin console + Stripe billing. **Security-hardening carry-over:** move auth tokens from `localStorage` to httpOnly cookies (requires backend cookie parsing, CSRF middleware, `credentials: 'include'` on axios, cross-domain policy for preview URL — full auth surface re-test).
 
 ## Integrations
@@ -143,3 +143,30 @@ Phoenix+Remote+$90k + approved claims. Call this BEFORE each acceptance run in C
   cleanup to remove tester pollution accumulated in earlier iterations. Claims +
   consent_records + audit_logs are preserved (append-only rule).
 - **All future automated tests use the fixture user.**
+
+## Phase 5 endpoints delivered
+- `POST /api/v1/applications/{id}/approve` — computes materials_hash + creates 72h `authorization_scopes` row; awaiting_approval → approved
+- `POST /api/v1/applications/approve-batch` — batch approve with per-row failure reporting
+- `POST /api/v1/applications/{id}/revoke-authorization` — revokes latest auth; approved → awaiting_approval
+- `POST /api/v1/applications/{id}/submit` — approved → submitting; enforces auth (present/unexpired/unrevoked/hash-match) + daily cap + duplicate; returns packet (origin URL, accepted lines, approved answers, route, materials hash)
+- `POST /api/v1/applications/{id}/attest` — submitting → submitted; writes IMMUTABLE receipt (409 duplicate_receipt on collision); bumps usage_meters.apps_submitted (idempotent); consent-gated on track_applications
+- `GET  /api/v1/applications/{id}/receipt` — retrieves the effective receipt for an app
+- `GET  /api/v1/applications/receipts/mine` — list current user's receipts (newest first)
+- `GET  /api/v1/applications/duplicate-check?company_id&req_ref` — prior-receipt lookup used by UI + submit gate
+- `GET  /api/v1/subscriptions/me` — plan + daily_submit_cap (auto-provisions free plan)
+- `GET  /api/v1/tracker` — kanban columns (consent-gated on track_applications)
+- `POST /api/v1/applications/{id}/outcomes` — append-only outcome + atomic state transition; illegal transitions 409 but keep the outcome row
+- `GET  /api/v1/applications/{id}/outcomes` — full ledger for an app
+- `POST /api/v1/applications/{id}/interviews` — schedule; `POST /api/v1/interviews/{id}/qualified` — QI confirm
+- `GET  /api/v1/tracker/forward-address` — labeled inbound-parse stub address
+- `POST /api/internal/inbound/response` — X-Service-Token webhook; idempotent by (user_id, ext_message_id); appends outcome with source=parsed
+- `GET  /api/v1/analytics/funnel` — personal funnel + QI counter + minutes_to_prepare + SAMPLE bucket separation
+
+## Phase 5 collections + indexes
+- `subscriptions` — unique on user_id; plan enum free|plus|pro|max
+- `authorization_scopes` — (user_id, kind, target) index + (user_id, target, created_at DESC) latest-lookup index
+- `outcomes` — (user_id, application_id, ts DESC); unique partial index on (user_id, ext_message_id) for webhook idempotency
+- `interviews` — (user_id, application_id)
+- `manual_queue_items` — unique on application_id
+- `submission_receipts` — unique on (user_id, company_id, req_ref); by-user-ts secondary index
+

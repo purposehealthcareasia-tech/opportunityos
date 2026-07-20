@@ -14,12 +14,14 @@ import { api } from '../lib/api';
  *    + /applications/receipts/mine filtered to today).
  */
 
-function hoursRemaining(expiresAt) {
+function hoursMinutesRemaining(expiresAt) {
   if (!expiresAt) return null;
   const exp = new Date(expiresAt).getTime();
   if (Number.isNaN(exp)) return null;
-  const now = Date.now();
-  return Math.max(0, Math.floor((exp - now) / (60 * 60 * 1000)));
+  const diff = Math.max(0, exp - Date.now());
+  const hrs = Math.floor(diff / (60 * 60 * 1000));
+  const mins = Math.floor((diff % (60 * 60 * 1000)) / (60 * 1000));
+  return { hrs, mins, total: diff };
 }
 
 function submittedToday(receipts) {
@@ -253,7 +255,7 @@ function ApprovalRow({ app, selected, onToggle, onApprove }) {
 
 function ApprovedRow({ app, onRevoke }) {
   const snap = app.job_snapshot || {};
-  const hrs = hoursRemaining(app.authorization_expires_at);
+  const rem = hoursMinutesRemaining(app.authorization_expires_at);
   return (
     <li className="rounded-md border border-accent/40 bg-accent/5 p-3 flex items-center gap-3" data-testid={`approvals-approved-row-${app.id}`}>
       <ShieldCheck className="h-5 w-5 text-accent" />
@@ -264,9 +266,11 @@ function ApprovedRow({ app, onRevoke }) {
         </div>
         <div className="text-xs muted flex items-center gap-2 mt-0.5">
           <Clock className="h-3 w-3" />
-          {hrs === null ? 'expiry unknown' : hrs === 0
-            ? <span className="text-red-500 font-medium">expired — re-approve</span>
-            : <span data-testid={`approvals-expiry-${app.id}`}>expires in {hrs}h</span>}
+          {rem === null
+            ? 'expiry unknown'
+            : rem.total === 0
+              ? <span className="text-red-500 font-medium">expired — re-approve</span>
+              : <span data-testid={`approvals-expiry-${app.id}`}>expires in {rem.hrs}h {rem.mins}m</span>}
         </div>
       </div>
       <Link to={`/applications/${app.id}/prep`} className="pill pill-neutral text-xs no-underline">
