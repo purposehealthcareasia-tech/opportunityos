@@ -5,11 +5,14 @@ import Login from './pages/Login';
 import Signup from './pages/Signup';
 import Settings from './pages/Settings';
 import Admin from './pages/Admin';
+import Passport from './pages/Passport';
+import Preferences from './pages/Preferences';
+import Eligibility from './pages/Eligibility';
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
 import RoleRoute from './components/RoleRoute';
 import {
-  Passport, Preferences, Eligibility, Feed, Applications, Tracker, Analytics, Billing, Privacy,
+  Feed, Applications, Tracker, Analytics, Billing, Privacy,
 } from './pages/placeholders';
 
 export default function App() {

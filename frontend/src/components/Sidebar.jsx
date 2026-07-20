@@ -16,9 +16,9 @@ import {
 } from 'lucide-react';
 
 const SECTIONS = [
-  { to: '/passport',     label: 'Passport',     Icon: IdCard,          phase: 2, active: false },
-  { to: '/preferences',  label: 'Preferences',  Icon: Sliders,         phase: 2, active: false },
-  { to: '/eligibility',  label: 'Eligibility',  Icon: ShieldCheck,     phase: 2, active: false },
+  { to: '/passport',     label: 'Passport',     Icon: IdCard,          phase: 2, active: true  },
+  { to: '/preferences',  label: 'Preferences',  Icon: Sliders,         phase: 2, active: true  },
+  { to: '/eligibility',  label: 'Eligibility',  Icon: ShieldCheck,     phase: 2, active: true  },
   { to: '/feed',         label: 'Feed',         Icon: Rss,             phase: 3, active: false },
   { to: '/applications', label: 'Applications', Icon: SendHorizonal,   phase: 4, active: false },
   { to: '/tracker',      label: 'Tracker',      Icon: ListTodo,        phase: 5, active: false },
