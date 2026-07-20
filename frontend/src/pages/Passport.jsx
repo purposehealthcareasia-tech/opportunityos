@@ -88,7 +88,7 @@ function UploadPanel({ onCompleted }) {
           setPolling(false);
           setError(data.parse_error || 'Parse failed.');
         }
-      } catch { /* transient */ }
+      } catch (e) { console.debug('parse-status poll transient failure', e); }
     };
     tick();
     const t = setInterval(tick, 2500);
@@ -368,6 +368,14 @@ function ActivationBanner({ status, onActivate, activating }) {
   );
 }
 
+const DOC_STATUS_ICON = {
+  completed: { Icon: CheckCircle2, cls: 'text-accent' },
+  failed: { Icon: XCircle, cls: 'text-red-500' },
+};
+function docStatusVisual(status) {
+  return DOC_STATUS_ICON[status] || { Icon: Loader2, cls: 'text-accent animate-spin' };
+}
+
 function DocumentHistory() {
   const [docs, setDocs] = useState(null);
   const [error, setError] = useState('');
@@ -398,10 +406,7 @@ function DocumentHistory() {
       {docs && docs.length > 0 && (
         <ul className="divide-y divide-line dark:divide-line-dark" data-testid="doc-history-list">
           {docs.map((d) => {
-            const isDone = d.parse_status === 'completed';
-            const isFail = d.parse_status === 'failed';
-            const StatusIcon = isDone ? CheckCircle2 : isFail ? XCircle : Loader2;
-            const iconCls = isDone ? 'text-accent' : isFail ? 'text-red-500' : 'text-accent animate-spin';
+            const { Icon: StatusIcon, cls: iconCls } = docStatusVisual(d.parse_status);
             return (
               <li key={d.id} className="py-3 flex items-center justify-between gap-3" data-testid={`doc-history-row-${d.id}`}>
                 <div className="min-w-0">
@@ -481,7 +486,7 @@ export default function PassportPage() {
     return { sealedGroups: sealed, normalGroups: normal };
   }, [groups]);
 
-  const flatSealed = sealedGroups.flatMap((g) => g.claims);
+  const flatSealed = useMemo(() => sealedGroups.flatMap((g) => g.claims), [sealedGroups]);
 
   const approve = async (claim) => {
     setBusyId(claim.id);
@@ -522,7 +527,7 @@ export default function PassportPage() {
     } finally { setActivating(false); }
   };
 
-  const totalClaims = groups.reduce((n, g) => n + g.claims.length, 0);
+  const totalClaims = useMemo(() => groups.reduce((n, g) => n + g.claims.length, 0), [groups]);
 
   return (
     <div className="max-w-5xl mx-auto space-y-6 animate-fadeIn">

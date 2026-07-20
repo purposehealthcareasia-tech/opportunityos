@@ -38,7 +38,8 @@ class LineRejection:
 
 _NUMBER_RE = re.compile(
     r"""
-    (?<![A-Za-z_])           # not preceded by a letter (so 'v1' doesn't split)
+    (?<![A-Za-z_\d])         # not preceded by a letter, underscore, OR digit
+                              # (so '2018-2020' yields 2018 and 2020, not 2018 and -2020)
     -?\d+(?:[.,]\d+)*        # 120, 1,200, 3.14
     (?:\s?%|k|K|M)?          # optional unit suffix
     """,
@@ -93,6 +94,35 @@ def _flatten_claim_values_to_text(claim: dict) -> str:
     if isinstance(val, dict):
         return " ".join(_flatten_claim_values_to_text({"value": v}) for v in val.values())
     return str(val)
+
+
+def _sensitive_leak_tokens(claim: dict) -> set[str]:
+    """Return the individual value tokens (>=3 chars) of a sealed claim that a generated
+    line must NOT surface verbatim without a per-application approval. Splits nested
+    dict/list values into leaves so `{"status": "ead_opt", "opt_end": "2027-12-31"}`
+    yields `{"ead_opt", "2027-12-31"}` — the substring check on the whole flattened
+    string would miss "ead_opt" appearing alone in a sentence.
+    """
+    val = claim.get("value")
+    if val is None:
+        return set()
+    leaves: list[str] = []
+
+    def _walk(v):
+        if v is None:
+            return
+        if isinstance(v, (str, int, float)):
+            leaves.append(str(v))
+        elif isinstance(v, list):
+            for x in v:
+                _walk(x)
+        elif isinstance(v, dict):
+            for x in v.values():
+                _walk(x)
+    _walk(val)
+    # Only tokens 3+ characters are considered leak candidates. This avoids flagging
+    # trivial values like a single digit or a two-letter state code.
+    return {t.strip() for t in leaves if isinstance(t, str) and len(t.strip()) >= 3}
 
 
 def _numbers_in_claim(claim: dict) -> set[str]:
@@ -207,18 +237,20 @@ def validate_lines(
                 if y not in allowed_years:
                     reasons.append(f"date_not_in_claims:{y}")
 
-        # Rule (d): sensitive-leak scan — sealed values must not surface unless approved
+        # Rule (d): sensitive-leak scan — sealed values must not surface unless approved.
+        # Individual leaf value tokens are the leak surface, not the whole flattened
+        # string (which would miss single-value leaks in a longer sentence).
+        text_lower = text.lower()
         for c in approved_claims or []:
             if (c.get("sensitivity") or "").lower() != "sealed":
                 continue
             ctype = c.get("type") or ""
             if ctype in sealed_approvals:
                 continue
-            val_text = _flatten_claim_values_to_text(c).strip()
-            if not val_text or len(val_text) < 3:
-                continue
-            if val_text.lower() in text.lower():
-                reasons.append(f"sensitive_leak:{ctype}")
+            for token in _sensitive_leak_tokens(c):
+                if token.lower() in text_lower:
+                    reasons.append(f"sensitive_leak:{ctype}")
+                    break
 
         if reasons:
             rejected.append(LineRejection(text=text, claim_ids=list(ids or []), reasons=reasons).to_dict())

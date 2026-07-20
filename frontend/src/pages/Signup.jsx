@@ -28,7 +28,7 @@ export default function Signup() {
         if (cancelled) return;
         if (Array.isArray(data.scopes)) setScopes(data.scopes);
         if (data.policy_text_version) setPolicyVersion(data.policy_text_version);
-      } catch { /* keep fallback */ }
+      } catch (e) { console.debug('policy fetch failed, using fallback', e); }
     })();
     return () => { cancelled = true; };
   }, []);

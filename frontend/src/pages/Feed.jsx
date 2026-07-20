@@ -70,13 +70,17 @@ function ReasonChip({ code, tone = 'red' }) {
   return <span className={cls}><Icon className="h-3 w-3" /> {reasonLabel(code)}</span>;
 }
 
+function scoreBadgeTone(pct) {
+  if (pct >= 70) return 'bg-accent/15 text-accent border-accent/40';
+  if (pct >= 45) return 'bg-neutral-100 dark:bg-neutral-800 border-line dark:border-line-dark text-ink dark:text-ink-dark';
+  return 'bg-neutral-50 dark:bg-neutral-800/50 border-line dark:border-line-dark muted';
+}
+
 function ScoreBadge({ score, confidence }) {
   if (score == null) return null;
   const pct = Math.max(0, Math.min(100, Math.round(score)));
   const conf = Math.round((confidence || 0) * 100);
-  const tone = pct >= 70 ? 'bg-accent/15 text-accent border-accent/40'
-    : pct >= 45 ? 'bg-neutral-100 dark:bg-neutral-800 border-line dark:border-line-dark text-ink dark:text-ink-dark'
-    : 'bg-neutral-50 dark:bg-neutral-800/50 border-line dark:border-line-dark muted';
+  const tone = scoreBadgeTone(pct);
   return (
     <div
       className={`inline-flex items-baseline gap-1 rounded-md border px-2 py-1 text-sm font-semibold ${tone}`}
@@ -90,13 +94,22 @@ function ScoreBadge({ score, confidence }) {
   );
 }
 
+function freshnessLabel(days) {
+  if (days <= 0) return 'today';
+  if (days === 1) return '1 day ago';
+  return `${days} days ago`;
+}
+function freshnessTone(days) {
+  if (days <= 3) return 'pill pill-accent';
+  if (days > 10) return 'pill border-red-500/40 text-red-600 dark:text-red-400';
+  return 'pill pill-neutral';
+}
+
 function FreshnessChip({ ts }) {
   if (!ts) return <span className="pill pill-neutral"><Clock className="h-3 w-3" /> unverified</span>;
   const d = new Date(ts);
   const days = Math.floor((Date.now() - d.getTime()) / 86400000);
-  const label = days <= 0 ? 'today' : days === 1 ? '1 day ago' : `${days} days ago`;
-  const tone = days <= 3 ? 'pill pill-accent' : days > 10 ? 'pill border-red-500/40 text-red-600 dark:text-red-400' : 'pill pill-neutral';
-  return <span className={tone}><Clock className="h-3 w-3" /> verified {label}</span>;
+  return <span className={freshnessTone(days)}><Clock className="h-3 w-3" /> verified {freshnessLabel(days)}</span>;
 }
 
 function StatusChip({ status }) {
@@ -454,7 +467,7 @@ export default function FeedPage() {
     try {
       const { data } = await api.get('/api/v1/jobs/imports/me');
       setImports(data.imports || []);
-    } catch { /* ignore, likely consent gate */ }
+    } catch (e) { console.debug('imports load skipped (likely consent gate)', e); }
   }, []);
 
   useEffect(() => { load(); loadImports(); }, [load, loadImports]);

@@ -507,21 +507,32 @@ async def ready_for_approval(
     app_row = await db.applications.find_one({"id": application_id, "user_id": user["id"]}, {"_id": 0})
     if not app_row:
         raise HTTPException(status_code=404, detail="application_not_found")
-    # Gate: all sensitive screener answers must be approved
-    unapproved_sensitive = await db.screening_answers.count_documents({
-        "user_id": user["id"], "application_id": application_id,
-        "sensitive": True, "approved": {"$ne": True},
-    })
-    unanswered_required = await db.screening_answers.count_documents({
-        "user_id": user["id"], "application_id": application_id,
-        "sensitive": True, "answer": {"$in": [None, ""]},
-    })
-    if unapproved_sensitive or unanswered_required:
+    # Gate: every sensitive_* screener on the job MUST have an approved answer row.
+    # (Counting only screening_answers rows would let unanswered-but-required questions slip through.)
+    job = await db.jobs.find_one({"id": app_row["job_id"]}, {"_id": 0, "screener_questions": 1})
+    sensitive_qids: list[str] = []
+    for q in (job or {}).get("screener_questions") or []:
+        if q.get("kind") in ("sensitive_visa", "sensitive_salary", "sensitive_clearance"):
+            sensitive_qids.append(q["id"])
+    unmet: list[str] = []
+    if sensitive_qids:
+        answers_cur = db.screening_answers.find({
+            "user_id": user["id"], "application_id": application_id,
+            "question_id": {"$in": sensitive_qids},
+        }, {"_id": 0, "question_id": 1, "answer": 1, "approved": 1})
+        by_qid: dict[str, dict] = {}
+        async for row in answers_cur:
+            by_qid[row["question_id"]] = row
+        for qid in sensitive_qids:
+            row = by_qid.get(qid)
+            if not row or not (row.get("answer") or "").strip() or not row.get("approved"):
+                unmet.append(qid)
+    if unmet:
         raise HTTPException(
             status_code=409,
             detail={"error": "sensitive_screener_gate",
                     "message": "Sensitive screener questions (visa/salary/clearance) must be answered AND approved before this packet can go to awaiting_approval.",
-                    "unapproved_or_missing": unapproved_sensitive + unanswered_required},
+                    "unmet_question_ids": unmet},
         )
     # Idempotent bump: only credit apps_prepared if THIS transition succeeds via precondition.
     now = utc_now()

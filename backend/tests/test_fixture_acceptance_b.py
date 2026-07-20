@@ -26,10 +26,10 @@ import requests
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://lynk-preview-2.preview.emergentagent.com").rstrip("/")
 API = f"{BASE_URL}/api/v1"
 
-FIXTURE_EMAIL = "fixture-ead@opportunityos.dev"
-FIXTURE_PASSWORD = "Fixture!Test1"
-USER_ZERO_EMAIL = "ujjwal@opportunityos.dev"
-USER_ZERO_PASSWORD = "Passport!Test0"
+FIXTURE_EMAIL = os.environ.get("FIXTURE_TEST_EMAIL", "fixture-ead@opportunityos.dev")
+FIXTURE_PASSWORD = os.environ.get("FIXTURE_TEST_PASSWORD", "Fixture!Test1")
+USER_ZERO_EMAIL = os.environ.get("USER_ZERO_EMAIL", "ujjwal@opportunityos.dev")
+USER_ZERO_PASSWORD = os.environ.get("USER_ZERO_PASSWORD", "Passport!Test0")
 
 
 # --------------------------------------------------------------------------- #

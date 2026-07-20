@@ -32,7 +32,7 @@ function TaxonomyTypeahead({ selected, onToggle }) {
       try {
         const { data } = await api.get('/api/v1/taxonomy');
         setFamilies(data.families || []);
-      } catch { /* keep empty */ }
+      } catch (e) { console.debug('taxonomy fetch failed', e); }
       finally { setLoading(false); }
     })();
   }, []);
@@ -79,7 +79,7 @@ function CompanyTypeahead({ label, selected, onToggle, placeholder }) {
       try {
         const { data } = await api.get(`/api/v1/companies?q=${encodeURIComponent(q)}`);
         if (!cancelled) setResults(data.companies || []);
-      } catch { /* ignore */ }
+      } catch (e) { console.debug('company typeahead search failed', e); }
       finally { if (!cancelled) setLoading(false); }
     }, 200);
     return () => { cancelled = true; clearTimeout(t); };

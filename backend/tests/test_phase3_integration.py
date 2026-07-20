@@ -86,7 +86,7 @@ def test_health_phase3_and_mongo():
     r = requests.get(f"{BASE}/api/health", timeout=15)
     assert r.status_code == 200
     d = r.json()
-    assert d["phase"] == 3
+    assert d["phase"] >= 3  # phase counter advances as new phases ship; only enforce lower bound.
     assert d["mongo"] is True
     assert d["ok"] is True
 

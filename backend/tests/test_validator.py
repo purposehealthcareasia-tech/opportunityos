@@ -88,6 +88,46 @@ class TestValidator:
         assert res.status == "failed"
         assert "malformed_line" in res.rejected_lines[0]["reasons"]
 
+    # ---------------------------------------------------------------- #
+    # Founder Directive Phase 4 — bidirectional regressions.
+    # These lock the two spec bugs that were fixed post-handoff:
+    #   1. year-ranges like "2018-2020" must not misparse the second year
+    #      as a negative number ("-2020") and reject the line.
+    #   2. sealed values that split across nested dict keys (e.g. the
+    #      work_auth claim {status: "ead_opt", opt_end: "2027-12-31"})
+    #      must still be caught when a single leaf token appears in text.
+    # ---------------------------------------------------------------- #
+
+    def test_year_range_hyphen_passes(self):
+        # This exercises the _NUMBER_RE lookbehind fix. If regex accidentally
+        # captures "-2020", the number-check rejects. Both years live in the
+        # education claim value ("2018-08", "2020-05") so this must pass.
+        res = v.validate_lines(
+            lines=[{"text": "Earned MS at Test U (2018-2020).", "claim_ids": ["c-edu"]}],
+            approved_claims=APPROVED_CLAIMS,
+        )
+        assert res.status == "passed", res.rejected_lines
+
+    def test_120_vs_80_rejects_ungrounded_metric(self):
+        # employment claim has NO "80" anywhere; asserting an "80%" metric must reject.
+        res = v.validate_lines(
+            lines=[{"text": "Improved simulation accuracy by 80% on the fleet.", "claim_ids": ["c-emp"]}],
+            approved_claims=APPROVED_CLAIMS,
+        )
+        assert res.status == "failed"
+        assert any(r.startswith("number_not_in_claims:80") for r in res.rejected_lines[0]["reasons"])
+
+    def test_sealed_ead_opt_leaf_leak_rejects(self):
+        # The sealed claim value is {status: "ead_opt", opt_end: "2027-12-31"}.
+        # A line surfacing only "ead_opt" (a single leaf) without per-app approval must reject.
+        res = v.validate_lines(
+            lines=[{"text": "Authorized under ead_opt for the next season.", "claim_ids": ["c-emp"]}],
+            approved_claims=APPROVED_CLAIMS,
+        )
+        assert res.status == "failed"
+        assert any(r == "sensitive_leak:work_auth" for r in res.rejected_lines[0]["reasons"])
+
+
 
 class TestRefusal:
     def test_pmp_bait_refuses(self):

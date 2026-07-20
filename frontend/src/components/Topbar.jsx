@@ -13,7 +13,7 @@ function UsageMeterChip() {
       try {
         const { data } = await api.get('/api/v1/usage/me');
         if (alive) setUsage(data);
-      } catch { /* not authenticated yet, ignore */ }
+      } catch (e) { console.debug('usage meter fetch skipped', e); }
     })();
     return () => { alive = false; };
   }, []);
