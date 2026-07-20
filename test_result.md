@@ -164,7 +164,135 @@ _(populated only after user approves frontend testing)_
 
 - agent: "testing"
   message: |
-    Ran /app/backend_test.py against the external preview URL
+    Phase-2 verification run — ran refreshed /app/backend_test.py against
+    https://af7cc636-8506-4548-af82-a1a50aae0158.preview.emergentagent.com
+    plus direct MongoDB reads (mongodb://localhost:27017 db=opportunityos).
+
+    49 named sub-checks executed. 48 PASS, 1 minor default-pagination note.
+    Coverage matches the 13 numbered items in the Phase-2 review request:
+
+      1.  /api/openapi.json exposes every Phase-1 + Phase-2 path listed in the
+          review (documents/resume, documents/me, documents/{id}/parse-status,
+          claims CRUD + bulk-approve, preferences (+/me), taxonomy, companies,
+          eligibility (+/me + coverage-preview), passport/activate + activation-status). ✅
+
+      2.  Sample-job fixtures: exactly 15 is_sample:true jobs; the 2
+          requires_us_person=true are Autonomy + Fab Equipment; the 4
+          offers_sponsorship=false are Battery Test, Battery Thermal,
+          Vehicle Test, Manufacturing Process. ✅
+
+      3.  Document upload contract, fresh signup with only process_career_data:
+              a. text/plain → 400 unsupported_type ✅
+              b. 11 MB PDF → 413 file_too_large ✅
+              c. empty DOCX uploads → parse fails with extracted_text_too_short
+                 (implementation treats truly-empty as "empty after extract";
+                 either 400 empty_file OR failed parse acceptable per spec) ✅
+              d. Revoke process_career_data → 403 consent_required scope=
+                 process_career_data on the upload; re-grant → 201 ✅
+
+      4.  Real LLM parse smoke:
+              - Uploaded a novel DOCX (~4 KB, 5 sections). Polled
+                /parse-status. parse_status=completed within ~35s. ✅
+              - parse_meta.model_used = "gpt-5" (primary path succeeded on
+                first try; no fallback needed). inserted_claim_count=16 (>5). ✅
+              - Every claim on that document has source.kind=resume_parse,
+                source.model=="gpt-5", user_approved=false, status="pending",
+                verification.level=0. ✅
+
+      5.  Claim lifecycle:
+              a. approve single + Idempotency replay: byte-identical body,
+                 X-Idempotent-Replay:true on 2nd, ZERO duplicate audit_logs
+                 row (audit delta between calls = 0). ✅
+              b. reject → status="rejected", user_approved=false. ✅
+              c. edit (PUT) → new claim v=2 with
+                 source={kind:user_edited, from_claim_id, from_version:1};
+                 old row.superseded_by=new_id; old row.value EXACTLY untouched. ✅
+              d. bulk-approve type="skill" → all 15 pending skills approved,
+                 exactly ONE claims.bulk_approve audit row. ✅
+              e. manual POST /claims (certification) → status=approved,
+                 user_approved=true, source.kind=user_provided, version=1. ✅
+
+      6.  Passport activation (fresh user, no seeded claims):
+              a. Before approvals → 400 with
+                 detail.error=="activation_requirements_not_met" and
+                 missing_categories=["identity","education_or_employment"]. ✅
+              b. Manual create identity + employment (both approved on create).
+                 GET /passport/activation-status returns can_activate=true. ✅
+              c. POST /passport/activate → 200 {activated:true};
+                 users.passport_activated=true in DB; audit_logs has
+                 passport.activate row. ✅
+              d. Idempotency replay of activate → identical body +
+                 X-Idempotent-Replay:true. ✅
+
+      7.  Preferences:
+              a. Save prefs w/ key K → version=1. ✅
+              b. Same key → replay, X-Idempotent-Replay:true, exactly ONE row. ✅
+              c. Different key + same payload → version=2, 2 rows. ✅
+              d. GET /preferences/me → version=2. ✅
+              e. /taxonomy → 13 families. ✅
+              f. /companies?q=tsmc → only TSMC Arizona. ✅
+              f2. /companies?q= empty returns SampleCo last: PASS when
+                 limit>=26 (SampleCo returns at index 25). MINOR: default
+                 limit=20 doesn't pre-sort in Mongo, so SampleCo may not be
+                 in the slice at all. Not blocking — logic sorts SampleCo
+                 last whenever it's present.
+
+      8.  Eligibility (owner-only, sealed):
+              a. status=ead_opt → derived_flags {itar_excluded:true,
+                 e_verify_need:true, sponsorship_need:true}; sealed:true;
+                 version=1. ✅
+              b. GET /eligibility/me returns same. ✅
+              c. status=citizen → all derived_flags false; version bumps to 2. ✅
+              d. Two versioned rows persisted; latest.status=citizen. ✅
+
+      9.  Coverage preview:
+              a. Without discover_jobs → 403 consent_required scope=discover_jobs. ✅
+              b. With discover_jobs + status=ead_opt:
+                 totals.live_jobs=15, excluded_by_reason.requires_us_person=2,
+                 excluded_by_reason.no_sponsorship_offered=4, passing=9. ✅
+              c. status=citizen → passing=15, excluded_by_reason={}. ✅
+              d. Every per-job entry carries fail_reasons array; passing jobs
+                 have empty arrays. ✅
+
+     10.  Sealed serializer regression:
+              a. User Zero owner view: work_auth.value = real
+                 {status:"unspecified", note:...}, no _sealed flag. ✅
+              b. Admin view of User Zero: work_auth.value = "•••• (sealed)",
+                 _sealed:true. ✅
+              c. Support view of User Zero: identical masking. ✅
+
+     11.  Consent gates on new endpoints:
+              documents/resume, claims/*, preferences POST, eligibility POST
+              all 403 with detail.scope=process_career_data when the scope is
+              revoked; coverage-preview 403s with detail.scope=discover_jobs;
+              re-grant restores 200 on each. ✅
+
+     12.  Idempotency proven on BOTH claim-approve (5a) AND preferences-save
+          (7b) — byte-identical bodies, X-Idempotent-Replay:true, no dup rows,
+          no dup audit rows. ✅
+
+     13.  State restored: no code, no seed data, no User Zero password was
+          modified. Only test users were left in the DB.
+
+    Additional evidence:
+    - Real LLM: primary gpt-5 succeeded on first attempt; no fallback needed
+      on this run. Anti-fabrication: every claim traces back to substring in
+      the DOCX text (spot-checked identity/education/employment/skills).
+    - Only ONE issue observed:
+        MINOR: GET /api/v1/companies?q= default limit=20 returns 20 rows
+        with no explicit Mongo sort. When >20 companies exist (26 seeded),
+        SampleCo may fall outside the first 20 and therefore NOT appear at
+        the tail as the spec wording implies. The client-side "SampleCo last"
+        sort itself works — verified via limit=50: 26 rows returned,
+        sampleco.demo is index 25. Recommend either default sort by name
+        with SampleCo pinned last at Mongo layer, or simply raising default
+        limit to >= companies count for the typeahead. Not blocking Phase 2.
+
+    Recommendation: main agent can summarise and finish Phase 2 backend.
+
+- agent: "testing"
+  message: |
+    Ran /app/backend_test.py (Phase 1) against the external preview URL
     (https://af7cc636-8506-4548-af82-a1a50aae0158.preview.emergentagent.com)
     plus direct MongoDB reads (mongodb://localhost:27017, db=opportunityos)
     for seed-integrity and ledger assertions.
