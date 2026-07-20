@@ -43,6 +43,14 @@ async def get_score_for_job(job_id: str, user: dict = Depends(get_current_user))
     row = await get_db().match_scores.find_one({"user_id": user["id"], "job_id": job_id}, {"_id": 0})
     if not row:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="match_score_not_found")
+    # Founder Fix Round-2 · P1 #4 — surface the user's LAST feedback (if any) so the modal
+    # can reflect prior state without a separate call.
+    fb = await get_db().score_feedback.find_one(
+        {"user_id": user["id"], "job_id": job_id},
+        sort=[("ts", -1)],
+        projection={"_id": 0, "helpful": 1, "note": 1, "ts": 1, "id": 1},
+    )
+    row["feedback"] = fb  # None if no feedback yet
     return row
 
 

@@ -64,6 +64,10 @@ async def save_my_eligibility(
 async def coverage_preview(user: dict = Depends(require_consent("discover_jobs"))):
     """Runs the gate engine against every live job and returns a coverage summary.
 
+    Founder Fix Round-2 · P0 #2 — gate-engine parity: applies the SAME hidden-jobs filter
+    as `/api/v1/jobs/feed`, and exposes an identical `totals` shape (passing / excluded /
+    hidden / excluded_by_reason / unknown_by_reason) so testers can compare directly.
+
     Requires the user to have declared their eligibility AND granted the discover_jobs scope.
     Sample jobs are included in the sample_pass_count for observability but do NOT count in
     production cohorts (they're clearly badged is_sample:true in the response).
@@ -72,13 +76,17 @@ async def coverage_preview(user: dict = Depends(require_consent("discover_jobs")
     ctx = await build_context(user["id"])
     profile_status = (latest or {}).get("status") or "unspecified"
 
-    jobs = await repo.live_jobs()
-    total = len(jobs)
+    hidden = ctx.get("hidden_job_ids") or set()
+    all_live = await repo.live_jobs()
+    jobs = [j for j in all_live if j["id"] not in hidden]
+    hidden_count = sum(1 for j in all_live if j["id"] in hidden)
+
     passing: list[dict] = []
     excluded_by_reason: dict[str, int] = {}
     unknown_by_reason: dict[str, int] = {}
     sample_pass = 0
     real_pass = 0
+    excluded_count = 0
 
     per_job: list[dict] = []
     for j in jobs:
@@ -100,6 +108,8 @@ async def coverage_preview(user: dict = Depends(require_consent("discover_jobs")
                 sample_pass += 1
             else:
                 real_pass += 1
+        else:
+            excluded_count += 1
         for reason in result["fail_reasons"]:
             excluded_by_reason[reason] = excluded_by_reason.get(reason, 0) + 1
         for reason in result["unknown_reasons"]:
@@ -111,8 +121,10 @@ async def coverage_preview(user: dict = Depends(require_consent("discover_jobs")
             "derived_flags": derive_flags(profile_status),
         },
         "totals": {
-            "live_jobs": total,
+            "live_jobs": len(all_live),
             "passing": len(passing),
+            "excluded": excluded_count,
+            "hidden": hidden_count,
             "sample_passing": sample_pass,
             "real_passing": real_pass,
             "excluded_by_reason": excluded_by_reason,

@@ -160,7 +160,14 @@ class TestAcceptanceGeometry:
     def test_feed_weights_and_totals_exact(self, initial_feed):
         d = initial_feed
         assert d.get("weights_version") == "v0.1"
-        assert d.get("totals") == {"passing": 9, "excluded": 6}, f"totals mismatch: {d.get('totals')}"
+        totals = d.get("totals") or {}
+        # Founder Fix Round-2 · P0 #2 expanded the totals shape to include
+        # live_jobs / hidden / excluded_by_reason / unknown_by_reason for parity
+        # with /eligibility/coverage-preview. We assert the core acceptance keys.
+        assert totals.get("passing") == 9, f"passing mismatch: {totals}"
+        assert totals.get("excluded") == 6, f"excluded mismatch: {totals}"
+        assert totals.get("hidden") == 0, f"hidden mismatch: {totals}"
+        assert totals.get("excluded_by_reason") == {"no_sponsorship_offered": 4, "requires_us_person": 2}
         assert len(d["passing"]) == 9
         assert len(d["excluded"]) == 6
 
@@ -460,6 +467,25 @@ class TestImportsResolverLabel:
 # Item 13 — SampleCo job integrity
 # --------------------------------------------------------------------------- #
 class TestSampleCoIntegrity:
+    @pytest.fixture(autouse=True)
+    def _rebase_before_each(self):
+        """Rebase fixture-ead@ before every test in this class so prior tests' hidden_jobs
+        don't remove sample-N rows from the coverage-preview jobs[] array."""
+        tok = ""
+        try:
+            with open("/app/backend/.env") as fh:
+                for line in fh:
+                    if line.startswith("INTERNAL_SERVICE_TOKEN="):
+                        tok = line.split("=", 1)[1].strip()
+                        break
+        except Exception:
+            pass
+        if tok:
+            r = requests.post(f"{BASE_URL}/api/internal/fixture/rebase",
+                              headers={"X-Service-Token": tok}, timeout=15)
+            assert r.status_code == 200, f"rebase failed: {r.status_code} {r.text[:200]}"
+        yield
+
     def _find_sample(self, fixture_client, canonical_suffix):
         # /jobs/{id} needs an id — fetch via feed or search
         # Use coverage-preview jobs list (contains job_ids for all live jobs)

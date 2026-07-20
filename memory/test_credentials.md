@@ -31,7 +31,27 @@ Deterministic acceptance-check-B against the seeded 15 SampleCo jobs for this us
 - `GET /api/v1/jobs/feed` → passing count **exactly 9**, excluded count **exactly 6**.
 - `excluded_by_reason.requires_us_person` **exactly 2** (Autonomy Systems + Fab Equipment).
 - `excluded_by_reason.no_sponsorship_offered` **exactly 4** (Battery Test, Battery Thermal, Vehicle Test, Manufacturing Process).
-- `GET /api/v1/eligibility/coverage-preview` returns identical numbers (gate-engine parity).
+- `GET /api/v1/eligibility/coverage-preview` returns **identical** numbers (gate-engine parity).
+
+### On-demand rebase for CI / persistent tests
+
+If a test suite mutates fixture state between backend restarts, call this BEFORE the run to
+guarantee the 9/6 geometry is reachable:
+
+```bash
+BASE="https://lynk-preview-2.preview.emergentagent.com"
+TOKEN=$(grep INTERNAL_SERVICE_TOKEN /app/backend/.env | cut -d= -f2)
+curl -s -X POST "$BASE/api/internal/fixture/rebase" \
+  -H "X-Service-Token: $TOKEN"
+```
+
+Response `{"ok":true, "fixture_user_id":"…"}`. Same 401/403/503 semantics as
+`/api/internal/jobs/bulk`. Never mention or log the token value.
+
+The endpoint fully re-baselines fixture-ead@ (wipes applications, hidden_jobs,
+match_scores, usage_meters, score_feedback, documents, resume_versions, claims,
+consent_records) and restores passport-activated + all consents + eligibility=ead_opt
+sealed + prefs Phoenix+Remote+$90k floor + approved claims.
 
 ---
 

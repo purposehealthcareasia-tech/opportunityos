@@ -1,0 +1,40 @@
+{
+  "summary": "Founder Fix Round-2 verification PASSED end-to-end against the live preview (https://lynk-preview-2.preview.emergentagent.com). All 4 defects verified fixed: (P0 #1) /api/internal/fixture/rebase auth 401/403/200 semantics correct, secret never echoed, 503 not-configured branch present in source, and the endpoint genuinely wipes state (pre-pollute apps=1/hidden=1 -> rebase -> apps=[] / hidden=0 / passing=9 / excluded=6 / excluded_by_reason={no_sponsorship_offered:4, requires_us_person:2}); (P0 #2) gate-engine parity byte-identical between /jobs/feed and /eligibility/coverage-preview on the 5 contract keys both at clean baseline (9/6/0) AND after shortlist+hide mutations (passing=7, excluded=7, hidden=1, duplicate_application=1 in both); (P0 #3) reason_codes carry weight_ideal on every one of the 9 factors, sum(weight_ideal)==100 -> counterfactual can be honest; (P1 #4) feedback round-trip works — GET returns null on fresh, POST helpful:true then GET returns {helpful:true, note, ts, id}, flip with a new Idempotency-Key to helpful:false and GET reflects latest ts. Regression: full pytest suite 79/79 green (72 prior + 7 new e2e); round-2 suite 6/6. User Zero remains pristine: preferences {version:0, payload:null}, eligibility {version:0, status:'unspecified'}, applications:[]. Frontend UI portions (S9 modal on /feed and /jobs/{id}) skipped per review-request testing_type='backend only(skip frontend)'.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_round2_parity_rebase_feedback.py",
+    "/app/backend/tests/test_round2_e2e_verification.py",
+    "/app/test_reports/pytest/round2_iter4.xml",
+    "/app/test_reports/pytest/round2_e2e_iter4.xml",
+    "/app/test_reports/pytest/full_iter4.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "internal_router.py auth ladder is clean and correct: 503 not-configured -> 401 missing header -> 403 mismatch. Token never included in response body or note text — verified by substring check (SERVICE_TOKEN not in r.text).",
+    "reason_codes contract now honest: every factor emits weight_ideal alongside weight_applied, and the 9 factors sum to exactly 100. This is the invariant the counterfactual UI copy relies on.",
+    "GET /api/v1/matches/for-job/{id} now correctly surfaces the LAST feedback (order-by ts desc) — verified by flipping helpful:true -> helpful:false with distinct Idempotency-Keys and observing the flip on GET.",
+    "conftest.py autouse module-scope rebase for the 3 allowlisted test modules is well-scoped: it does not affect unit tests that don't hit the live backend, and the swallow-on-non-200 pattern keeps offline unit runs green.",
+    "Rebase re-seeds consents so re-login succeeds without a fresh consent-grant call — matches the expectation documented in test_credentials.md."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_round2_e2e_verification.py (new — 7-test e2e verification of all 4 founder fixes)"
+  ],
+  "success_rate": {
+    "backend": "100% (79/79 full suite; 6/6 round-2 suite; 7/7 new e2e verification)",
+    "frontend": "not tested (backend only per review-request testing_type)"
+  },
+  "test_credentials": "Fixture: fixture-ead@opportunityos.dev / Fixture!Test1. User Zero (read-only): ujjwal@opportunityos.dev / Passport!Test0. INTERNAL_SERVICE_TOKEN read from /app/backend/.env at test runtime; never printed or committed.",
+  "seed_data_creation": "None. Every e2e test starts by calling POST /api/internal/fixture/rebase so state is deterministic. No new persistent test data was created.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Round-2 founder fixes fully verified against live preview. Two pytest files cover the contract: (1) tests/test_round2_parity_rebase_feedback.py — 6 tests written by main agent; (2) tests/test_round2_e2e_verification.py — 7 additional tests I added covering the exact scenarios in the review request (rebase-wipes-state pollution proof, weight_ideal sum, User Zero read-only regression). Both are wired into conftest.py's autouse module-scope rebase where applicable. To re-run: `cd /app/backend && python3 -m pytest tests -q` -> expect 79/79. Frontend S9 modal on /feed and /jobs/{id} is out of scope per review-request; the reason_codes+feedback backend contract that the modal relies on is verified.",
+  "rca_of_the_issue": "N/A — no defects found. All 4 founder fixes verified working. Two initial e2e-script assertion failures were response-shape mismatches in my own test script (applications endpoint returns {applications:[...]} wrapper, and preferences/me includes an extra updated_at:null field) — corrected in-place; no backend change required."
+}

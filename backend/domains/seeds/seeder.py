@@ -297,6 +297,13 @@ async def _rebase_fixture_user() -> str:
     ]
     for coll in to_wipe:
         await db[coll].delete_many({"user_id": user_id})
+    # Also wipe any jobs the fixture user imported during earlier test runs (they carry
+    # imported_by=fixture_user_id and would otherwise pollute the coverage-preview / feed
+    # totals across pytest invocations).
+    await db.jobs.delete_many({"imported_by": user_id})
+    # And purge any orphan test-ingested jobs (is_sample=False AND status != 'derived')
+    # so the acceptance geometry stays reproducible even when the whole suite runs.
+    await _cleanup_non_sample_test_jobs()
     # Grant all consents (required + optional discover_jobs/generate_materials/track_applications/email_me).
     for scope_row in CONSENT_SCOPES:
         await db.consent_records.insert_one({

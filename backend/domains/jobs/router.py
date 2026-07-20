@@ -47,10 +47,17 @@ async def feed(user: dict = Depends(require_consent("discover_jobs"))):
 
     ctx = await build_context(user["id"])
     hidden = ctx.get("hidden_job_ids") or set()
-    jobs = [j for j in await jobs_repo.list_live() if j["id"] not in hidden]
+    all_live = await jobs_repo.list_live()
+    # Founder Fix Round-2 · P0 #2 — gate-engine parity: apply hidden filter identically on
+    # BOTH feed and coverage-preview. Hidden count is reported as its own totals entry so
+    # the two surfaces are directly comparable.
+    jobs = [j for j in all_live if j["id"] not in hidden]
+    hidden_count = sum(1 for j in all_live if j["id"] in hidden)
 
     passing: list[dict] = []
     excluded: list[dict] = []
+    excluded_by_reason: dict[str, int] = {}
+    unknown_by_reason: dict[str, int] = {}
     scored_new_count = 0
     from domains.match_scores import service as ms
     from domains.usage_meters import service as um
@@ -78,6 +85,10 @@ async def feed(user: dict = Depends(require_consent("discover_jobs"))):
                 "fail_reasons": gate["fail_reasons"],
                 "unknown_reasons": gate["unknown_reasons"],
             })
+            for reason in gate["fail_reasons"]:
+                excluded_by_reason[reason] = excluded_by_reason.get(reason, 0) + 1
+            for reason in gate["unknown_reasons"]:
+                unknown_by_reason[reason] = unknown_by_reason.get(reason, 0) + 1
     if scored_new_count:
         await um.increment_jobs_processed(user["id"], scored_new_count)
 
@@ -86,7 +97,14 @@ async def feed(user: dict = Depends(require_consent("discover_jobs"))):
         "weights_version": WEIGHTS_VERSION,
         "passing": passing,
         "excluded": excluded,
-        "totals": {"passing": len(passing), "excluded": len(excluded)},
+        "totals": {
+            "live_jobs": len(all_live),
+            "passing": len(passing),
+            "excluded": len(excluded),
+            "hidden": hidden_count,
+            "excluded_by_reason": excluded_by_reason,
+            "unknown_by_reason": unknown_by_reason,
+        },
     }
 
 

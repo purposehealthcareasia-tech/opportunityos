@@ -279,6 +279,32 @@ function ExcludedCard({ job }) {
   );
 }
 
+function counterfactualFrom(reasonCodes) {
+  // Founder Fix Round-2 · P0 #3 — one concrete counterfactual line, derived from a REAL
+  // UNKNOWN or gap factor. No fabrication: if no UNKNOWN/gap exists we return null and the
+  // modal omits the section.
+  if (!Array.isArray(reasonCodes) || reasonCodes.length === 0) return null;
+  const unknown = reasonCodes.find((r) => r.direction === 'unknown' || (r.value == null && r.weight_applied === 0));
+  if (unknown) {
+    return {
+      kind: 'unknown',
+      factor: unknown.factor,
+      text: `If you resolved ${unknown.factor.replaceAll('_', ' ')}, up to ${unknown.weight_ideal || '—'} points of score weight would count toward your total instead of being renormalized out.`,
+    };
+  }
+  // Otherwise pick the lowest-value factor that still had weight applied.
+  const applied = reasonCodes.filter((r) => (r.weight_applied || 0) > 0 && r.value != null);
+  if (applied.length === 0) return null;
+  applied.sort((a, b) => (a.value ?? 1) - (b.value ?? 1));
+  const worst = applied[0];
+  if ((worst.value ?? 1) >= 0.9) return null; // no meaningful gap
+  return {
+    kind: 'gap',
+    factor: worst.factor,
+    text: `Your weakest signal here is ${worst.factor.replaceAll('_', ' ')} at ${Math.round((worst.value || 0) * 100)}%. Closing that gap would move the score up by roughly ${Math.round(((1 - (worst.value || 0)) * (worst.weight_applied || 0)))} points.`,
+  };
+}
+
 function MatchExplainModal({ jobId, onClose }) {
   const [data, setData] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -293,7 +319,13 @@ function MatchExplainModal({ jobId, onClose }) {
           api.get(`/api/v1/matches/for-job/${jobId}`),
           api.get(`/api/v1/jobs/${jobId}`),
         ]);
-        if (alive) setData({ score, job });
+        if (alive) {
+          setData({ score, job });
+          // Reflect prior feedback if the API surfaced it (P1 #4).
+          if (score?.feedback && typeof score.feedback.helpful === 'boolean') {
+            setFbSent(score.feedback.helpful);
+          }
+        }
       } catch {
         if (alive) setError('Could not load explanation.');
       }
@@ -309,12 +341,15 @@ function MatchExplainModal({ jobId, onClose }) {
     } finally { setBusy(false); }
   };
 
+  const topFactors = (data?.score?.reason_codes || []).slice(0, 5);
+  const counterfactual = counterfactualFrom(data?.score?.reason_codes);
+
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 backdrop-blur-sm p-4 animate-fadeIn" onClick={onClose}>
       <div className="card max-w-2xl w-full p-6 max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()} data-testid="match-explain-modal">
         <div className="flex items-start justify-between gap-4 mb-4">
           <div>
-            <h3 className="text-base font-semibold">Why this score</h3>
+            <h3 className="text-base font-semibold" data-testid="match-modal-title">Why this match</h3>
             <p className="text-xs muted mt-0.5">
               Score is a weighted composite. UNKNOWN factors are renormalized out honestly — they never inflate confidence.
             </p>
@@ -329,13 +364,30 @@ function MatchExplainModal({ jobId, onClose }) {
               <ScoreBadge score={data.score.score} confidence={data.score.confidence} />
               <div className="text-xs muted">weights_version <span className="font-mono">{data.score.weights_version}</span> · used weight {Math.round((data.score.confidence || 0) * 100)}%</div>
             </div>
-            <div className="mt-4 space-y-3">
-              {(data.score.reason_codes || []).map((r) => (
-                <FactorRow key={r.factor} r={r} />
-              ))}
+
+            <div className="mt-4">
+              <div className="text-xs muted mb-2">Top 5 factors driving this score</div>
+              <div className="space-y-3" data-testid="match-modal-factor-bars">
+                {topFactors.map((r) => (
+                  <FactorRow key={r.factor} r={r} />
+                ))}
+              </div>
             </div>
+
+            {counterfactual && (
+              <div
+                className="mt-5 rounded-md border border-accent/30 bg-accent/5 p-3 text-sm"
+                data-testid="match-modal-counterfactual"
+              >
+                <div className="text-xs uppercase tracking-wide muted mb-1">Counterfactual</div>
+                {counterfactual.text}
+              </div>
+            )}
+
             <div className="mt-6 pt-4 border-t border-line dark:border-line-dark">
-              <p className="text-xs muted mb-2">Was this explanation useful?</p>
+              <p className="text-xs muted mb-2">
+                {fbSent === null ? 'Was this explanation useful?' : 'Your feedback is recorded — click again to change.'}
+              </p>
               <div className="flex items-center gap-2">
                 <Button size="sm" variant={fbSent === true ? 'accent' : 'secondary'} onClick={() => sendFeedback(true)} loading={busy && fbSent !== false} data-testid="match-feedback-helpful">Yes</Button>
                 <Button size="sm" variant={fbSent === false ? 'accent' : 'secondary'} onClick={() => sendFeedback(false)} loading={busy && fbSent !== true} data-testid="match-feedback-unhelpful">Not really</Button>
@@ -348,6 +400,8 @@ function MatchExplainModal({ jobId, onClose }) {
     </div>
   );
 }
+
+export { MatchExplainModal };
 
 function FactorRow({ r }) {
   const pct = r.value == null ? null : Math.max(0, Math.min(1, r.value)) * 100;

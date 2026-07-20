@@ -18,6 +18,7 @@ from domains.preferences.router import router as preferences_router
 from domains.eligibility.router import router as eligibility_router
 from domains.jobs.router import router as jobs_router
 from domains.jobs.internal_router import router as jobs_internal_router
+from domains.fixtures.internal_router import router as fixture_internal_router
 from domains.applications.router import router as applications_router
 from domains.match_scores.router import router as matches_router
 from domains.usage_meters.router import router as usage_router
@@ -102,6 +103,7 @@ app.include_router(preferences_router)
 app.include_router(eligibility_router)
 app.include_router(jobs_router)
 app.include_router(jobs_internal_router)
+app.include_router(fixture_internal_router)
 app.include_router(applications_router)
 app.include_router(matches_router)
 app.include_router(usage_router)

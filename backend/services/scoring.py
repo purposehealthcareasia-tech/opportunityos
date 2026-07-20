@@ -38,11 +38,15 @@ class FactorResult:
     detail: str
 
     def to_dict(self) -> dict[str, Any]:
+        # weight_ideal = full weight the factor CAN contribute if resolved (before renormalization).
+        # weight_applied is the actual weight used in the composite: 0 when the factor is UNKNOWN.
+        # UI counterfactual line uses weight_ideal to say "would count for X points".
         return {
             "factor": self.factor,
             "value": self.value,
             "direction": self.direction,
             "weight_applied": self.weight_applied,
+            "weight_ideal": WEIGHTS.get(self.factor, 0),
             "detail": self.detail,
         }
 

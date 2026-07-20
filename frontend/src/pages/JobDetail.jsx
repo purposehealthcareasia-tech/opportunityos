@@ -2,13 +2,14 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
   ArrowLeft, Building2, MapPin, ExternalLink, ShieldCheck, ShieldOff, AlertTriangle,
-  HelpCircle, Send, EyeOff, TestTube2, CheckCircle2, XCircle, Clock,
+  HelpCircle, Send, EyeOff, TestTube2, CheckCircle2, XCircle, Clock, Sparkles,
 } from 'lucide-react';
 import { api, withIdempotency } from '../lib/api';
 import Card, { CardHeader } from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
 import { LoadingBlock, ErrorBlock } from '../lib/scope';
+import { MatchExplainModal } from './Feed';
 
 const REASON_LABELS = {
   requires_us_person: 'US-person required (ITAR)',
@@ -113,6 +114,7 @@ export default function JobDetailPage() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [flash, setFlash] = useState(null);
+  const [explainOpen, setExplainOpen] = useState(false);
   const nav = useNavigate();
 
   const load = useCallback(async () => {
@@ -185,6 +187,15 @@ export default function JobDetailPage() {
             )}
           </div>
           <div className="flex-shrink-0 flex items-center gap-2">
+            {job.pass_all && (
+              <Button
+                variant="secondary"
+                onClick={() => setExplainOpen(true)}
+                data-testid="job-detail-why-match-btn"
+              >
+                <Sparkles className="h-4 w-4" /> Why this match
+              </Button>
+            )}
             <Button variant="ghost" onClick={hide} disabled={busy} data-testid="job-detail-hide-btn"><EyeOff className="h-4 w-4" /> Hide</Button>
             <Button variant="accent" onClick={shortlist} loading={busy} disabled={derived} data-testid="job-detail-shortlist-btn">
               <Send className="h-4 w-4" /> Shortlist
@@ -287,6 +298,7 @@ export default function JobDetailPage() {
           )}
         </div>
       </div>
+      {explainOpen && <MatchExplainModal jobId={job.id} onClose={() => setExplainOpen(false)} />}
     </div>
   );
 }
