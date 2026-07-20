@@ -392,20 +392,22 @@ class TestStateTransition:
 class TestUserZeroCleanup:
     def test_user_zero_prefs_and_eligibility_wiped(self, user_zero_client):
         r = user_zero_client.get(f"{API}/preferences/me")
-        # Should be 404 or empty
+        # Should be 404 or empty (version 0 / payload null is the empty-state shape)
         if r.status_code == 200:
             body = r.json()
-            # empty-ish check
-            keys_with_values = [k for k, v in body.items() if v]
-            assert not keys_with_values, f"expected empty prefs, got {body}"
+            assert body.get("version", 0) == 0 and not body.get("payload"), \
+                f"expected empty prefs, got {body}"
         else:
             assert r.status_code == 404, r.status_code
 
         r2 = user_zero_client.get(f"{API}/eligibility/me")
         if r2.status_code == 200:
             body = r2.json()
-            # accept empty status
-            assert not body.get("status"), f"expected empty eligibility, got {body}"
+            # Empty-state = version 0 AND status is one of ("", None, "unspecified")
+            # per founder-spec "eligibility status=unspecified sealed" is the empty-state.
+            assert body.get("version", 0) == 0, f"expected version 0, got {body}"
+            assert body.get("status") in (None, "", "unspecified"), \
+                f"expected empty eligibility status, got {body}"
         else:
             assert r2.status_code == 404, r2.status_code
 

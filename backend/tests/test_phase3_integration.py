@@ -32,7 +32,7 @@ BASE = os.environ.get("REACT_APP_BACKEND_URL", "https://lynk-preview-2.preview.e
 MONGO_URL = os.environ.get("MONGO_URL", "mongodb://localhost:27017")
 DB_NAME = os.environ.get("DB_NAME", "opportunityos")
 
-USER_ZERO = {"email": "ujjwal@opportunityos.dev", "password": "Passport!Test0"}
+USER_ZERO = {"email": "fixture-ead@opportunityos.dev", "password": "Fixture!Test1"}  # Founder Fix Directive: state-mutating tests use the FIXTURE user, not the real User Zero.
 
 # Read token straight from backend/.env (avoid leaking in reports).
 def _read_service_token() -> str:

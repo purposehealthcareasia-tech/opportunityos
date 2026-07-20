@@ -234,7 +234,7 @@ async def _one_time_user_zero_cleanup(user_id: str) -> None:
     Passport_activated is recomputed by checking approved-claim requirements.
     """
     db = get_db()
-    marker_key = "user_zero_cleanup_v2"
+    marker_key = "user_zero_cleanup_v3"
     already = await db.seed_migrations.find_one({"key": marker_key})
     if already:
         return
@@ -269,7 +269,7 @@ async def _one_time_user_zero_cleanup(user_id: str) -> None:
     await db.audit_logs.insert_one({
         "id": str(uuid.uuid4()),
         "actor": "system",
-        "action": "seed.user_zero_cleanup_v2",
+        "action": "seed.user_zero_cleanup_v3",
         "object_ref": f"user:{user_id}",
         "ts": utc_now(),
         "meta": {"deleted": counts, "passport_activated": should_be_activated},
