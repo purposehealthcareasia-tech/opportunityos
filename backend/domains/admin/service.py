@@ -31,6 +31,7 @@ from fastapi.encoders import jsonable_encoder
 from core.db import get_db
 from core.deps import get_current_user
 from core.time_utils import utc_now
+from core.config import settings
 from domains.audit import service as audit
 
 
@@ -341,7 +342,11 @@ async def system_health(staff: dict = Depends(_require_admin)):
         {"$group": {"_id": "$model", "cost_usd": {"$sum": "$cost_usd"}, "n": {"$sum": 1}}},
     ])]
     return {"counts": counts, "llm_costs": jsonable_encoder(cost_agg),
-            "queue_depth_stub": counts.get("manual_queue_items", 0)}
+            "queue_depth_stub": counts.get("manual_queue_items", 0),
+            # SEC-004(d) — deploy-flag disclosure lives HERE, behind admin auth,
+            # not on the public `/api/health`.
+            "prod_mode": bool(settings.PROD_MODE),
+            "ci_test_issuer_enabled": bool(settings.CI_TEST_ISSUER_ENABLED)}
 
 
 # ---------- Observability (C.7) — labeled STUB ----------

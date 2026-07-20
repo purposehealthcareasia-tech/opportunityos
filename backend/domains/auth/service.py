@@ -5,6 +5,7 @@ from core.security import hash_password, verify_password, create_access_token
 from core.time_utils import utc_now
 from core.policy import SCOPE_KEYS, REQUIRED_SCOPES
 from core import sessions as session_store
+from services import login_throttle
 from domains.auth import repository as user_repo
 from domains.auth.models import SignupRequest, LoginRequest
 from domains.audit import service as audit
@@ -47,6 +48,8 @@ def _maybe_bearer_body(user_id: str) -> dict:
 
 async def signup(req: SignupRequest, request: Request, response: Response) -> dict:
     email = req.email.lower()
+    # SEC-P3(a) — throttle before any DB work.
+    await login_throttle.check_and_record_attempt(request, "signup", email)
     if await user_repo.by_email(email):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="email_already_registered")
 
@@ -111,7 +114,11 @@ async def signup(req: SignupRequest, request: Request, response: Response) -> di
 
 async def login(req: LoginRequest, request: Request, response: Response) -> dict:
     from core.db import get_db
-    user = await user_repo.by_email(req.email.lower())
+    email = req.email.lower()
+    # SEC-P3(a) — throttle before crypto verify so brute-forcers get counted
+    # on every attempt regardless of whether the email exists.
+    await login_throttle.check_and_record_attempt(request, "login", email)
+    user = await user_repo.by_email(email)
     if not user or not verify_password(req.password, user.get("password_hash", "")):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid_credentials")
     # Phase 6 — soft-delete gate.
@@ -134,6 +141,9 @@ async def login(req: LoginRequest, request: Request, response: Response) -> dict
         user_agent=request.headers.get("user-agent"),
     )
     _set_session_cookies(response, session_row, role)
+    # Successful login → clear the throttle bucket so a legit user's earlier
+    # typos don't linger against them.
+    await login_throttle.clear_bucket(request, "login", email)
     await audit.write(user["id"], "auth.session_created",
                        f"session:{session_row['session_id']}",
                        {"via": "login", "role": role})

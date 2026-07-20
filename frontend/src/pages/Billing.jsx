@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { CreditCard, Check, AlertTriangle, Loader2, RefreshCw, Info } from 'lucide-react';
 import { api } from '../lib/api';
+import { safeAssign } from '../lib/utils';
 
 /**
  * S19 — Billing.
@@ -76,7 +77,10 @@ export default function BillingPage() {
       const body = { lookup_key, origin_url };
       if (coupon.trim() && couponVerdict?.valid) body.coupon = coupon.trim();
       const r = await api.post('/api/v1/billing/checkout', body);
-      window.location.assign(r.data.checkout_url);
+      if (!safeAssign(r.data.checkout_url)) {
+        setFlash({ kind: 'warn', message: 'Checkout URL was refused (only http/https allowed).' });
+        setBusy(false);
+      }
     } catch (e) {
       setFlash({ kind: 'warn', message: e?.response?.data?.detail?.message || 'Checkout failed.' });
       setBusy(false);

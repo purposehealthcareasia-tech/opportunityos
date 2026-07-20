@@ -80,13 +80,15 @@ def mongo_db():
 
 class TestStartup:
     def test_health(self):
+        # SEC-004(d) — public health strips deploy flags.
         r = requests.get(f"{BASE}/api/health")
         assert r.status_code == 200
         b = r.json()
         assert b["phase"] == 6
-        assert b["ci_test_issuer_enabled"] is True
-        assert b["prod_mode"] is False
         assert b["mongo"] is True
+        # Flags now live on the admin health endpoint only.
+        assert "ci_test_issuer_enabled" not in b, "SEC-004(d): public health must not leak this flag"
+        assert "prod_mode" not in b, "SEC-004(d): public health must not leak this flag"
 
 
 # ---------------- Auth hardening ----------------

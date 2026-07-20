@@ -36,3 +36,34 @@ export function sortGroups(groups) {
     return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
   });
 }
+
+
+// ---------------------------------------------------------------------------
+// SEC-P3(b) · scheme allowlist for outbound URLs.
+// Only http/https URLs are safe to link/navigate to. Anything else (javascript:,
+// data:, vbscript:, file:) becomes a spoof / XSS vector when the URL comes
+// from user-generated content or a Stripe-hosted checkout redirect.
+// ---------------------------------------------------------------------------
+const _SAFE_SCHEMES = new Set(['http:', 'https:']);
+
+/** Return `url` iff it parses AND its scheme is http/https. Else return null. */
+export function safeExternalHref(url) {
+  if (!url || typeof url !== 'string') return null;
+  try {
+    const u = new URL(url);
+    if (!_SAFE_SCHEMES.has(u.protocol)) return null;
+    return u.toString();
+  } catch { return null; }
+}
+
+/** Navigate the tab to `url` only if the scheme is http/https. Returns true on
+ *  successful navigation. Silent no-op (logged) otherwise. */
+export function safeAssign(url) {
+  const clean = safeExternalHref(url);
+  if (!clean) {
+    console.warn('[safeAssign] refused non-http(s) URL:', url);
+    return false;
+  }
+  window.location.assign(clean);
+  return true;
+}

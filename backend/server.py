@@ -9,6 +9,7 @@ from core.config import settings
 from core.db import ensure_indexes, get_db
 from core.policy import CONSENT_SCOPES, policy_version
 from core.sessions import ensure_session_indexes
+from services.login_throttle import ensure_indexes as ensure_throttle_indexes
 from middleware.idempotency import IdempotencyMiddleware
 from middleware.csrf import CSRFMiddleware
 from domains.auth.router import router as auth_router
@@ -79,6 +80,7 @@ async def lifespan(_app: FastAPI):
     log.info("OpportunityOS backend starting…")
     await ensure_indexes()
     await ensure_session_indexes()
+    await ensure_throttle_indexes()
     _assert_unique_operation_ids(_app)
     try:
         counts = await run_seeds()
@@ -106,11 +108,17 @@ app = FastAPI(
 
 # ---------------------------------------------------------------------------
 # CORS — explicit allowlist required for credentialed requests (cookies).
-# Wildcard "*" + allow_credentials=True is blocked by browsers, so we source
-# the origin list from settings.CORS_ALLOW_ORIGINS. Fall back to a permissive
-# no-credentials config only when the env var is unset (local dev).
+# SEC-004(b): in PROD_MODE the allowlist is used AS-IS from CORS_ALLOW_ORIGINS.
+# Loopback origins (localhost / 127.0.0.1) are stripped so a misconfigured env
+# var can't accidentally trust a dev client from production. In non-prod they
+# remain allowed so the dev browser session works.
 # ---------------------------------------------------------------------------
-_origins = [o.strip() for o in (settings.CORS_ALLOW_ORIGINS or "").split(",") if o.strip()]
+_raw_origins = [o.strip() for o in (settings.CORS_ALLOW_ORIGINS or "").split(",") if o.strip()]
+if settings.PROD_MODE:
+    _origins = [o for o in _raw_origins
+                if "localhost" not in o and "127.0.0.1" not in o]
+else:
+    _origins = _raw_origins
 if _origins:
     app.add_middleware(
         CORSMiddleware,
@@ -122,6 +130,13 @@ if _origins:
     )
 else:
     # Dev fallback — no credentials because wildcard + credentials is illegal.
+    # In PROD_MODE with an empty allowlist we refuse to start (fail-fast): a
+    # production deploy without a CORS allowlist is a footgun.
+    if settings.PROD_MODE:
+        raise RuntimeError(
+            "SEC-004: PROD_MODE=true requires a non-empty CORS_ALLOW_ORIGINS. "
+            "Set the env var to the exact production origin(s) before starting."
+        )
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -143,6 +158,9 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 
 @app.get("/api/health", tags=["meta"])
 async def health():
+    """Public health probe — SEC-004(d): deliberately does NOT disclose the
+    server's PROD_MODE / CI_TEST_ISSUER_ENABLED flags. Those live behind the
+    admin health endpoint (`/api/v1/admin/health`) instead."""
     db = get_db()
     try:
         await db.command("ping")
@@ -154,8 +172,6 @@ async def health():
         "mongo": mongo_ok,
         "phase": 6,
         "policy_text_version": policy_version(),
-        "ci_test_issuer_enabled": bool(settings.CI_TEST_ISSUER_ENABLED),
-        "prod_mode": bool(settings.PROD_MODE),
     }
 
 

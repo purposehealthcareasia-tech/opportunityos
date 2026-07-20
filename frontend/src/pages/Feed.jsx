@@ -9,6 +9,7 @@ import Card, { CardHeader } from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
 import { LoadingBlock, ErrorBlock, EmptyBlock, ScopeRequiredPrompt } from '../lib/scope';
+import { safeExternalHref } from '../lib/utils';
 
 const REASON_LABELS = {
   requires_us_person: 'US-person required (ITAR)',
@@ -628,7 +629,11 @@ export default function FeedPage() {
                     <Link to={`/jobs/${i.id}`} className="text-sm text-ink dark:text-ink-dark hover:underline">{i.title}</Link>
                     <div className="text-xs muted flex items-center gap-1 mt-0.5">
                       <ExternalLink className="h-3 w-3" />
-                      <a href={i.origin_url} target="_blank" rel="noreferrer" className="hover:underline truncate">{i.origin_url}</a>
+                      {(() => { const safeUrl = safeExternalHref(i.origin_url); return safeUrl ? (
+                        <a href={safeUrl} target="_blank" rel="noreferrer" className="hover:underline truncate">{safeUrl}</a>
+                      ) : (
+                        <span className="truncate text-neutral-400" title="URL blocked (unsafe scheme)">{i.origin_url}</span>
+                      ); })()}
                     </div>
                     {i.needs_origin && i.resolver_label && (
                       <p

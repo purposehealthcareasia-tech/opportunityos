@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from core.deps import get_current_user, require_role
 from domains.auth.models import PublicUser
 from domains.users.models import UpdateProfileRequest, ChangePasswordRequest
@@ -28,8 +28,8 @@ async def update_me(req: UpdateProfileRequest, user: dict = Depends(get_current_
 
 
 @router.post("/me/change-password", status_code=204)
-async def change_password(req: ChangePasswordRequest, user: dict = Depends(get_current_user)):
-    await users_svc.change_password(user, req)
+async def change_password(req: ChangePasswordRequest, response: Response, user: dict = Depends(get_current_user)):
+    await users_svc.change_password(user, req, response)
     return None
 
 

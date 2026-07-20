@@ -147,9 +147,20 @@ async def get_export(job_id: str, user: dict = Depends(get_current_user)):
 
 
 async def _build_bundle(user_id: str) -> dict:
-    """Complete bundle including sealed own-values (user's own data)."""
+    """Complete bundle including sealed own-values (user's own data).
+
+    IMPORTANT (SEC-001): the `profile` field is passed through the same
+    `_sanitize_user` scrubber used by the admin console so credential material
+    (`password_hash`, `totp_secret`, …) NEVER lands in a self-download bundle.
+    Reuses the single-source-of-truth `SENSITIVE_USER_FIELDS` registry."""
     db = get_db()
-    user = await db.users.find_one({"id": user_id}, {"_id": 0})
+    # Import lazily to avoid a circular import (admin service imports the
+    # session store, which is fine, but domain-to-domain reuse is cleaner via
+    # this local reference).
+    from domains.admin.service import _sanitize_user, SENSITIVE_USER_FIELDS
+    projection = {"_id": 0, **{f: 0 for f in SENSITIVE_USER_FIELDS}}
+    user = await db.users.find_one({"id": user_id}, projection)
+    user = _sanitize_user(user)
 
     async def _fetch(coll: str, filt: dict) -> list[dict]:
         return [x async for x in db[coll].find(filt, {"_id": 0})]

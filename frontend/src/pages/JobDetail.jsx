@@ -5,6 +5,7 @@ import {
   HelpCircle, Send, EyeOff, TestTube2, CheckCircle2, XCircle, Clock, Sparkles,
 } from 'lucide-react';
 import { api, withIdempotency } from '../lib/api';
+import { safeExternalHref } from '../lib/utils';
 import Card, { CardHeader } from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
@@ -180,11 +181,14 @@ export default function JobDetailPage() {
               {job.comp && <span>· {job.comp}</span>}
               {job.taxonomy_family && <span className="pill pill-neutral">{job.taxonomy_family}</span>}
             </div>
-            {job.origin_url && (
-              <a href={job.origin_url} target="_blank" rel="noreferrer" className="text-xs muted underline inline-flex items-center gap-1 mt-2">
-                <ExternalLink className="h-3 w-3" /> {job.origin_url}
-              </a>
-            )}
+            {(() => {
+              const safeUrl = safeExternalHref(job.origin_url);
+              return safeUrl ? (
+                <a href={safeUrl} target="_blank" rel="noreferrer" className="text-xs muted underline inline-flex items-center gap-1 mt-2">
+                  <ExternalLink className="h-3 w-3" /> {safeUrl}
+                </a>
+              ) : null;
+            })()}
           </div>
           <div className="flex-shrink-0 flex items-center gap-2">
             {job.pass_all && (

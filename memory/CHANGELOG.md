@@ -1,5 +1,50 @@
 # OpportunityOS — CHANGELOG
 
+## 2026-02-20 · Security audit remediation — SEC-001..004 + P3
+
+Post-`v0.1 CERTIFIED` remediation of the four Medium findings from the security audit + two P3 hardening items. Full backend regression **182/182 pytest green**.
+
+### SEC-001 · Privacy export leaked own `password_hash` — FIXED
+- `domains/privacy/service.py::_build_bundle` now reuses `_sanitize_user()` + `SENSITIVE_USER_FIELDS` from `domains/admin/service.py` (single source of truth) and applies the same projection at the driver level.
+- Regression: `TestPrivacyExportDoesNotLeakCredentials` asserts absence of `password_hash`/`password`/`totp_secret`/`recovery_codes` keys AND the bcrypt marker regex in the serialized export body.
+
+### SEC-002 · Password change did not invalidate sibling sessions — FIXED
+- `domains/users/service.py::change_password` now (1) revokes ALL sessions for the user via `sessions.revoke_all_for_user`, (2) if the caller is on the cookie path, mints a fresh session in-place so they stay logged in (anti-fixation).
+- Regression: `TestSiblingSessionRevocationOnPasswordChange` opens two sessions, rotates the password in A, asserts A survives and B returns 401 on `/auth/me`.
+
+### SEC-003 · Idempotency collapsed cookie-auth callers to `anon` — FIXED
+- `middleware/idempotency.py` now resolves the caller in this order: cookie session → Bearer JWT → IP-scoped `anon:{ip}`. Two cookie-authenticated users hitting the same endpoint with the same `Idempotency-Key` are guaranteed distinct executions.
+- Regression: `TestIdempotencyIsUserScopedOnCookiePath` posts identical Idempotency-Keys to `/consents` from two sessions and asserts distinct `id` values in the response bodies.
+
+### SEC-004 · Deploy-flag disclosure + preview posture — code parts FIXED
+- (a) `access_token` in login/signup body was already gated by `CI_TEST_ISSUER_ENABLED` via `_maybe_bearer_body` — added a monkeypatched pure-unit test asserting the helper returns `{}` when the flag is off. Live preview keeps the flag on so pytest continues to work with Bearer.
+- (b) CORS: `server.py` strips `localhost` / `127.0.0.1` from the allowlist when `PROD_MODE=true`. In PROD_MODE the server refuses to start with an empty `CORS_ALLOW_ORIGINS`.
+- (c) `JWT_SECRET` rotated to a fresh 64-byte urlsafe secret (invalidates all existing sessions — accepted at v0.1). `backend/.env` and `frontend/.env` removed from git's index (`git rm --cached`); `.gitignore` entries already in place, verified.
+- (d) Public `/api/health` no longer returns `prod_mode` / `ci_test_issuer_enabled`. Those flags now live on the admin-only `/api/v1/admin/health` endpoint.
+
+### P3(a) · Login-brute-force throttle — ADDED
+- `services/login_throttle.py`: sliding-window per (route, identifier) capped at 10 attempts / 5 min AND per (route, ip) at 30 attempts / 5 min. Either → 429 with `Retry-After`. `X-Forwarded-For` respected so k8s ingress round-robin can't defeat the counter. Successful login clears the identifier bucket.
+- Wired into `/api/v1/auth/signup` and `/api/v1/auth/login`. Indexes ensured at startup.
+- Regression: `TestLoginThrottle` proves 429 with `Retry-After` header within the max window.
+
+### P3(b) · Frontend scheme allowlist — ADDED
+- New helpers `safeExternalHref` / `safeAssign` in `frontend/src/lib/utils.js`. Only `http:` / `https:` accepted; `javascript:` / `data:` / `vbscript:` / etc. are refused with a console warning.
+- Wired into `pages/JobDetail.jsx:184`, `pages/Feed.jsx:631`, `pages/Billing.jsx:79` (Stripe checkout redirect).
+
+### Pre-prod checklist — status by item
+
+| Item | v0.1 code-enforced? | Deploy-time flip still required? |
+|---|---|---|
+| Access-token in body | YES (off when CI flag off) | Flip `CI_TEST_ISSUER_ENABLED=false` on prod |
+| Public health flag disclosure | YES (stripped unconditionally) | — |
+| CORS localhost in PROD_MODE | YES (stripped at boot) | Set `PROD_MODE=true`, tighten `CORS_ALLOW_ORIGINS` to prod host |
+| JWT secret strength | YES (rotated to 64-byte random) | Rotate again on prod deploy for extra hygiene |
+| `.env` in git tracking | YES (`git rm --cached`; .gitignore in place) | Verify on prod that `.env` still ignored |
+| Fail-fast on `PROD_MODE + CI_TEST_ISSUER_ENABLED` | YES (server refuses to boot) | — |
+| CORS empty allowlist in PROD_MODE | YES (server refuses to boot) | Set the env var before boot |
+
+
+
 ## 2026-02 · Phase 6 — Billing / Privacy / Admin / Auth hardening
 
 ### Billing (S19)

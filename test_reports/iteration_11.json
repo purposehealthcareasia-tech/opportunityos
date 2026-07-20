@@ -1,0 +1,41 @@
+{
+  "summary": "Iteration 11 · Security fix-brief verification (SEC-001..004 + P3) — INDEPENDENT PASS. Full backend regression 182/182 passed in 166s (was 173/173 before this brief; +9 new tests all green). 5 independent black-box probes on the live preview also all PASS. Confirmed: (SEC-001) privacy export bundle no longer contains password_hash / password / totp_secret / recovery_codes or any bcrypt marker $2[aby]$; raw mongo users doc still holds the bcrypt hash proving sanitization is response-side. (SEC-002) Cookie password-change revokes sibling sessions and rotates the caller's own session in-place (mongo shows 1 active + 2 revoked rows post-change; A's cookie value flipped). (SEC-003) Two cookie-authenticated users sending the SAME Idempotency-Key to /api/v1/consents both got distinct 201 responses (no cross-user replay); same-session-same-key replay returns identical body and X-Idempotent-Replay: true header. (SEC-004a) Live login body carries access_token because preview has CI_TEST_ISSUER_ENABLED=true; unit test `test_helper_returns_empty_when_flag_off` covers the flag-off branch. (SEC-004d) GET /api/health returns only {ok, mongo, phase, policy_text_version} — no prod_mode/ci_test_issuer_enabled; GET /api/v1/admin/health (admin bearer) surfaces both flags with boolean values. (P3a) 12 rapid wrong-password logins for a scratch identifier hit 429 by attempt 11 with Retry-After=299 and detail.error='rate_limited'; a subsequent fixture-user login on a DIFFERENT identifier succeeded, proving per-identifier scoping (not IP-wide). Env-tracking: `git ls-files backend/.env frontend/.env` returned EMPTY output (already untracked; still on disk for local use).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/v1/consents (Idempotency-Key replay)", "issue": "X-Idempotent-Replay: true header verified present on 2nd same-key request — no issue. Noted for context."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_security_invariants.py",
+    "/app/test_reports/pytest/full_iter11.xml",
+    "/app/test_reports/iter11_indep_probes.py"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "test_security_invariants.py::TestLoginThrottle asserts 429 within 12 attempts but the actual rate-limiter threshold is 10 per identifier / 5 min. On a shared preview IP the per-IP bucket (30 in 5 min) could theoretically be poisoned by parallel test runs and yield an EARLIER 429 attributed to `ip_rate_limited` rather than `rate_limited`. The current test only asserts detail.error == 'rate_limited' — if IP scoping trips first the detail.error may differ. Consider accepting both `rate_limited` and `ip_rate_limited` OR clear both buckets in setup. Low risk in single-agent runs, real risk in CI parallelism.",
+    "TestSiblingSessionRevocationOnPasswordChange uses signup which requires `policy_text_version` + `consents` — good; but does NOT clean up the throwaway user. Over many CI runs the `users` collection will accrete pw-rotate-*@opportunityos.dev / idmp-*@... / sec002-*@... rows. Add a teardown that db.users.delete_many({'email': {'$regex':'^(pw-rotate|idmp-|sec002-|throttle-)'}}).",
+    "TestPrivacyExportDoesNotLeakCredentials has a mongo_db=None default in its signature that shadows any fixture — the mongo baseline (raw doc still contains the hash) is verified only in the standalone probe script, not in pytest. If you want that invariant guarded by CI, wire the mongo_db fixture properly and add `assert 'password_hash' in db.users.find_one({email: fixture}).keys()` as the baseline paired with the response scrub.",
+    "SEC-003 pytest test does not exercise the `X-Idempotent-Replay: true` header on same-session repeat (only the cross-user distinct-id case). The standalone probe covers it; consider promoting that check into the pytest module so the header contract is CI-guarded going forward.",
+    "server.py CORS fail-fast on empty allowlist + PROD_MODE=true was NOT exercised (would require restarting supervisor with PROD_MODE=true). This is only ever going to be verified in the actual prod deploy — flag it in the pre-prod checklist rather than pytest.",
+    "domains/privacy/service.py::_build_bundle sanitizer reuse of admin's SENSITIVE_USER_FIELDS is nice, but if the two files ever drift the export could silently regress. Consider extracting SENSITIVE_USER_FIELDS into a shared constants module (core.security_constants or similar) that both admin/service.py and privacy/service.py import."
+  ],
+  "updated_files": [
+    "/app/test_reports/iteration_11.json (new)",
+    "/app/test_reports/iter11_indep_probes.py (new — 5 independent black-box probes)",
+    "/app/test_reports/pytest/full_iter11.xml (new — junit for 182/182 sweep)"
+  ],
+  "success_rate": {"backend": "100% (182/182)", "frontend": "n/a (backend only)"},
+  "test_credentials": "fixture-ead@opportunityos.dev / Fixture!Test1 · admin@opportunityos.dev / Admin!Console1 · support@opportunityos.dev / Support!Console1 · CI_TEST_ISSUER_ENABLED=true → Bearer works",
+  "seed_data_creation": "Throwaway signup users created during the SEC-002/003/P3 probes (pw-rotate-*, idmp-a-*, idmp-b-*, idmp-same-*, sec002-*, throttle-probe-*). These are not cleaned up automatically — see critical_code_review_comments for the recommended teardown fixture. login_throttle bucket rows for the scratch identifier ARE cleaned up by both the pytest module and the probe script.",
+  "env_tracking_status": "git ls-files backend/.env frontend/.env returned empty output — both files are removed from the git index and .gitignore protection is in place. Files still present on disk for local supervisor consumption. SEC-004(c) confirmed.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "All 5 findings in the fix-brief are independently verified closed. Pytest count 182/182 (was 173/173). Independent black-box probes in /app/test_reports/iter11_indep_probes.py exercise the same invariants without relying on the CI-only pytest module (useful if someone later disables CI_TEST_ISSUER_ENABLED — then the Bearer login in those probes will fail and you'll switch to cookie-based auth). Note the 6 review comments — none are blockers for v0.1 CERTIFIED but worth incorporating during v0.2 hygiene: signature-drift risk for SENSITIVE_USER_FIELDS across admin/privacy, throwaway-user teardown, ip_rate_limited detail-code variance, and lifting the X-Idempotent-Replay assertion into pytest.",
+  "rca of the issue": "N/A — verification pass. All 5 findings SEC-001..004 + P3(a) closed. Independent verification via a separate probe script plus the full pytest run confirms the main agent's self-report (182 passed in 166s) is reproducible from a clean testing-agent perspective."
+}
