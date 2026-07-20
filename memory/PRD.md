@@ -92,13 +92,20 @@ A gate FAIL caps score at 25.
 - Topbar `UsageMeterChip` shows current month `jobs_processed` count.
 
 ## Testing
-- `pytest tests/` — 66 tests green after `sudo supervisorctl restart backend`.
-  On a persistent backend, run pytest right after a restart or the fixture user's
-  in-run mutations will cause ordering-sensitive tests in `test_fixture_acceptance_b.py`
-  to fail (fixture rebases on restart only).
+- `pytest tests/` — 79 tests green (autouse module-scope rebase in `tests/conftest.py`
+  keeps state deterministic across runs).
 - Golden set: `python3 -m tests.golden_resumes.golden_run` — 10 labeled synthetic
   résumés; target ≥95% field accuracy; last report at
   `tests/golden_resumes/last_report.json`. Current: 98.95%.
+
+## Fixture rebase on demand
+`POST /api/internal/fixture/rebase` — same `X-Service-Token` semantics as
+`/api/internal/jobs/bulk` (missing→401, wrong→403, not-configured→503, token never
+logged/returned). Fully re-baselines fixture-ead@ (wipes applications, hidden_jobs,
+match_scores, usage_meters, score_feedback, documents, resume_versions, claims,
+consent_records + any jobs the fixture imported + any test-ingest job pollution)
+and re-seeds passport-activated + all consents + eligibility=ead_opt sealed + prefs
+Phoenix+Remote+$90k + approved claims. Call this BEFORE each acceptance run in CI.
 
 ## Deterministic test fixture
 - Fixture user `fixture-ead@opportunityos.dev` / `Fixture!Test1` is RE-BASELINED on
