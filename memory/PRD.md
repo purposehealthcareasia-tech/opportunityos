@@ -10,9 +10,10 @@
 Independent verification checkpoints:
 - Milestone A → `/app/test_reports/iteration_12.json`
 - Milestones B – H → `/app/test_reports/iteration_13.json`
-  (backend 91/91: 62 pre-existing milestone unit tests + 29 new HTTP-contract
-  tests · frontend Milestone E fully verified · zero critical/minor issues)
-- Full backend regression at close of Milestone H: **275 / 275** pytest green.
+- Advisory fix (webhook HTTP semantics, 503/400/404, never 500/2xx) → `/app/test_reports/iteration_14.json`
+- Milestone I visual polish + advisory-fix hardening → `/app/test_reports/iteration_15.json`
+
+Full backend regression at close of Milestone I: **304 / 304** pytest green.
 
 **Milestone A · Integrations foundation + Admin dashboard — DONE (2026-02-21)**
 - Verified: `/app/test_reports/iteration_12.json`. Full backend regression **190 / 190** green.
@@ -95,9 +96,15 @@ Independent verification checkpoints:
 - Admin integration detail now surfaces external `webhook_url` for
   payment/email providers so ops can register with vendors without guessing.
 
-**All eight founder integration milestones (A → H) DONE.** Only P2
-behaviour-neutral visual polish remains (Milestone I, deferred until final
-QA).
+**All eight founder integration milestones (A → H) + advisory fix + Milestone I
+visual polish DONE.**
+
+Standing item, credential-blocked, awaiting founder-supplied keys:
+- Operator-guided credential rollout for CONFIGURATION_REQUIRED providers
+  (Resend / SendGrid / Twilio / Razorpay / PayPal / Paystack / ElevenLabs).
+  Each provider already exposes truthful missing_env + webhook_url in the
+  admin dashboard — supply the keys via `/app/backend/.env` and the
+  provider flips to TEST_MODE / CONNECTED without any code change.
 
 Standing requirements per checkpoint:
 - Existing regressions must stay green.

@@ -1,5 +1,73 @@
 # OpportunityOS — CHANGELOG
 
+## 2026-02-21 · Advisory fix (webhook HTTP semantics) + Milestone I (Admin dashboard visual polish)
+
+Full backend regression **304 / 304** pytest green (+29 iteration14 advisory
+tests). Independently verified in iterations 14 + 15 — zero critical/minor
+issues, zero action_items.
+
+### Advisory fix — webhook HTTP semantics
+Aligned webhook verification failures with the existing INTERNAL_SERVICE_TOKEN
+convention. **Never 500, never 2xx.**
+
+- `routers/webhooks_email.py` — explicit allow-set:
+  `_SERVER_MISCONFIG = {"webhook_secret_not_configured", "webhook_public_key_not_configured"}`
+  → HTTP **503**. Anything else → HTTP **400**.
+- `routers/webhooks_payment.py` — split allow-set:
+  - `_SERVER_MISCONFIG_EXACT = {"webhook_secret_not_configured", "webhook_id_not_configured"}`
+  - `_SERVER_MISCONFIG_PREFIX = ("auth_failed", "upstream_error")` — for
+    PayPal's server-to-server verification round-trip.
+  Both branches → HTTP **503**. Everything else (missing/invalid headers,
+  bad signature, stale timestamp, malformed body) → HTTP **400**.
+- Unknown provider slug → HTTP **404** (unchanged).
+
+Live-preview curl matrix confirmed all six webhook routes return 503 for
+server-misconfig, 404 for unknown slug, never 500/2xx.
+
+### Milestone I — Admin Integrations dashboard visual polish
+**Behaviour-neutral.** Zero endpoint changes, zero RBAC changes.
+
+- `StatusChip` component — 5 accessible chips (Connected / Test mode /
+  Configuration required / Degraded / Disabled). Each with a colored dot +
+  ring + subtle background; AA contrast in light AND dark modes.
+- `CopyableCode` component — webhook URL panel now has a Copy button that
+  writes to clipboard with a 1.6s "Copied" affordance.
+- Category grouping in stable order (auth → ai → payments → email → sms →
+  voice → storage → misc) with icons + provider counts.
+- Missing env vars rendered as red-tinted monospace pills (was: bare
+  divs) — scannable at a glance.
+- Test button now has an inline loading spinner + per-row result badge
+  (`✓ Nms` on success, `✗ failed` on failure) — replaces the old global
+  flash-only feedback.
+- Support role: Actions cell now renders a literal `read-only` span
+  (`data-testid=integration-actions-readonly-{slug}`) instead of
+  visually-clickable-but-disabled Test/Disable buttons. Backend still
+  returns 403 for any mutation attempt.
+- Category testids upgraded to UPPERCASE for consistency with the
+  status-enum convention:
+  `integrations-category-{AUTH,AI,PAYMENTS,EMAIL,SMS,VOICE,STORAGE}`.
+- Responsive: missing-env column collapses on mobile; missing-env pills
+  stack under the provider label on narrow viewports.
+
+### Data-testid contract (unchanged from Milestone A, one addition)
+`admin-integrations-tab`, `admin-tab-integrations`, `integrations-summary`,
+`integrations-summary-{STATUS_UPPER}`, `integrations-category-{CAT_UPPER}`,
+`integration-row-{slug}`, `integration-status-{slug}`,
+`integration-open-{slug}`, `integration-test-{slug}` (admin only),
+`integration-toggle-{slug}` (admin only),
+`integration-actions-readonly-{slug}` (support only · NEW),
+`integration-detail-modal`, `integration-webhook-url`,
+`integration-webhook-url-copy`.
+
+### Tests
+- Updated `tests/test_iteration13_indep_verification.py` to expect
+  HTTP 503 (was 500) for webhook secret-not-configured cases.
+- Updated `tests/test_milestone_h_webhooks.py` similarly.
+- Added `tests/test_iteration14_advisory_fix.py` (22 tests) and
+  `tests/test_iteration15_advisory_fix_hardened.py` (19 tests) as
+  regression fixtures.
+
+
 ## 2026-02-21 · Founder integrations mandate — Milestone H (Payment webhooks + ElevenLabs + admin polish)
 
 Full regression **275 / 275** pytest green (+9 Milestone H tests). All eight

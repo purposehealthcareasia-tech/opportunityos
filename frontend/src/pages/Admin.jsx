@@ -975,7 +975,10 @@ function IntegrationsTab({ isAdmin }) {
                             </td>
                             <td className="px-3 py-2.5 text-right whitespace-nowrap">
                               {!isAdmin ? (
-                                <span className="text-[10px] muted italic">read-only</span>
+                                <span
+                                  className="text-[10px] muted italic"
+                                  data-testid={`integration-actions-readonly-${p.slug}`}
+                                >read-only</span>
                               ) : (
                                 <div className="inline-flex items-center gap-2">
                                   {result && !result.pending && (
