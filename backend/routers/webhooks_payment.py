@@ -96,9 +96,18 @@ async def receive_payment_webhook(provider_slug: str, request: Request):
             await vw
     except PaymentSignatureError as e:
         code = str(e)
-        # 500 = "the operator has not finished configuring this provider".
-        # 400 = "the vendor sent a payload with an invalid signature".
-        status = 500 if code.endswith("not_configured") else 400
+        # Semantic alignment with the internal-service-token convention:
+        #   - webhook secret / webhook id not configured on server → HTTP 503
+        #     (the operator has NOT finished configuring this provider)
+        #   - anything else (missing/invalid headers, bad signature,
+        #     stale timestamp)                                     → HTTP 400
+        # Never a 2xx, never a bypass.
+        server_misconfig = (
+            code.endswith("not_configured")
+            or code.startswith("auth_failed")
+            or code.startswith("upstream_error")
+        )
+        status = 503 if server_misconfig else 400
         await integrations_health.record_event(
             provider=provider_slug, kind="webhook_rejected",
             detail={"reason": code[:120]},

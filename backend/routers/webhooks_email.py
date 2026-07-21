@@ -45,9 +45,12 @@ async def receive_email_webhook(provider_slug: str, request: Request):
             raw_body=raw, headers=headers,
         )
     except WebhookVerificationError as e:
-        # Hard-fail on missing secret; also hard-fail on invalid signature.
+        # Semantic alignment with the internal-service-token convention:
+        #   - missing/invalid signature or malformed headers → HTTP 400
+        #   - webhook secret not configured on the server      → HTTP 503
+        # Never a 2xx, never a bypass.
         code = str(e)
-        status = 500 if code.endswith("not_configured") else 400
+        status = 503 if code.endswith("not_configured") else 400
         # Record the rejection for the admin dashboard.
         await integrations_health.record_event(
             provider=provider_slug, kind="webhook_rejected",

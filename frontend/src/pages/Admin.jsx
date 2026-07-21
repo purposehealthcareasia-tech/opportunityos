@@ -719,13 +719,91 @@ function FlashBanner({ kind, message, onDismiss }) {
 // ----------------------------------------------------------------------------
 // INTEGRATIONS DASHBOARD (Milestone A · admin-only)
 // ----------------------------------------------------------------------------
+// ----------------------------------------------------------------------------
+// INTEGRATIONS DASHBOARD (Milestone A · admin-only · visual polish Milestone H)
+// ----------------------------------------------------------------------------
+// Chip palette — five distinct, AA-contrast statuses in both light + dark modes.
+// Every chip uses: colored dot (2×2), bold uppercase text, ring/border for hit
+// definition, subtle background. NO behavior changes here — same values, same
+// route contracts.
 const STATUS_STYLE = {
-  CONNECTED:              'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200',
-  TEST_MODE:              'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-200',
-  CONFIGURATION_REQUIRED: 'bg-neutral-100 text-neutral-700 dark:bg-neutral-900 dark:text-neutral-300',
-  DEGRADED:               'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300',
-  DISABLED:               'bg-neutral-200 text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400',
+  CONNECTED: {
+    pill: 'bg-emerald-50 text-emerald-800 ring-1 ring-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-200 dark:ring-emerald-800/70',
+    dot:  'bg-emerald-500',
+    label: 'Connected',
+  },
+  TEST_MODE: {
+    pill: 'bg-amber-50 text-amber-800 ring-1 ring-amber-200 dark:bg-amber-950/60 dark:text-amber-100 dark:ring-amber-800/70',
+    dot:  'bg-amber-500',
+    label: 'Test mode',
+  },
+  CONFIGURATION_REQUIRED: {
+    pill: 'bg-sky-50 text-sky-800 ring-1 ring-sky-200 dark:bg-sky-950/60 dark:text-sky-200 dark:ring-sky-800/70',
+    dot:  'bg-sky-500',
+    label: 'Configuration required',
+  },
+  DEGRADED: {
+    pill: 'bg-red-50 text-red-800 ring-1 ring-red-200 dark:bg-red-950/60 dark:text-red-200 dark:ring-red-800/70',
+    dot:  'bg-red-500',
+    label: 'Degraded',
+  },
+  DISABLED: {
+    pill: 'bg-neutral-100 text-neutral-600 ring-1 ring-neutral-200 dark:bg-neutral-900/70 dark:text-neutral-400 dark:ring-neutral-700',
+    dot:  'bg-neutral-400',
+    label: 'Disabled',
+  },
 };
+
+const CATEGORY_META = {
+  ai:        { label: 'AI',        Icon: Cable },
+  auth:      { label: 'Auth',      Icon: Lock },
+  email:     { label: 'Email',     Icon: Inbox },
+  payments:  { label: 'Payments',  Icon: CreditCard },
+  sms:       { label: 'SMS / OTP', Icon: Activity },
+  voice:     { label: 'Voice',     Icon: Activity },
+  storage:   { label: 'Storage',   Icon: ShieldAlert },
+  misc:      { label: 'Misc',      Icon: Cable },
+};
+
+function StatusChip({ status, testid }) {
+  const meta = STATUS_STYLE[status] || STATUS_STYLE.DISABLED;
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium ${meta.pill}`}
+      data-testid={testid}
+      title={status}
+    >
+      <span aria-hidden className={`h-1.5 w-1.5 rounded-full ${meta.dot}`} />
+      {meta.label}
+    </span>
+  );
+}
+
+function CopyableCode({ value, testid }) {
+  const [copied, setCopied] = useState(false);
+  async function doCopy() {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1600);
+    } catch (e) { /* no-op */ }
+  }
+  return (
+    <div className="flex items-stretch gap-2" data-testid={testid}>
+      <code className="flex-1 rounded-md border border-line dark:border-line-dark bg-neutral-50 dark:bg-neutral-900 px-2 py-1.5 font-mono text-[11px] break-all">
+        {value}
+      </code>
+      <button
+        type="button"
+        onClick={doCopy}
+        className="text-[11px] rounded-md border border-line dark:border-line-dark px-2 py-1 hover:bg-neutral-100 dark:hover:bg-neutral-900"
+        data-testid={`${testid}-copy`}
+      >
+        {copied ? 'Copied' : 'Copy'}
+      </button>
+    </div>
+  );
+}
 
 function IntegrationsTab({ isAdmin }) {
   const [rows, setRows] = useState([]);
@@ -734,6 +812,8 @@ function IntegrationsTab({ isAdmin }) {
   const [busySlug, setBusySlug] = useState(null);
   const [flash, setFlash] = useState(null);
   const [detail, setDetail] = useState(null);
+  // Per-row inline result for the Test button — behavior-neutral (just UX).
+  const [testResults, setTestResults] = useState({});
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -747,14 +827,20 @@ function IntegrationsTab({ isAdmin }) {
 
   const test = async (slug) => {
     setBusySlug(slug);
+    setTestResults((s) => ({ ...s, [slug]: { pending: true } }));
     try {
       const r = await api.post(`/api/v1/admin/integrations/${slug}/test`, {});
+      setTestResults((s) => ({
+        ...s,
+        [slug]: { ok: !!r.data.ok, detail: r.data.detail || '', latency_ms: r.data.latency_ms },
+      }));
       setFlash({ kind: r.data.ok ? 'ok' : 'warn',
                  message: `${slug}: ${r.data.detail || 'no detail'}` });
       await load();
     } catch (e) {
-      setFlash({ kind: 'warn',
-                 message: e?.response?.data?.detail?.message || `${slug}: test failed.` });
+      const msg = e?.response?.data?.detail?.message || `${slug}: test failed.`;
+      setTestResults((s) => ({ ...s, [slug]: { ok: false, detail: msg } }));
+      setFlash({ kind: 'warn', message: msg });
     } finally { setBusySlug(null); }
   };
   const toggle = async (slug, enabled) => {
@@ -781,124 +867,242 @@ function IntegrationsTab({ isAdmin }) {
     (acc[r.category || 'misc'] = acc[r.category || 'misc'] || []).push(r);
     return acc;
   }, {});
+  // Stable category order: auth → ai → payments → email → sms → voice → storage → misc.
+  const CAT_ORDER = ['auth', 'ai', 'payments', 'email', 'sms', 'voice', 'storage', 'misc'];
+  const catEntries = Object.entries(byCat).sort(
+    ([a], [b]) => CAT_ORDER.indexOf(a) - CAT_ORDER.indexOf(b),
+  );
 
   return (
-    <section className="space-y-4" data-testid="admin-integrations-tab">
+    <section className="space-y-5" data-testid="admin-integrations-tab">
       {flash && <FlashBanner {...flash} onDismiss={() => setFlash(null)} />}
+
+      {/* Summary strip */}
       {summary && (
-        <div className="flex flex-wrap gap-2 text-xs" data-testid="integrations-summary">
-          {Object.entries(summary.counts || {}).filter(([, v]) => v > 0).map(([k, v]) => (
-            <span key={k} className={`pill text-[10px] ${STATUS_STYLE[k] || 'pill-neutral'}`}>{k}: {v}</span>
-          ))}
-          <span className="pill pill-neutral text-[10px]">total: {summary.total}</span>
+        <div className="flex flex-wrap items-center gap-2 text-xs" data-testid="integrations-summary">
+          {['CONNECTED', 'TEST_MODE', 'CONFIGURATION_REQUIRED', 'DEGRADED', 'DISABLED'].map((k) => {
+            const v = summary.counts?.[k] || 0;
+            if (v === 0) return null;
+            return <StatusChip key={k} status={k} testid={`integrations-summary-${k}`} />;
+          })}
+          <span className="pill pill-neutral text-[11px]">total: {summary.total}</span>
+          {!isAdmin && (
+            <span className="ml-auto text-[11px] muted inline-flex items-center gap-1">
+              <Lock className="h-3 w-3" /> read-only (support role)
+            </span>
+          )}
         </div>
       )}
-      {loading ? <Loader2 className="h-4 w-4 animate-spin muted" /> : (
+
+      {loading ? (
+        <div className="grid place-items-center py-16"><Loader2 className="h-5 w-5 animate-spin muted" /></div>
+      ) : (
         <div className="space-y-6">
-          {Object.entries(byCat).sort(([a], [b]) => a.localeCompare(b)).map(([cat, list]) => (
-            <div key={cat} className="space-y-2">
-              <div className="text-xs uppercase muted tracking-wider">{cat}</div>
-              <div className="rounded-md border border-line dark:border-line-dark overflow-hidden">
-                <table className="w-full text-sm">
-                  <thead className="bg-neutral-50 dark:bg-neutral-900 text-xs uppercase muted">
-                    <tr>
-                      <th className="text-left px-3 py-2">Provider</th>
-                      <th className="text-left px-3 py-2">Status</th>
-                      <th className="text-left px-3 py-2">Missing env</th>
-                      <th className="text-right px-3 py-2">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {list.map((p) => {
-                      const disabled = p.status === 'DISABLED';
-                      return (
-                        <tr key={p.slug} className="border-t border-line dark:border-line-dark" data-testid={`integration-row-${p.slug}`}>
-                          <td className="px-3 py-2">
-                            <button type="button" onClick={() => open(p.slug)} className="hover:underline">
-                              <span className="font-medium">{p.label}</span>
-                              <span className="ml-2 text-[10px] muted font-mono">{p.slug}</span>
-                            </button>
-                            {p.docs_url && (
-                              <a href={p.docs_url} target="_blank" rel="noreferrer" className="ml-2 text-[10px] muted underline">docs</a>
-                            )}
-                          </td>
-                          <td className="px-3 py-2">
-                            <span className={`pill text-[10px] ${STATUS_STYLE[p.status] || 'pill-neutral'}`} data-testid={`integration-status-${p.slug}`}>{p.status}</span>
-                          </td>
-                          <td className="px-3 py-2 text-[11px] font-mono">
-                            {(p.missing_env || []).map((k) => <div key={k}>{k}</div>)}
-                            {(p.missing_env || []).length === 0 && <span className="muted">—</span>}
-                          </td>
-                          <td className="px-3 py-2 text-right whitespace-nowrap">
-                            <button type="button" onClick={() => test(p.slug)} disabled={!isAdmin || busySlug === p.slug}
-                                    className="text-xs underline text-accent disabled:opacity-40 disabled:no-underline mr-3" data-testid={`integration-test-${p.slug}`}>
-                              {busySlug === p.slug ? '…' : 'Test'}
-                            </button>
-                            <button type="button" onClick={() => toggle(p.slug, !disabled)} disabled={!isAdmin || busySlug === p.slug}
-                                    className="text-xs underline disabled:opacity-40 disabled:no-underline" data-testid={`integration-toggle-${p.slug}`}>
-                              {disabled ? 'Enable' : 'Disable'}
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+          {catEntries.map(([cat, list]) => {
+            const meta = CATEGORY_META[cat] || CATEGORY_META.misc;
+            const CIcon = meta.Icon;
+            return (
+              <div key={cat} className="space-y-2" data-testid={`integrations-category-${cat}`}>
+                <div className="flex items-center gap-2 text-xs uppercase muted tracking-wider">
+                  <CIcon className="h-3.5 w-3.5" />
+                  <span>{meta.label}</span>
+                  <span className="muted normal-case tracking-normal">· {list.length}</span>
+                </div>
+                <div className="rounded-lg border border-line dark:border-line-dark overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead className="bg-neutral-50 dark:bg-neutral-950/60 text-[10px] uppercase muted tracking-wide">
+                      <tr>
+                        <th className="text-left px-3 py-2 font-medium">Provider</th>
+                        <th className="text-left px-3 py-2 font-medium">Status</th>
+                        <th className="text-left px-3 py-2 font-medium hidden sm:table-cell">Missing env</th>
+                        <th className="text-right px-3 py-2 font-medium">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {list.map((p) => {
+                        const disabled = p.status === 'DISABLED';
+                        const result = testResults[p.slug];
+                        return (
+                          <tr
+                            key={p.slug}
+                            className="border-t border-line dark:border-line-dark hover:bg-neutral-50/60 dark:hover:bg-neutral-900/40 transition-colors"
+                            data-testid={`integration-row-${p.slug}`}
+                          >
+                            <td className="px-3 py-2.5">
+                              <button
+                                type="button"
+                                onClick={() => open(p.slug)}
+                                className="text-left group inline-flex flex-col sm:flex-row sm:items-baseline sm:gap-2"
+                                data-testid={`integration-open-${p.slug}`}
+                              >
+                                <span className="font-medium group-hover:underline">{p.label}</span>
+                                <span className="text-[10px] muted font-mono">{p.slug}</span>
+                              </button>
+                              {p.docs_url && (
+                                <a
+                                  href={p.docs_url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="ml-2 text-[10px] muted underline hover:text-accent"
+                                >
+                                  docs ↗
+                                </a>
+                              )}
+                              {/* Missing env stacked under provider on mobile only */}
+                              <div className="mt-1 sm:hidden flex flex-wrap gap-1">
+                                {(p.missing_env || []).map((k) => (
+                                  <span key={k} className="text-[10px] font-mono rounded bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300 px-1.5 py-0.5">
+                                    {k}
+                                  </span>
+                                ))}
+                              </div>
+                            </td>
+                            <td className="px-3 py-2.5 align-middle">
+                              <StatusChip status={p.status} testid={`integration-status-${p.slug}`} />
+                            </td>
+                            <td className="px-3 py-2.5 hidden sm:table-cell">
+                              {(p.missing_env || []).length === 0 ? (
+                                <span className="muted text-[11px]">—</span>
+                              ) : (
+                                <div className="flex flex-wrap gap-1">
+                                  {(p.missing_env || []).map((k) => (
+                                    <span key={k} className="text-[10px] font-mono rounded bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300 px-1.5 py-0.5">
+                                      {k}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </td>
+                            <td className="px-3 py-2.5 text-right whitespace-nowrap">
+                              <div className="inline-flex items-center gap-2">
+                                {result && !result.pending && (
+                                  <span
+                                    className={`text-[10px] font-medium ${result.ok ? 'text-emerald-700 dark:text-emerald-300' : 'text-red-700 dark:text-red-300'}`}
+                                    title={result.detail}
+                                  >
+                                    {result.ok ? `✓ ${result.latency_ms ?? '—'}ms` : '✗ failed'}
+                                  </span>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => test(p.slug)}
+                                  disabled={!isAdmin || busySlug === p.slug}
+                                  className="inline-flex items-center gap-1 text-xs rounded-md border border-line dark:border-line-dark px-2 py-1 hover:bg-neutral-50 dark:hover:bg-neutral-900 disabled:opacity-40 disabled:cursor-not-allowed"
+                                  data-testid={`integration-test-${p.slug}`}
+                                >
+                                  {busySlug === p.slug ? (
+                                    <><Loader2 className="h-3 w-3 animate-spin" /> Testing</>
+                                  ) : 'Test'}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => toggle(p.slug, !disabled)}
+                                  disabled={!isAdmin || busySlug === p.slug}
+                                  className="text-xs rounded-md border border-line dark:border-line-dark px-2 py-1 hover:bg-neutral-50 dark:hover:bg-neutral-900 disabled:opacity-40 disabled:cursor-not-allowed"
+                                  data-testid={`integration-toggle-${p.slug}`}
+                                >
+                                  {disabled ? 'Enable' : 'Disable'}
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
       {detail && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" data-testid="integration-detail-modal">
-          <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-lg border border-line dark:border-line-dark bg-bg dark:bg-bg-dark p-5 space-y-3">
+          <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-lg border border-line dark:border-line-dark bg-bg dark:bg-bg-dark p-5 space-y-4">
             <div className="flex items-center justify-between">
-              <h3 className="font-semibold">{detail.label || detail.slug}</h3>
-              <button type="button" onClick={() => setDetail(null)}><X className="h-4 w-4" /></button>
+              <div className="flex items-center gap-3">
+                <h3 className="font-semibold text-lg">{detail.label || detail.slug}</h3>
+                {detail.slug && <span className="font-mono text-[11px] muted">{detail.slug}</span>}
+              </div>
+              <button type="button" onClick={() => setDetail(null)} aria-label="Close">
+                <X className="h-4 w-4" />
+              </button>
             </div>
-            {detail.loading ? <Loader2 className="h-4 w-4 animate-spin muted" /> : detail.error ? (
+            {detail.loading ? (
+              <div className="py-8 grid place-items-center"><Loader2 className="h-4 w-4 animate-spin muted" /></div>
+            ) : detail.error ? (
               <p className="text-sm text-red-600">{detail.error}</p>
             ) : (
               <>
-                <div className="text-xs muted">
-                  Category: <span className="font-medium">{detail.category}</span> ·
-                  Status: <span className={`pill text-[10px] ml-1 ${STATUS_STYLE[detail.status] || ''}`}>{detail.status}</span>
+                <div className="flex items-center gap-3 text-xs">
+                  <span className="muted">Category:</span>
+                  <span className="font-medium">{(CATEGORY_META[detail.category] || CATEGORY_META.misc).label}</span>
+                  <StatusChip status={detail.status} />
                 </div>
-                <div className="rounded-md border border-line dark:border-line-dark p-3 text-xs space-y-1">
-                  <div className="uppercase muted">Env vars</div>
-                  <div>Required: <span className="font-mono">{(detail.required_env || []).join(', ') || '—'}</span></div>
-                  <div>Optional: <span className="font-mono">{(detail.optional_env || []).join(', ') || '—'}</span></div>
-                  <div>Missing:  <span className="font-mono text-red-500">{(detail.missing_env || []).join(', ') || 'none'}</span></div>
+                <div className="rounded-md border border-line dark:border-line-dark p-3 text-xs space-y-2">
+                  <div className="uppercase muted text-[10px] tracking-wider">Environment variables</div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <div className="muted text-[10px]">Required</div>
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {(detail.required_env || []).length === 0 ? <span className="muted">—</span> :
+                          (detail.required_env || []).map((k) => (
+                            <span key={k} className="font-mono text-[10px] rounded bg-neutral-100 dark:bg-neutral-900 px-1.5 py-0.5">{k}</span>
+                          ))}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="muted text-[10px]">Optional</div>
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {(detail.optional_env || []).length === 0 ? <span className="muted">—</span> :
+                          (detail.optional_env || []).map((k) => (
+                            <span key={k} className="font-mono text-[10px] rounded bg-neutral-100 dark:bg-neutral-900 px-1.5 py-0.5">{k}</span>
+                          ))}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="muted text-[10px]">Missing</div>
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {(detail.missing_env || []).length === 0 ? <span className="muted">none</span> :
+                          (detail.missing_env || []).map((k) => (
+                            <span key={k} className="font-mono text-[10px] rounded bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300 px-1.5 py-0.5">{k}</span>
+                          ))}
+                      </div>
+                    </div>
+                  </div>
                 </div>
                 {detail.webhook_url && (
-                  <div className="rounded-md border border-line dark:border-line-dark p-3 text-xs space-y-1" data-testid="integration-webhook-url">
-                    <div className="uppercase muted">Webhook URL (copy into vendor dashboard)</div>
-                    <code className="block font-mono break-all">{detail.webhook_url}</code>
+                  <div className="rounded-md border border-line dark:border-line-dark p-3 text-xs space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="uppercase muted text-[10px] tracking-wider">Webhook URL</div>
+                      <span className="muted text-[10px]">Copy into vendor dashboard</span>
+                    </div>
+                    <CopyableCode value={detail.webhook_url} testid="integration-webhook-url" />
                   </div>
                 )}
                 <div className="rounded-md border border-line dark:border-line-dark p-3 text-xs">
-                  <div className="uppercase muted mb-2">Recent events</div>
+                  <div className="uppercase muted text-[10px] tracking-wider mb-2">Recent events</div>
                   {(detail.recent_events || []).length === 0 ? (
                     <p className="muted">No events yet.</p>
                   ) : (
                     <ul className="divide-y divide-line dark:divide-line-dark">
                       {(detail.recent_events || []).slice(0, 10).map((e, i) => (
                         <li key={i} className="py-1.5">
-                          <div className="flex items-center justify-between">
+                          <div className="flex items-center justify-between gap-2">
                             <span className="font-mono">{e.kind}</span>
-                            <span className="muted">{new Date(e.ts).toLocaleString()}</span>
+                            <span className="muted whitespace-nowrap">{new Date(e.ts).toLocaleString()}</span>
                           </div>
-                          {e.detail?.detail && <div className="muted">{e.detail.detail}</div>}
+                          {e.detail?.detail && <div className="muted mt-0.5">{e.detail.detail}</div>}
                         </li>
                       ))}
                     </ul>
                   )}
                 </div>
                 {detail.last_error && (
-                  <div className="rounded-md border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950 p-3 text-xs">
-                    <div className="text-red-800 dark:text-red-200">Last error</div>
-                    <div className="font-mono">{detail.last_error.code}: {detail.last_error.message}</div>
+                  <div className="rounded-md border border-red-200 dark:border-red-900/70 bg-red-50 dark:bg-red-950/50 p-3 text-xs">
+                    <div className="text-red-800 dark:text-red-200 font-medium">Last error</div>
+                    <div className="font-mono mt-1">{detail.last_error.code}: {detail.last_error.message}</div>
                   </div>
                 )}
               </>

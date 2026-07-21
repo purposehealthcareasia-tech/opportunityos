@@ -171,18 +171,19 @@ class TestMilestoneC_Email:
         wh = body.get("webhook_url", "")
         assert wh.endswith("/api/webhook/email/sendgrid"), body
 
-    def test_resend_webhook_hardfail_500_no_secret(self):
+    def test_resend_webhook_hardfail_503_no_secret(self):
         r = requests.post(
             f"{BASE}/api/webhook/email/resend",
             data=b'{"random":"body"}',
             headers={"Content-Type": "application/json"},
             timeout=20,
         )
-        assert r.status_code == 500, r.text
+        # 503 = "the operator has not finished configuring this provider on
+        # the server". This is the missing-secret contract; never a 2xx or 500.
+        assert r.status_code == 503, r.text
         j = r.json()
         detail = j.get("detail", {})
         assert isinstance(detail, dict), j
-        # Must reference the missing-secret reason, never a 200.
         assert "webhook_secret_not_configured" in json.dumps(detail), j
 
     def test_sendgrid_webhook_hardfail_no_signature(self):
@@ -192,7 +193,10 @@ class TestMilestoneC_Email:
             headers={"Content-Type": "application/json"},
             timeout=20,
         )
-        assert r.status_code in (400, 500), r.text
+        # Missing verification key on the server → 503.
+        # Missing headers with a configured key → 400.
+        # Never a 2xx.
+        assert r.status_code in (400, 503), r.text
         j = r.json()
         assert "webhook_verification_failed" in json.dumps(j), j
 
@@ -320,7 +324,7 @@ class TestMilestoneF_Payments:
         missing = set(body.get("missing_env", []))
         assert "RAZORPAY_KEY_ID" in missing and "RAZORPAY_KEY_SECRET" in missing, body
 
-    def test_stripe_webhook_hardfails_400_or_500(self):
+    def test_stripe_webhook_hardfails_400_or_503(self):
         r = requests.post(
             f"{BASE}/api/webhook/payment/stripe",
             data=b'{"random":"payload"}',
@@ -328,10 +332,14 @@ class TestMilestoneF_Payments:
                       "Stripe-Signature": f"t={int(time.time())},v1=deadbeef"},
             timeout=20,
         )
-        assert r.status_code in (400, 500), r.text
+        # Semantic contract:
+        #   - 400 = vendor sent a payload with an invalid signature.
+        #   - 503 = STRIPE_WEBHOOK_SECRET not configured on this server.
+        # Never a 2xx or a 500.
+        assert r.status_code in (400, 503), r.text
         assert "webhook_verification_failed" in json.dumps(r.json()), r.json()
 
-    def test_razorpay_webhook_hardfail_500(self):
+    def test_razorpay_webhook_hardfail_503(self):
         r = requests.post(
             f"{BASE}/api/webhook/payment/razorpay",
             data=b"{}",
@@ -339,7 +347,9 @@ class TestMilestoneF_Payments:
                       "X-Razorpay-Signature": "anything"},
             timeout=20,
         )
-        assert r.status_code == 500, r.text
+        # RAZORPAY_WEBHOOK_SECRET not configured → 503 (server misconfig),
+        # never 500 or 2xx.
+        assert r.status_code == 503, r.text
         assert "webhook_secret_not_configured" in json.dumps(r.json()), r.json()
 
     def test_unknown_payment_provider_404(self):

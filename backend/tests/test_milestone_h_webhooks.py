@@ -58,8 +58,9 @@ class TestPaymentWebhookRoute:
 
     def test_stripe_route_hard_fails_when_secret_unset(self):
         """STRIPE_WEBHOOK_SECRET is not configured in preview — the route MUST
-        return 500 with `webhook_verification_failed` / `webhook_secret_not_configured`.
-        Never a silent bypass."""
+        return HTTP 503 with `webhook_verification_failed` /
+        `webhook_secret_not_configured` (server misconfiguration; never a
+        silent bypass, never a 500)."""
         # Reset the provider config to reflect the unset env.
         os.environ.pop("STRIPE_WEBHOOK_SECRET", None)
         from integrations import registry
@@ -68,7 +69,13 @@ class TestPaymentWebhookRoute:
                             headers={"Content-Type": "application/json",
                                       "Stripe-Signature": f"t={int(time.time())},v1=deadbeef"},
                             data=b'{"id":"evt_x"}', timeout=15)
-        assert r.status_code in (400, 500), r.text
+        # Semantic contract:
+        #   - 503 = server has not configured the webhook secret.
+        #   - 400 = vendor sent a payload with an invalid signature (would
+        #           only happen if the operator had set STRIPE_WEBHOOK_SECRET
+        #           and the vendor sent a bad sig).
+        # Never a 2xx or a 500.
+        assert r.status_code in (400, 503), r.text
         body = r.json()
         assert body["detail"]["error"] == "webhook_verification_failed"
 

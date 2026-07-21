@@ -1,0 +1,43 @@
+{
+  "summary": "Iteration 14 — Advisory-fix webhook HTTP-semantics verification + Admin Integrations POLISH smoke. Backend: 22/22 green in /app/backend/tests/test_iteration14_advisory_fix.py. Every advisory-fix contract confirmed on the LIVE preview URL: POST /api/webhook/email/resend → 503 {error:webhook_verification_failed, reason:webhook_secret_not_configured}; POST /api/webhook/email/sendgrid → 503 reason=webhook_public_key_not_configured; POST /api/webhook/payment/stripe (fake Stripe-Signature) → 503 reason=…not_configured (STRIPE_WEBHOOK_SECRET unset); POST /api/webhook/payment/razorpay/paystack → 503 reason=webhook_secret_not_configured; POST /api/webhook/payment/paypal → 503 reason=webhook_id_not_configured; unknown provider slugs still 404 with unknown_email_provider / unknown_payment_provider. Parametric guardrail confirms NO webhook route returns 500 or 2xx. Admin surface behaviour-neutral: providers count == 14 and full status matrix matches (stripe=TEST_MODE, email_password=CONNECTED, google_auth=CONNECTED, resend/sendgrid/twilio/elevenlabs/razorpay/paypal/paystack=CONFIGURATION_REQUIRED). Support role RBAC intact — POST /api/v1/admin/integrations/stripe/{test,disable} both return 403. Regression: fixture-ead /auth/me OK, billing checkout returns 200 with a Stripe test-mode URL, privacy export contains no bcrypt marker. Frontend POLISH verified on the live preview: 14 integration rows all carry data-testid=integration-row-{slug} + integration-status-{slug} + integration-test-{slug} + integration-toggle-{slug}; summary strip renders with data-testid=integrations-summary and all three chips (integrations-summary-CONNECTED/TEST_MODE/CONFIGURATION_REQUIRED); the 7 category headers render with data-testid=integrations-category-{cat} but in LOWERCASE (auth/ai/payments/email/sms/voice/storage) — not uppercase as the review request literal. Clicking integration-open-stripe opens data-testid=integration-detail-modal with data-testid=integration-webhook-url = https://lynk-preview-2.preview.emergentagent.com/api/webhook/payment/stripe and data-testid=integration-webhook-url-copy. Support login also lands on /admin and the UI renders the same rows but with a 'read-only (support role)' pill on the Integrations header; every backend mutation is 403 as verified by pytest.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Admin › Integrations", "issues": ["Review request specified uppercase category testids (integrations-category-PAYMENTS etc.); the DOM uses lowercase (integrations-category-payments). Not a bug — the frontend uses the backend `category` string verbatim — but downstream automation tests must use lowercase. Suggest either updating the review-request wording OR normalising to uppercase for parity with the summary chips (which ARE uppercase)."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration14_advisory_fix.py",
+    "/app/test_reports/pytest/iter14_advisory.xml",
+    "/app/test_reports/iter14_admin_integrations.png",
+    "/app/test_reports/iter14_stripe_modal.png",
+    "/app/test_reports/iter14_stripe_modal_v2.png",
+    "/app/test_reports/iter14_support_integrations.png"
+  ],
+  "action_items": [
+    "MINOR / OPTIONAL: reconcile the category testid casing — either update the review-request spec to lowercase (integrations-category-payments) or update Admin.jsx line 905 to `data-testid={`integrations-category-${cat.toUpperCase()}`}` for parity with integrations-summary-{STATUS} which IS uppercase.",
+    "OPTIONAL: The modal open-affordance is `data-testid=integration-open-{slug}` (a button inside the row), NOT the row `<tr>` itself. Consider documenting this in the polish spec so external UI tests don't attempt to click the row."
+  ],
+  "critical_code_review_comments": [
+    "Advisory-fix branch coverage in routers/webhooks_payment.py includes `code.startswith('auth_failed')` and `code.startswith('upstream_error')` under `server_misconfig` — good for PayPal's server-to-server round-trip (which needs the paypal-webhook-id AND a live network call). However, transient PayPal upstream failures will now be reported as 503 (server misconfig) even when the true cause is a downstream 5xx from api.paypal.com. Consider distinguishing 502/504 (upstream network) from 503 (config missing) in the operator health log so alerting can differentiate 'we forgot to set the env var' from 'PayPal API is having a bad day'.",
+    "routers/webhooks_email.py::code.endswith('not_configured') → OK for `webhook_secret_not_configured` and `webhook_public_key_not_configured`, but the same suffix rule silently swallows any FUTURE error code ending in 'not_configured'. Consider using an explicit set/tuple: {'webhook_secret_not_configured','webhook_public_key_not_configured','webhook_id_not_configured','auth_not_configured'} to prevent accidental 503-widening.",
+    "Admin.jsx uses `integrations-category-${cat}` where `cat` is the raw backend category string; the summary chips use `integrations-summary-${STATUS_UPPER}`. This is an inconsistent testid casing convention within the same page. Pick one (I recommend UPPER for status enums, lower_snake for taxonomy names) and lock it into a docs/README so downstream milestone-I tests don't hit the same review-vs-DOM mismatch.",
+    "The Stripe modal's webhook-url panel is anchored on `detail.webhook_url` — verify (as flagged in iter13) that this URL is derived from a trusted origin (X-Forwarded-Host validated against the ingress trusted-host list, not raw Host header). A malicious admin cannot exploit this today because they already ARE admin, but a support-role user seeing the same modal MUST see a URL derived from a server-trusted origin, not the request headers.",
+    "Support role sees `Test` / `Disable` buttons in the DOM (not visually hidden). The `disabled` attr shows as an empty string when set via React (not the literal 'true') — the Playwright `disabled` attribute probe returns None because the buttons rely on the `disabled` prop on the underlying <button> which renders as the HTML attribute. Backend RBAC is the real gate (POST /test and /disable both 403 for support). Consider hiding the actions column entirely for support role to reduce cognitive load — the read-only pill is present but the clickable-looking buttons still communicate 'you can do something here'."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration14_advisory_fix.py (new — 22 tests, 22/22 pass)"
+  ],
+  "success_rate": {"backend": "100% (22/22 iter14 + all previous iter12/iter13 unchanged)", "frontend": "100% (5/5 POLISH checks — category testids present under lowercase names)"},
+  "test_credentials": "admin@opportunityos.dev / Admin!Console1 · support@opportunityos.dev / Support!Console1 · fixture-ead@opportunityos.dev / Fixture!Test1 — Bearer JWT accepted (CI_TEST_ISSUER_ENABLED=true).",
+  "seed_data_creation": "One /api/v1/billing/checkout call for fixture-ead created a Stripe test-mode session (Stripe test-mode side-effect only; no local DB pollution).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 14 exercised the advisory-fix HTTP-semantics contract on the live preview. All 6 webhook routes (2 email + 4 payment) return 503 for server-misconfig with the mandated detail.error='webhook_verification_failed' + reason=…not_configured (or webhook_id_not_configured for PayPal). Unknown provider slugs still 404. Parametric guardrail confirms NEVER 500 and NEVER 2xx. Admin Integrations tab is behaviour-neutral post-polish: 14 rows, category headers (lowercase testids), summary strip with 3 status chips, Stripe modal opens with webhook URL panel + copy button. Support role has full read visibility but every mutation is 403 backend-side. Only advisory: the review request wrote category testids as UPPERCASE (integrations-category-PAYMENTS) but the DOM emits them LOWERCASE (integrations-category-payments) — pick a convention.",
+  "rca of the issue": "N/A — verification pass. The 503-vs-400 semantic advisory-fix is fully in place: server-misconfig (secret / webhook id / auth not configured OR PayPal auth_failed/upstream_error) → 503; cryptographic / header failure with a configured secret → 400; unknown provider slug → 404. Never 500. Never 2xx. The two docs-vs-code mismatches (category testid casing + modal-open-affordance is a button not the row) are non-blocking spec wording items."
+}
