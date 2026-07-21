@@ -48,9 +48,46 @@ _MODULES_NEEDING_REBASE = {
 }
 
 
+_TEST_ACCOUNT_EMAILS = (
+    "fixture-ead@opportunityos.dev",
+    "ujjwal@opportunityos.dev",
+    "admin@opportunityos.dev",
+    "support@opportunityos.dev",
+)
+
+
+def _clear_login_throttle_for_test_accounts():
+    """Reset login-throttle buckets for known test accounts.
+
+    SEC-P3(a) added a real per-identifier login throttle (10 attempts / 5 min).
+    A full pytest sweep issues far more logins than that against the fixture
+    users. Purge the buckets before each module so the throttle behaves
+    correctly for a real burst-attack test (`TestLoginThrottle`) but does not
+    poison legitimate suites. Direct Mongo access is used because the endpoint
+    surface for this is intentionally admin/internal only.
+    """
+    try:
+        from pymongo import MongoClient
+        mongo_url = os.environ.get("MONGO_URL", "mongodb://localhost:27017")
+        db_name = os.environ.get("DB_NAME", "opportunityos")
+        c = MongoClient(mongo_url, serverSelectionTimeoutMS=1500)
+        c[db_name].login_throttle.delete_many({
+            "identifier": {"$in": list(_TEST_ACCOUNT_EMAILS)},
+        })
+        c.close()
+    except Exception as e:  # pragma: no cover — defensive, must not break tests
+        print(f"[conftest] login_throttle purge skipped: {e}")
+
+
 @pytest.fixture(autouse=True, scope="module")
 def _rebase_before_each_module(request):
-    """Rebase fixture-ead@ before every module in the allowlist runs its tests."""
+    """Rebase fixture-ead@ before every module in the allowlist runs its tests.
+
+    Also always clears the login-throttle buckets for known test accounts
+    (see `_clear_login_throttle_for_test_accounts`) so that a suite-wide run
+    does not trip its own credential-stuffing guard.
+    """
+    _clear_login_throttle_for_test_accounts()
     mod_name = request.module.__name__ if request.module else ""
     if mod_name in _MODULES_NEEDING_REBASE:
         tok = _service_token()
