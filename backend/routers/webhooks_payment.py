@@ -97,15 +97,26 @@ async def receive_payment_webhook(provider_slug: str, request: Request):
     except PaymentSignatureError as e:
         code = str(e)
         # Semantic alignment with the internal-service-token convention:
-        #   - webhook secret / webhook id not configured on server → HTTP 503
-        #     (the operator has NOT finished configuring this provider)
+        #   - webhook secret / webhook id / auth not configured on server → HTTP 503
+        #     (operator has not finished configuring this provider)
         #   - anything else (missing/invalid headers, bad signature,
-        #     stale timestamp)                                     → HTTP 400
-        # Never a 2xx, never a bypass.
+        #     stale timestamp, malformed body)                          → HTTP 400
+        # Explicit allow-list avoids accidental 503-widening as future
+        # error codes are added.
+        _SERVER_MISCONFIG_EXACT = {
+            "webhook_secret_not_configured",
+            "webhook_id_not_configured",
+        }
+        _SERVER_MISCONFIG_PREFIX = (
+            # PayPal server-to-server verification: OAuth token exchange
+            # failed → auth_failed:...  |  network hiccup → upstream_error:...
+            # Both are server-side / vendor-side problems, not client fault.
+            "auth_failed",
+            "upstream_error",
+        )
         server_misconfig = (
-            code.endswith("not_configured")
-            or code.startswith("auth_failed")
-            or code.startswith("upstream_error")
+            code in _SERVER_MISCONFIG_EXACT
+            or code.startswith(_SERVER_MISCONFIG_PREFIX)
         )
         status = 503 if server_misconfig else 400
         await integrations_health.record_event(

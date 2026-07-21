@@ -1,0 +1,36 @@
+{
+  "summary": "Iteration 15 — light re-verification pass for the three iter14 hardening tweaks (webhook explicit allow-sets, UPPERCASE category testids, support-role read-only cells). Backend: 19/19 green in /app/backend/tests/test_iteration15_advisory_fix_hardened.py. Every hardened advisory-fix contract confirmed on the LIVE preview URL: POST /api/webhook/email/resend → 503 {error:webhook_verification_failed, reason:webhook_secret_not_configured}; POST /api/webhook/email/sendgrid → 503 reason=webhook_public_key_not_configured; POST /api/webhook/payment/stripe (fake Stripe-Signature) → 503; POST /api/webhook/payment/razorpay → 503 reason=webhook_secret_not_configured; POST /api/webhook/payment/paystack → 503 reason=webhook_secret_not_configured; POST /api/webhook/payment/paypal → 503 reason=webhook_id_not_configured; unknown provider slugs still 404. Parametric guardrail confirmed on 6 routes: NEVER 500, NEVER 2xx. Support-role RBAC intact — POST /api/v1/admin/integrations/stripe/{test,disable} both return 403. Regression: fixture-ead /auth/me 200; billing checkout 200 with Stripe test-mode URL; providers count == 14 with the same status matrix (stripe=TEST_MODE, email_password/google_auth=CONNECTED, resend/sendgrid/twilio/elevenlabs/razorpay/paypal/paystack=CONFIGURATION_REQUIRED). Frontend POLISH-UPGRADE-1 verified on the live preview: all 7 category testids now UPPERCASE — data-testid=integrations-category-{AUTH,AI,PAYMENTS,EMAIL,SMS,VOICE,STORAGE} all present; the previously-emitted lowercase variants are NO LONGER in the DOM (confirmed by explicit lowercase probes returning 0). The 14 integration rows all still carry data-testid=integration-row-{slug}. POLISH-UPGRADE-2 verified: as support, the DOM contains 14 read-only <span> elements (one per row's Actions column) and integration-test-stripe / integration-toggle-stripe are NOT present in the DOM. Backend still enforces RBAC (403). POLISH-UPGRADE-3 verified: admin sees full Test + Disable buttons in every row; clicking Test on stripe drops the '✓ 0ms' result badge next to the buttons (Stripe test-mode call returned in <1 ms so the intermediate spinner was too fast to freeze-capture, but the result badge confirms the async round-trip landed and rendered correctly).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration15_advisory_fix_hardened.py",
+    "/app/test_reports/pytest/iter15_advisory.xml",
+    "/app/test_reports/iter15_admin_integrations.png",
+    "/app/test_reports/iter15_support_integrations.png"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "webhooks_email.py now uses an explicit set {webhook_secret_not_configured, webhook_public_key_not_configured} — good; the previous suffix-endswith('not_configured') widening risk is gone. If future error codes such as webhook_id_not_configured or auth_not_configured need 503 semantics for email providers, add them explicitly.",
+    "webhooks_payment.py splits into _SERVER_MISCONFIG_EXACT (exact match) + _SERVER_MISCONFIG_PREFIX (auth_failed*/upstream_error*) — the prefix branch is still slightly overloaded: 'upstream_error' semantically means 'PayPal API had a bad day' (transient 5xx from api.paypal.com), which is more of a 502/504 concern than 503 (server-misconfig). Consider distinguishing in the operator health log so alerting differentiates 'operator forgot to set PAYPAL_WEBHOOK_ID' from 'PayPal downtime'.",
+    "Admin.jsx now emits integrations-category-{cat.toUpperCase()} — casing is consistent with integrations-summary-{STATUS_UPPER}. Nice.",
+    "Admin.jsx Actions <td> renders <span>read-only</span> for support role instead of visually-present-but-disabled buttons — good UX polish, reduces cognitive load; every mutation route is 403 backend-side anyway.",
+    "Preserve/document the read-only span testid convention (currently no data-testid on the read-only span) — worth adding data-testid=integration-actions-readonly-{slug} for future support-role automation tests. Non-blocking."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration15_advisory_fix_hardened.py (new — 19 tests, 19/19 pass)"
+  ],
+  "success_rate": {"backend": "100% (19/19)", "frontend": "100% (all 3 polish upgrades verified — uppercase category testids, support read-only cells, admin Test+Disable + result badge)"},
+  "test_credentials": "admin@opportunityos.dev / Admin!Console1 · support@opportunityos.dev / Support!Console1 · fixture-ead@opportunityos.dev / Fixture!Test1 — /api/v1/auth/login accepts JSON body (returns access_token); Bearer JWT accepted (CI_TEST_ISSUER_ENABLED=true).",
+  "seed_data_creation": "One /api/v1/billing/checkout call for fixture-ead created a Stripe test-mode session (Stripe test-mode side-effect only; no local DB pollution). One admin-side POST /api/v1/admin/integrations/stripe/test invocation from the Playwright script.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 15 re-verified the three hardening tweaks after iter14 PASS: (1) webhook routers now use explicit allow-sets (no suffix-match widening); (2) Admin.jsx category testids are UPPERCASE (integrations-category-{AUTH,AI,PAYMENTS,EMAIL,SMS,VOICE,STORAGE}); (3) support role sees literal read-only span instead of disabled buttons — Test/Disable testids are ABSENT from the DOM for support. All 19 backend tests + all 3 frontend polish checks green. Full advisory-fix HTTP-semantics contract intact (503 for server-misconfig, 400 for anything else, 404 for unknown slug, never 500/2xx). Regression matrix unchanged (14 providers, same statuses). Test file /app/backend/tests/test_iteration15_advisory_fix_hardened.py can be reused as a regression fixture — invoke with REACT_APP_BACKEND_URL set (see script). Playwright viewport 1920×1080 confirmed the DOM contract on the live preview URL.",
+  "rca of the issue": "N/A — verification pass. All three iter14 polish tweaks are correctly wired: (a) explicit allow-sets close the 'code.endswith(not_configured)' widening loophole; (b) Admin.jsx `data-testid={\\`integrations-category-${cat.toUpperCase()}\\`}` reconciles the casing convention with integrations-summary-{STATUS_UPPER}; (c) Admin.jsx Actions <td> conditional `{!isAdmin ? <span>read-only</span> : <Test+Disable buttons>}` removes the visually-clickable-but-403 buttons for support role. Backend 503-vs-400-vs-404 semantics remain fully in place, never 500, never 2xx."
+}

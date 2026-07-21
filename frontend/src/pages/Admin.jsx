@@ -902,7 +902,7 @@ function IntegrationsTab({ isAdmin }) {
             const meta = CATEGORY_META[cat] || CATEGORY_META.misc;
             const CIcon = meta.Icon;
             return (
-              <div key={cat} className="space-y-2" data-testid={`integrations-category-${cat}`}>
+              <div key={cat} className="space-y-2" data-testid={`integrations-category-${cat.toUpperCase()}`}>
                 <div className="flex items-center gap-2 text-xs uppercase muted tracking-wider">
                   <CIcon className="h-3.5 w-3.5" />
                   <span>{meta.label}</span>
@@ -974,36 +974,40 @@ function IntegrationsTab({ isAdmin }) {
                               )}
                             </td>
                             <td className="px-3 py-2.5 text-right whitespace-nowrap">
-                              <div className="inline-flex items-center gap-2">
-                                {result && !result.pending && (
-                                  <span
-                                    className={`text-[10px] font-medium ${result.ok ? 'text-emerald-700 dark:text-emerald-300' : 'text-red-700 dark:text-red-300'}`}
-                                    title={result.detail}
+                              {!isAdmin ? (
+                                <span className="text-[10px] muted italic">read-only</span>
+                              ) : (
+                                <div className="inline-flex items-center gap-2">
+                                  {result && !result.pending && (
+                                    <span
+                                      className={`text-[10px] font-medium ${result.ok ? 'text-emerald-700 dark:text-emerald-300' : 'text-red-700 dark:text-red-300'}`}
+                                      title={result.detail}
+                                    >
+                                      {result.ok ? `✓ ${result.latency_ms ?? '—'}ms` : '✗ failed'}
+                                    </span>
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={() => test(p.slug)}
+                                    disabled={busySlug === p.slug}
+                                    className="inline-flex items-center gap-1 text-xs rounded-md border border-line dark:border-line-dark px-2 py-1 hover:bg-neutral-50 dark:hover:bg-neutral-900 disabled:opacity-40 disabled:cursor-not-allowed"
+                                    data-testid={`integration-test-${p.slug}`}
                                   >
-                                    {result.ok ? `✓ ${result.latency_ms ?? '—'}ms` : '✗ failed'}
-                                  </span>
-                                )}
-                                <button
-                                  type="button"
-                                  onClick={() => test(p.slug)}
-                                  disabled={!isAdmin || busySlug === p.slug}
-                                  className="inline-flex items-center gap-1 text-xs rounded-md border border-line dark:border-line-dark px-2 py-1 hover:bg-neutral-50 dark:hover:bg-neutral-900 disabled:opacity-40 disabled:cursor-not-allowed"
-                                  data-testid={`integration-test-${p.slug}`}
-                                >
-                                  {busySlug === p.slug ? (
-                                    <><Loader2 className="h-3 w-3 animate-spin" /> Testing</>
-                                  ) : 'Test'}
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => toggle(p.slug, !disabled)}
-                                  disabled={!isAdmin || busySlug === p.slug}
-                                  className="text-xs rounded-md border border-line dark:border-line-dark px-2 py-1 hover:bg-neutral-50 dark:hover:bg-neutral-900 disabled:opacity-40 disabled:cursor-not-allowed"
-                                  data-testid={`integration-toggle-${p.slug}`}
-                                >
-                                  {disabled ? 'Enable' : 'Disable'}
-                                </button>
-                              </div>
+                                    {busySlug === p.slug ? (
+                                      <><Loader2 className="h-3 w-3 animate-spin" /> Testing</>
+                                    ) : 'Test'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => toggle(p.slug, !disabled)}
+                                    disabled={busySlug === p.slug}
+                                    className="text-xs rounded-md border border-line dark:border-line-dark px-2 py-1 hover:bg-neutral-50 dark:hover:bg-neutral-900 disabled:opacity-40 disabled:cursor-not-allowed"
+                                    data-testid={`integration-toggle-${p.slug}`}
+                                  >
+                                    {disabled ? 'Enable' : 'Disable'}
+                                  </button>
+                                </div>
+                              )}
                             </td>
                           </tr>
                         );
