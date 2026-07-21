@@ -46,8 +46,35 @@ export function AuthProvider({ children }) {
     setUser(null);
   }, []);
 
-  const value = useMemo(() => ({ user, loading, signup, login, logout, refresh }),
-                        [user, loading, signup, login, logout, refresh]);
+  // ---- Google Sign-In (Emergent-managed) --------------------------------
+  // REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS,
+  // THIS BREAKS THE AUTH. redirect_url comes from window.location.origin.
+  const googleStart = useCallback(() => {
+    const redirectUrl = window.location.origin + '/auth/callback';
+    window.location.href = `https://auth.emergentagent.com/?redirect=${encodeURIComponent(redirectUrl)}`;
+  }, []);
+
+  const googleExchange = useCallback(async (sessionId) => {
+    const { data } = await api.post('/api/v1/auth/google/session', { session_id: sessionId });
+    if (data.status === 'logged_in') {
+      setUser(data.user);
+    }
+    return data;
+  }, []);
+
+  const googleCompleteSignup = useCallback(async ({ pending_signup_id, consents, policy_text_version }) => {
+    const { data } = await api.post('/api/v1/auth/google/complete', {
+      pending_signup_id, consents, policy_text_version,
+    });
+    setUser(data.user);
+    return data;
+  }, []);
+
+  const value = useMemo(() => ({
+    user, loading, signup, login, logout, refresh,
+    googleStart, googleExchange, googleCompleteSignup,
+  }), [user, loading, signup, login, logout, refresh,
+       googleStart, googleExchange, googleCompleteSignup]);
   return <AuthCtx.Provider value={value}>{children}</AuthCtx.Provider>;
 }
 

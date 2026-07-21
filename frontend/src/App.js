@@ -3,6 +3,7 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import Landing from './pages/Landing';
 import Login from './pages/Login';
 import Signup from './pages/Signup';
+import GoogleCallback from './pages/GoogleCallback';
 import Settings from './pages/Settings';
 import Admin from './pages/Admin';
 import Passport from './pages/Passport';
@@ -27,6 +28,7 @@ export default function App() {
       <Route path="/" element={<Landing />} />
       <Route path="/login" element={<Login />} />
       <Route path="/signup" element={<Signup />} />
+      <Route path="/auth/callback" element={<GoogleCallback />} />
 
       <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
         <Route path="/passport" element={<Passport />} />

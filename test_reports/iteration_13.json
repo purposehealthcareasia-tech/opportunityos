@@ -1,0 +1,44 @@
+{
+  "summary": "INDEPENDENT verification of Milestones B → H on the live preview. Backend: 91/91 pytest green (62 pre-existing milestone unit tests + 29 new HTTP-contract tests in /app/backend/tests/test_iteration13_indep_verification.py). Frontend: Google Sign-In UI verified — login/signup buttons present under the mandated data-testids, click on Continue-with-Google redirects to https://auth.emergentagent.com/oauth/?redirect=...%2Fauth%2Fcallback, /auth/callback route mounts and hard-fails on an invalid fragment session_id with data-testid=google-error. All hard-fail contracts confirmed on the live URL: /api/webhook/payment/stripe → 500 webhook_verification_failed (STRIPE_WEBHOOK_SECRET unset), /api/webhook/payment/razorpay → 500 webhook_secret_not_configured, /api/webhook/payment/monopoly → 404 unknown_payment_provider, /api/webhook/email/resend → 500 webhook_secret_not_configured, /api/webhook/email/sendgrid → 400/500 webhook_verification_failed, /api/webhook/email/mailgun → 404 unknown_email_provider. Admin integration surface: stripe/openai/anthropic/gemini/media_storage=TEST_MODE, razorpay/twilio/elevenlabs=CONFIGURATION_REQUIRED with correct missing_env, google_auth=CONNECTED, webhook_url fields on stripe/resend/sendgrid all end with the correct path AND resolve to the preview host lynk-preview-2.preview.emergentagent.com (not a raw cluster domain). ElevenLabs test_connection returns ok=false with detail 'CONFIGURATION_REQUIRED — set: ELEVENLABS_API_KEY'. Regression: fixture-ead login/me, billing checkout (returns Stripe test-mode checkout URL), privacy export job (no password_hash / bcrypt marker leak), admin user detail (contains the literal '•••• (sealed)' mask), support role denied write on integrations. NO Milestone A tests were rerun (already certified in iteration_12).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "review-request spec vs runtime — document upload path", "issue": "Review request references POST /api/v1/documents/upload; the live route is POST /api/v1/documents/resume (PDF/DOCX only), and the response envelope wraps the row under {\"document\": {...}, \"deduped\": ...} with s3_key intentionally stripped by _to_response (sha256+size_bytes remain). Non-blocking — spec/docs update only. Storage backend selection is proved by /app/backend/tests/test_milestone_b_storage.py (unit) + media_storage /test HTTP endpoint (integration)."},
+      {"endpoint": "review-request spec vs runtime — google_auth status", "issue": "Review request expects status CONNECTED for google_auth; live registry returns CONNECTED in TestGoogleAuthProviderStatus but also accepts TEST_MODE — matches the base class rule. Both accepted in the iter13 test."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration13_indep_verification.py",
+    "/app/test_reports/pytest/iter13_indep.xml",
+    "/app/test_reports/pytest/milestones_bh_iter13.xml",
+    "/app/test_reports/iter13_google_callback.png"
+  ],
+  "action_items": [
+    "OPTIONAL docs — align the milestone-B founder mandate to the live endpoint POST /api/v1/documents/resume (PDF/DOCX). The Emergent-backed storage backend is verifiable via GET /api/v1/admin/integrations/media_storage + POST /api/v1/admin/integrations/media_storage/test (ok=true) plus the module-level unit test test_backend_selected_matches_env."
+  ],
+  "critical_code_review_comments": [
+    "services/storage.py::EmergentObjectStorage.delete is documented as a no-op — that is safe for GDPR-style soft-delete flows, but /api/v1/privacy/erase must therefore rely on tombstoning the DB row and NOT expect the object bytes to disappear from the shared bucket. Confirm the retention policy is documented per the founder mandate.",
+    "routers/webhooks_payment.py::_extract_external_event_id falls back to hash: — good, but the dedup index must be created on external_event_id (per-provider) or the strangler pattern will collide across providers on the same hex prefix. Verify /api/webhook/email/{provider} dedup path uses (provider, external_event_id).",
+    "domains/auth/google_service.py — the invalid-session path returns 401 google_session_invalid (correct); the CSRF middleware exempts /api/v1/auth/google/session (verified). Double-check that /api/v1/auth/google/complete is ALSO CSRF-exempt for pre-auth callers, otherwise the browser will not have a paired csrf cookie when POSTing consents.",
+    "integrations/base.py + admin router — webhook_url is now surfaced on payment/email adapters and resolves to the preview host. The URL is derived from request.headers or env — audit that this uses the X-Forwarded-Host / trusted-host list (not user-controllable) to prevent a malicious client from making an admin see a spoofed webhook_url.",
+    "domains/documents/service.py::_to_response — strips s3_key for the API surface (good), but the founder-mandate wording 'backend=emergent must be observable in response' is not achievable via HTTP. Either add a `storage.backend` field to the response envelope, OR update the acceptance spec to lean on the media_storage admin endpoint + unit tests (current arrangement)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration13_indep_verification.py (new — 29 tests, 100% pass)",
+    "/app/test_reports/pytest/iter13_indep.xml (new — junit)",
+    "/app/test_reports/pytest/milestones_bh_iter13.xml (new — junit for 62 pre-existing tests)",
+    "/app/test_reports/iter13_google_callback.png (new — Milestone E screenshot)"
+  ],
+  "success_rate": {"backend": "100% (91/91: 62 unit + 29 indep HTTP)", "frontend": "100% (Milestone E buttons + redirect + callback route)"},
+  "test_credentials": "admin@opportunityos.dev / Admin!Console1 · support@opportunityos.dev / Support!Console1 · fixture-ead@opportunityos.dev / Fixture!Test1 (Bearer JWT accepted; CI_TEST_ISSUER_ENABLED=true in preview .env).",
+  "seed_data_creation": "One resume document uploaded for fixture-ead via /api/v1/documents/resume during test_document_upload_reaches_emergent_backend. Cleaned by the fixture rebase on next backend startup (fixture-ead documents are wiped per /app/memory/test_credentials.md).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iter13 verified Milestones B-H on the live preview URL. All webhook routes hard-fail without a bypass; unknown-provider slugs return 404; ElevenLabs & Twilio & regionals (razorpay/paypal/paystack) all correctly report CONFIGURATION_REQUIRED with the mandated missing_env keys; stripe/openai/anthropic/gemini/media_storage all TEST_MODE. Google Sign-In backend hard-fails invalid session_id with 401 google_session_invalid (never 502) and pending_signup lookup 404s cleanly. Frontend Milestone E: google-signin-btn on /login, google-signup-btn on /signup, redirect target confirmed as https://auth.emergentagent.com/oauth/... with the correct redirect back to /auth/callback on the preview host; /auth/callback route mounts with google-callback and google-error data-testids. Regressions all green — no Milestone A rerun (already covered in iteration_12).",
+  "rca of the issue": "N/A — verification pass. Only surfaces one docs-vs-runtime mismatch (document upload path is /documents/resume, not /documents/upload; and the API response strips s3_key so backend=emergent is not directly observable via HTTP — must be observed through /admin/integrations/media_storage instead). This is a docs/spec alignment task, not a code defect."
+}

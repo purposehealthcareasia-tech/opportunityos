@@ -10,9 +10,12 @@ from core.db import ensure_indexes, get_db
 from core.policy import CONSENT_SCOPES, policy_version
 from core.sessions import ensure_session_indexes
 from services.login_throttle import ensure_indexes as ensure_throttle_indexes
+from domains.auth.google_service import ensure_indexes as ensure_google_indexes
 from integrations import registry as integration_registry
 from integrations.health import ensure_indexes as ensure_integration_indexes, snapshot_provider
 from routers.integrations import router as integrations_router
+from routers.webhooks_email import router as email_webhook_router
+from routers.webhooks_payment import router as payment_webhook_router
 from middleware.idempotency import IdempotencyMiddleware
 from middleware.csrf import CSRFMiddleware
 from domains.auth.router import router as auth_router
@@ -84,6 +87,7 @@ async def lifespan(_app: FastAPI):
     await ensure_indexes()
     await ensure_session_indexes()
     await ensure_throttle_indexes()
+    await ensure_google_indexes()
     await ensure_integration_indexes()
     # Load and snapshot every provider so the admin dashboard shows real status
     # immediately on first request.
@@ -222,3 +226,5 @@ app.include_router(admin_router)
 app.include_router(support_router)
 app.include_router(observability_router)
 app.include_router(integrations_router)
+app.include_router(email_webhook_router)
+app.include_router(payment_webhook_router)

@@ -86,6 +86,20 @@ sealed + prefs Phoenix+Remote+$90k floor + approved claims.
 
 ---
 
+## Google Sign-In (Milestone E)
+
+- The Emergent-managed OAuth flow requires a browser to click "Continue with
+  Google" on `/login` or `/signup` and complete a Google consent screen.
+  There is NO password fixture for this path.
+- For automated backend tests, `domains/auth/google_service.py` accepts
+  a session_id and calls `https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data`.
+  Tests stub this call via `httpx.MockTransport` (see
+  `tests/test_milestone_e_google.py`).
+- Any real end-to-end validation requires a HUMAN with a Google account
+  clicking the button — mark as `HUMAN_REQUIRED` in test plans.
+
+---
+
 ## Curl smoke test
 
 ```bash

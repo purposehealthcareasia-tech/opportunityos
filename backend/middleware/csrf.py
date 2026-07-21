@@ -29,6 +29,10 @@ _BYPASS_PREFIXES = ("/api/internal/", "/api/webhook/")
 _BYPASS_PATHS = {
     "/api/v1/auth/login",
     "/api/v1/auth/signup",
+    # Google Sign-In bootstrap: same rationale as login/signup — the client
+    # has no session yet, therefore no CSRF cookie.
+    "/api/v1/auth/google/session",
+    "/api/v1/auth/google/complete",
     # Legacy — some CI probes still POST /api/v1/consents while establishing a
     # signup flow; new signup path already covers this via the signup endpoint,
     # but keep the login/signup exempt only. Everything else state-changing MUST

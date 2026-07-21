@@ -871,6 +871,12 @@ function IntegrationsTab({ isAdmin }) {
                   <div>Optional: <span className="font-mono">{(detail.optional_env || []).join(', ') || '—'}</span></div>
                   <div>Missing:  <span className="font-mono text-red-500">{(detail.missing_env || []).join(', ') || 'none'}</span></div>
                 </div>
+                {detail.webhook_url && (
+                  <div className="rounded-md border border-line dark:border-line-dark p-3 text-xs space-y-1" data-testid="integration-webhook-url">
+                    <div className="uppercase muted">Webhook URL (copy into vendor dashboard)</div>
+                    <code className="block font-mono break-all">{detail.webhook_url}</code>
+                  </div>
+                )}
                 <div className="rounded-md border border-line dark:border-line-dark p-3 text-xs">
                   <div className="uppercase muted mb-2">Recent events</div>
                   {(detail.recent_events || []).length === 0 ? (

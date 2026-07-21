@@ -162,13 +162,18 @@ class TestIntegrationsList:
         assert not findings, f"integrations list body leaked: {findings}\nhead={r.text[:400]}"
 
     def test_status_snapshot_matches_env(self, admin_headers):
-        """Spec: stripe=TEST_MODE, email_password=CONNECTED, google_auth/resend/
-        sendgrid/twilio/elevenlabs/razorpay/paypal/paystack=CONFIGURATION_REQUIRED."""
+        """Spec (post-Milestone E): stripe=TEST_MODE, email_password=CONNECTED,
+        google_auth=CONNECTED (Emergent-managed — no per-app secret required),
+        resend/sendgrid/twilio/elevenlabs/razorpay/paypal/paystack =
+        CONFIGURATION_REQUIRED."""
         r = requests.get(f"{BASE}/api/v1/admin/integrations", headers=admin_headers, timeout=15)
         by_slug = {p["slug"]: p for p in r.json()["providers"]}
         assert by_slug["stripe"]["status"] == "TEST_MODE"
         assert by_slug["email_password"]["status"] == "CONNECTED"
-        for slug in ("google_auth", "resend", "sendgrid", "twilio",
+        assert by_slug["google_auth"]["status"] in ("CONNECTED", "TEST_MODE"), (
+            f"google_auth expected CONNECTED/TEST_MODE, got {by_slug['google_auth']['status']}"
+        )
+        for slug in ("resend", "sendgrid", "twilio",
                      "elevenlabs", "razorpay", "paypal", "paystack"):
             assert by_slug[slug]["status"] == "CONFIGURATION_REQUIRED", (
                 f"{slug} expected CONFIGURATION_REQUIRED but got {by_slug[slug]['status']}"

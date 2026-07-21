@@ -5,6 +5,100 @@
 
 ---
 
+## 🚧 Founder integrations mandate — in progress
+
+**Milestone A · Integrations foundation + Admin dashboard — DONE (2026-02-21)**
+- Verified: `/app/test_reports/iteration_12.json`. Full backend regression **190 / 190** green.
+- 14 provider adapters registered with truthful `status`:
+  CONNECTED (`email_password`), TEST_MODE (`stripe`, `openai`, `anthropic`, `gemini`, `media_storage`),
+  CONFIGURATION_REQUIRED (`google_auth`, `resend`, `sendgrid`, `twilio`, `elevenlabs`, `razorpay`, `paypal`, `paystack`).
+- Admin-only `/api/v1/admin/integrations` list / detail / test / enable / disable.
+  Admin UI `IntegrationsTab` renders every provider grouped by category. CSRF, RBAC and
+  audit invariants preserved.
+- Never leaks env values or secrets — `describe()` returns env-var *names* only.
+
+**Milestone B · Emergent object storage — DONE (2026-02-21)**
+- Verified: full backend regression **217 / 217** pytest green (+4 storage tests).
+- Real Emergent object-storage backend behind `services.storage.storage` — used
+  automatically when `EMERGENT_LLM_KEY` is present. Local disk retained as a
+  labelled fallback (`MEDIA_STORAGE_BACKEND=local`).
+- No caller change: `domains/documents/service.py` +
+  `domains/applications/service.py` remain untouched.
+- Provider `media_storage` upgraded from stub to real health / test-connection
+  probes. Honestly reports `TEST_MODE` on the shared Emergent surface;
+  `CONFIGURATION_REQUIRED` if the key is unset. Never leaks secrets.
+
+**Milestone C · Email (Resend + SendGrid) — DONE (2026-02-21)**
+- Verified: full backend regression **231 / 231** pytest green (+14 email tests).
+- Real `send()` and `verify_webhook()` on both adapters; hard-fail without
+  vendor secrets (Svix HMAC for Resend, ECDSA P-256 for SendGrid).
+- New public route `POST /api/webhook/email/{provider}` with signature-based
+  auth, dedup via `webhook_events` unique index, no bypass mode.
+- No Emergent email provider — adapters stay `CONFIGURATION_REQUIRED` until
+  the operator supplies `RESEND_*` / `SENDGRID_*` env vars.
+
+**Milestone D · Twilio Verify (OTP) — DONE (2026-02-21)**
+- Verified: full backend regression **238 / 238** pytest green (+7 twilio tests).
+- Real `start_verify()` / `check_verify()` + Twilio HMAC-SHA1 signature helper;
+  hard-fail on configuration_required and on missing/bad signature.
+- Adapter stays `CONFIGURATION_REQUIRED` until operator supplies
+  `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` / `TWILIO_VERIFY_SERVICE_SID`.
+
+**Milestone E · Google Sign-In (Emergent-managed) — DONE (2026-02-21)**
+- Verified: full backend regression **245 / 245** pytest green (+7 Google tests).
+- End-to-end backend flow: `/api/v1/auth/google/session` +
+  `/api/v1/auth/google/complete`. Consent-first — no user row until consent
+  scopes submitted. Existing users linked automatically on email match.
+- Frontend "Continue with Google" wired on Login + Signup. New
+  `/auth/callback` route processes the Emergent redirect and renders the
+  five-scope consent form when a new account is being created.
+- Provider adapter reports CONNECTED by default (Emergent-managed → no per-
+  app client secret). `GOOGLE_AUTH_ENABLED=false` flips to
+  CONFIGURATION_REQUIRED as an operator kill-switch.
+
+**Milestone F · Payments strangler + regional adapters — DONE (2026-02-21)**
+- Verified: full backend regression **261 / 261** pytest green (+16 payments tests).
+- Real cryptographic webhook signature verification for Stripe (HMAC-SHA256),
+  Razorpay (HMAC-SHA256), Paystack (HMAC-SHA512). PayPal uses server-to-server
+  verification via `/v1/notifications/verify-webhook-signature`.
+- Real `create_order()` / `create_checkout_session()` /
+  `initialize_transaction()` code paths on all four adapters; hard-fail on
+  missing credentials, no bypass mode.
+- Legacy `domains/billing/service.py` untouched — strangler-ready for future
+  swap-in of the Stripe adapter's `create_checkout_session` / `verify_webhook`.
+
+**Milestone G · AI gateway strangler — DONE (2026-02-21)**
+- Verified: full backend regression **266 / 266** pytest green (+5 gateway tests).
+- New `services/ai_gateway.py` unified `chat()` router with cost recording on
+  both success and failure paths. Selects OpenAI/Anthropic/Gemini adapters via
+  the provider registry.
+- All three AI adapters now share a single `emergent_chat_singleturn()`
+  boundary — one and only one place talks to `emergentintegrations.llm.chat`.
+- Existing `services/llm.py` untouched; strangler-ready for a follow-up patch
+  that swaps its `_call_model` / `_call_claude` calls to `ai_gateway.chat()`.
+
+**Milestone H · Payment webhooks + ElevenLabs + admin polish — DONE (2026-02-21)**
+- Verified: full backend regression **275 / 275** pytest green (+9 Milestone H tests).
+- Unified `POST /api/webhook/payment/{slug}` route for stripe / razorpay /
+  paystack / paypal with cryptographic verification (or PayPal server-to-server
+  round-trip). Hard-fail on missing secret (500), invalid signature (400),
+  unknown provider (404). Dedup via `webhook_events` unique index.
+- ElevenLabs adapter promoted to real code path — `text_to_speech()`,
+  `test_connection()`. Hard-fail without credentials.
+- Admin integration detail now surfaces external `webhook_url` for
+  payment/email providers so ops can register with vendors without guessing.
+
+**All eight founder integration milestones (A → H) DONE.** Only P2
+behaviour-neutral visual polish remains (Milestone I, deferred until final
+QA).
+
+Standing requirements per checkpoint:
+- Existing regressions must stay green.
+- `PRD.md` + `CHANGELOG.md` updated per milestone.
+- Report exact tests run, changed files, and blockers.
+
+---
+
 ## ✅ v0.1 CERTIFIED — 2026-02-20
 
 **Final commit (pre-security-invariants):** `f51ce95b`

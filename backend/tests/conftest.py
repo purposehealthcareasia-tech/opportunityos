@@ -57,23 +57,22 @@ _TEST_ACCOUNT_EMAILS = (
 
 
 def _clear_login_throttle_for_test_accounts():
-    """Reset login-throttle buckets for known test accounts.
+    """Reset login-throttle buckets for known test accounts + purge any
+    IP-bucket rows.
 
-    SEC-P3(a) added a real per-identifier login throttle (10 attempts / 5 min).
-    A full pytest sweep issues far more logins than that against the fixture
-    users. Purge the buckets before each module so the throttle behaves
-    correctly for a real burst-attack test (`TestLoginThrottle`) but does not
-    poison legitimate suites. Direct Mongo access is used because the endpoint
-    surface for this is intentionally admin/internal only.
+    SEC-P3(a) added a real per-identifier login throttle (10 attempts / 5 min)
+    AND a per-IP throttle (30 attempts / 5 min). A full pytest sweep issues
+    hundreds of auth-adjacent calls that would otherwise saturate BOTH buckets
+    across the shared test runner IP. We purge the entire collection at every
+    module boot — the dedicated `TestLoginThrottle` test uses unique random
+    identifiers and reasserts the throttle in isolation.
     """
     try:
         from pymongo import MongoClient
         mongo_url = os.environ.get("MONGO_URL", "mongodb://localhost:27017")
         db_name = os.environ.get("DB_NAME", "opportunityos")
         c = MongoClient(mongo_url, serverSelectionTimeoutMS=1500)
-        c[db_name].login_throttle.delete_many({
-            "identifier": {"$in": list(_TEST_ACCOUNT_EMAILS)},
-        })
+        c[db_name].login_throttle.delete_many({})
         c.close()
     except Exception as e:  # pragma: no cover — defensive, must not break tests
         print(f"[conftest] login_throttle purge skipped: {e}")

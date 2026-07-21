@@ -13,7 +13,7 @@ writes (enable / disable / test-connection). Every write records an
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from core.db import get_db
 from core.deps import get_current_user
@@ -35,7 +35,7 @@ async def list_integrations(staff: dict = Depends(_require_admin)):
 
 
 @router.get("/{slug}")
-async def get_integration(slug: str, staff: dict = Depends(_require_admin)):
+async def get_integration(slug: str, request: Request, staff: dict = Depends(_require_admin)):
     p = registry.get(slug)
     if not p:
         raise HTTPException(status_code=404, detail={"error": "provider_not_found"})
@@ -47,6 +47,19 @@ async def get_integration(slug: str, staff: dict = Depends(_require_admin)):
     d["recent_events"] = [e async for e in cur]
     # Persisted config row (idempotent).
     await integrations_health.snapshot_provider(p)
+    # Ops helpfulness: surface the canonical webhook URL the operator must
+    # register with the vendor. Payment / email providers only. Never leaks
+    # env values — just an absolute URL under this deployment. Prefer the
+    # forwarded host/proto pair set by the ingress so operators see the
+    # external URL rather than the internal cluster domain.
+    category = d.get("category")
+    fwd_proto = request.headers.get("x-forwarded-proto") or request.url.scheme
+    fwd_host = request.headers.get("x-forwarded-host") or request.headers.get("host") or request.url.hostname
+    base = f"{fwd_proto}://{fwd_host}"
+    if category == "payments":
+        d["webhook_url"] = f"{base}/api/webhook/payment/{slug}"
+    elif category == "email":
+        d["webhook_url"] = f"{base}/api/webhook/email/{slug}"
     return d
 
 
