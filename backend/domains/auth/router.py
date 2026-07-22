@@ -96,6 +96,21 @@ async def google_complete_signup(
 # Apple Developer credentials are provisioned).
 # ---------------------------------------------------------------------------
 
+@router.get("/apple/status")
+async def apple_status():
+    """Truthful public probe for the Apple provider state.
+
+    Returns `{configured: bool}` — no secret values, no env values. Used by
+    ops runbook / the frontend `Continue with Apple` disabled-state helper.
+    Aligned with `GET /apple/start` (which returns 503 with
+    `apple_auth_not_configured` when the same signal is false)."""
+    required = ("APPLE_CLIENT_ID", "APPLE_TEAM_ID", "APPLE_KEY_ID",
+                "APPLE_PRIVATE_KEY", "APPLE_REDIRECT_URI")
+    import os as _os
+    configured = all(bool(_os.environ.get(k)) for k in required)
+    return {"configured": configured, "provider": "apple_auth"}
+
+
 @router.get("/apple/start")
 async def apple_start(request: Request):
     """Return the Apple authorization URL for the frontend to navigate to.

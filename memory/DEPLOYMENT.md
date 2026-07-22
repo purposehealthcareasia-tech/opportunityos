@@ -86,6 +86,21 @@ PROD_MODE=true + CORS_ALLOW_ORIGINS=https://prod.x   → boots clean
    Confirm `prod_mode: true`, `ci_test_issuer_enabled: false`,
    `build_sha` matches your deployed commit.
 
+6. **Per-provider status probes** (public/lightweight, no auth):
+   ```
+   GET /api/v1/auth/apple/status         → {"configured": bool, "provider": "apple_auth"}
+   GET /api/v1/auth/otp/status           → {"configured": bool, ...}
+   GET /api/v1/notifications/vapid-public-key → {"ok": bool, "public_key": "..."}
+   ```
+   The admin-cookie-gated `GET /api/v1/admin/integrations` returns the
+   authoritative status matrix for all 16 canonical providers.
+
+7. **Fixture user (preview only)** — `fixture-ead@opportunityos.dev` and
+   the two admin seed accounts are **not created** in `PROD_MODE=true`.
+   Verify via
+   `GET /api/v1/passport/activation-status` after a real user
+   registration flow instead.
+
 ---
 
 ## 3 · Integration credential rollout

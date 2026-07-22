@@ -4,7 +4,11 @@
 
 **Full backend regression: 405 / 405 pytest green** (was 402; +3 new
 malformed-subscription pruning tests). **Frontend `CI=true yarn build`:
-clean, 171.81 kB gz main bundle.** Prod fail-fast verified.
+clean, 171.81 kB gz main bundle.** Prod fail-fast verified. Independent
+testing-agent verification: `/app/test_reports/iteration_18.json` —
+`retest_needed=false`, all P0/P1 targeted checks GREEN.
+
+**Fresh HEAD SHA after this pass:** `2327d7d9` (`git log --oneline -1`).
 
 ### P0 · Fixed
 - **`.gitignore` was blocking `.env` files.** `deployment_agent` static
@@ -61,6 +65,7 @@ clean, 171.81 kB gz main bundle.** Prod fail-fast verified.
 - `backend/domains/notifications/service.py`
 - `backend/tests/test_notifications_webpush.py` (+3 tests)
 - `backend/domains/admin/service.py` (build_sha)
+- `backend/domains/auth/router.py` (new `GET /apple/status` ops probe)
 - `frontend/src/pages/{Admin,Applications,Approvals,Billing,Feed,JobDetail,Privacy,Tracker,ApplicationPrep}.jsx` (unused imports)
 - `memory/PRD.md`, `memory/CHANGELOG.md`, `memory/DEPLOYMENT.md` (new)
 
