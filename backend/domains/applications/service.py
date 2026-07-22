@@ -982,6 +982,9 @@ async def attest_submission(
     await audit.write(user["id"], "application.submitted",
                       f"application:{application_id}",
                       {"receipt_id": receipt["id"], "confirm_method": req.confirm_method})
+    # Fire push notification (fails silently — see events._safe_dispatch).
+    from domains.notifications import events as notif_events
+    await notif_events.on_receipt_created(user["id"], application_id, receipt["id"])
     return {
         "application": updated,
         "receipt": {**receipt, "materials_hash_short": current_hash[:10]},

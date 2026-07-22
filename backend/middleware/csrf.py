@@ -33,6 +33,16 @@ _BYPASS_PATHS = {
     # has no session yet, therefore no CSRF cookie.
     "/api/v1/auth/google/session",
     "/api/v1/auth/google/complete",
+    # Apple Sign-In bootstrap. `/apple/callback` is a form_post from Apple's
+    # servers (external origin) — CSRF replay defense is provided by the
+    # single-use server-side `state` value, not by our own CSRF cookie.
+    # `/apple/complete` runs before the user has a session cookie.
+    "/api/v1/auth/apple/callback",
+    "/api/v1/auth/apple/complete",
+    # OTP start / verify (login-only path — no session yet).
+    # `/otp/attach` REQUIRES an authenticated session so CSRF stays on.
+    "/api/v1/auth/otp/start",
+    "/api/v1/auth/otp/verify",
     # Legacy — some CI probes still POST /api/v1/consents while establishing a
     # signup flow; new signup path already covers this via the signup endpoint,
     # but keep the login/signup exempt only. Everything else state-changing MUST

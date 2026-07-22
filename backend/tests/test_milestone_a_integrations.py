@@ -37,9 +37,10 @@ VALID_STATUSES = {"CONNECTED", "TEST_MODE", "CONFIGURATION_REQUIRED", "DEGRADED"
 
 # Actual runtime slugs (discovered against the live registry).
 EXPECTED_SLUGS = {
-    "stripe", "google_auth", "email_password", "resend", "sendgrid",
+    "stripe", "google_auth", "apple_auth", "email_password", "resend", "sendgrid",
     "twilio", "openai", "anthropic", "gemini", "elevenlabs",
     "media_storage", "razorpay", "paypal", "paystack",
+    "push_notifications",
 }
 
 # Substrings that MUST NEVER appear anywhere in an integrations response body.
@@ -123,7 +124,7 @@ class TestIntegrationsList:
         assert r.status_code == 200, r.text
         body = r.json()
         provs = body["providers"]
-        assert len(provs) == 14, f"expected 14 providers, got {len(provs)}"
+        assert len(provs) == 16, f"expected 16 providers, got {len(provs)}"
         slugs = {p["slug"] for p in provs}
         assert slugs == EXPECTED_SLUGS, f"slug drift: extra={slugs-EXPECTED_SLUGS} missing={EXPECTED_SLUGS-slugs}"
         for p in provs:
@@ -139,14 +140,14 @@ class TestIntegrationsList:
         r = requests.get(f"{BASE}/api/v1/admin/integrations", headers=admin_headers, timeout=15)
         body = r.json()
         counts = body["summary"]["counts"]
-        assert sum(counts.values()) == body["summary"]["total"] == 14
+        assert sum(counts.values()) == body["summary"]["total"] == 16
         # All 5 enum keys present.
         assert set(counts.keys()) >= VALID_STATUSES
 
     def test_support_can_read_list(self, support_headers):
         r = requests.get(f"{BASE}/api/v1/admin/integrations", headers=support_headers, timeout=15)
         assert r.status_code == 200, r.text
-        assert len(r.json()["providers"]) == 14
+        assert len(r.json()["providers"]) == 16
 
     def test_regular_user_forbidden(self, user_headers):
         r = requests.get(f"{BASE}/api/v1/admin/integrations", headers=user_headers, timeout=15)

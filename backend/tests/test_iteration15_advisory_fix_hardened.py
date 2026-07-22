@@ -259,7 +259,7 @@ class TestRegression:
         if isinstance(providers, dict) and "items" in providers:
             providers = providers["items"]
         assert isinstance(providers, list), f"unexpected shape: {type(providers)}"
-        assert len(providers) == 14, f"expected 14 providers, got {len(providers)}"
+        assert len(providers) == 16, f"expected 16 providers, got {len(providers)}"
         status_by_slug = {p["slug"]: p.get("status") for p in providers}
         # Expected matrix (from review request)
         assert status_by_slug.get("stripe") == "TEST_MODE", status_by_slug

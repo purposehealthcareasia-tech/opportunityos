@@ -6,7 +6,7 @@ Scope (per review request):
   mis-configuration (secret / webhook id / auth not configured) and
   HTTP 400 for cryptographic / header failures. Never 500. Never 2xx.
 - Unknown provider slugs still 404 with the mandated error code.
-- Admin Integrations surface behaviour-neutral: provider count == 14
+- Admin Integrations surface behaviour-neutral: provider count == 16
   and the required status matrix holds.
 - support role can NOT mutate integrations.
 - fixture-ead login + /auth/me still works.
@@ -254,7 +254,7 @@ class TestAdminIntegrationsSurface:
         # Accept either a bare list or {providers:[...]} envelope.
         providers = body.get("providers") if isinstance(body, dict) else body
         assert isinstance(providers, list), body
-        assert len(providers) == 14, f"expected 14 providers, got {len(providers)}"
+        assert len(providers) == 16, f"expected 16 providers, got {len(providers)}"
 
     def test_admin_integrations_status_matrix(self, admin_token):
         r = requests.get(

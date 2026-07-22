@@ -69,6 +69,7 @@ def load_all() -> None:
     # Adapters import guarded — a broken adapter must not stop startup.
     _try("integrations.payments.stripe_provider")
     _try("integrations.auth.google_provider")
+    _try("integrations.auth.apple_provider")
     _try("integrations.auth.email_password_provider")
     _try("integrations.email.resend_provider")
     _try("integrations.email.sendgrid_provider")
@@ -81,6 +82,7 @@ def load_all() -> None:
     _try("integrations.payments.razorpay_provider")
     _try("integrations.payments.paypal_provider")
     _try("integrations.payments.paystack_provider")
+    _try("integrations.push.webpush_provider")
 
 
 def _try(dotted: str) -> None:

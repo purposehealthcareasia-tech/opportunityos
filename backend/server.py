@@ -11,11 +11,16 @@ from core.policy import CONSENT_SCOPES, policy_version
 from core.sessions import ensure_session_indexes
 from services.login_throttle import ensure_indexes as ensure_throttle_indexes
 from domains.auth.google_service import ensure_indexes as ensure_google_indexes
+from domains.auth.apple_service import ensure_indexes as ensure_apple_indexes
+from domains.auth.otp_service import ensure_indexes as ensure_otp_indexes
 from integrations import registry as integration_registry
 from integrations.health import ensure_indexes as ensure_integration_indexes, snapshot_provider
 from routers.integrations import router as integrations_router
 from routers.webhooks_email import router as email_webhook_router
 from routers.webhooks_payment import router as payment_webhook_router
+from domains.notifications.router import router as notifications_router
+from domains.notifications.service import ensure_indexes as ensure_notifications_indexes
+from domains.notifications.sweep import sweep_forever as notifications_sweep_forever
 from middleware.idempotency import IdempotencyMiddleware
 from middleware.csrf import CSRFMiddleware
 from domains.auth.router import router as auth_router
@@ -88,7 +93,10 @@ async def lifespan(_app: FastAPI):
     await ensure_session_indexes()
     await ensure_throttle_indexes()
     await ensure_google_indexes()
+    await ensure_apple_indexes()
+    await ensure_otp_indexes()
     await ensure_integration_indexes()
+    await ensure_notifications_indexes()
     # Load and snapshot every provider so the admin dashboard shows real status
     # immediately on first request.
     integration_registry.load_all()
@@ -109,7 +117,17 @@ async def lifespan(_app: FastAPI):
             log.info("Deletion sweep hard-deleted %d user(s).", swept)
     except Exception:
         log.exception("Deletion sweep failed")
-    yield
+    # Kick off the approvals-expiring push sweep (runs every 30 min).
+    import asyncio
+    _sweep_task = asyncio.create_task(notifications_sweep_forever())
+    try:
+        yield
+    finally:
+        _sweep_task.cancel()
+        try:
+            await _sweep_task
+        except (Exception, asyncio.CancelledError):
+            pass
     log.info("OpportunityOS backend shutting down…")
 
 
@@ -228,3 +246,4 @@ app.include_router(observability_router)
 app.include_router(integrations_router)
 app.include_router(email_webhook_router)
 app.include_router(payment_webhook_router)
+app.include_router(notifications_router)

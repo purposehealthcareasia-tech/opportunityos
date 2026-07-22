@@ -3,6 +3,7 @@ import Card, { CardHeader } from '../components/ui/Card';
 import Input from '../components/ui/Input';
 import Button from '../components/ui/Button';
 import ThemeToggle from '../components/ThemeToggle';
+import NotificationsSettings from '../components/NotificationsSettings';
 import { useAuth } from '../lib/auth';
 import { api, withIdempotency } from '../lib/api';
 import { Loader2, ShieldCheck, ShieldOff } from 'lucide-react';
@@ -153,6 +154,8 @@ export default function Settings() {
           <ThemeToggle />
         </div>
       </Card>
+
+      <NotificationsSettings />
 
       <Card>
         <CardHeader title="Change password" subtitle="Choose a password you don't use anywhere else." />

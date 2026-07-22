@@ -70,11 +70,49 @@ export function AuthProvider({ children }) {
     return data;
   }, []);
 
+  // ---- Apple Sign-In (standards-based OIDC) -----------------------------
+  // Backend returns 503 { error: "apple_auth_not_configured" } when Apple
+  // Developer credentials are absent — the UI uses this to render an
+  // honest disabled state instead of a broken button.
+  const appleStart = useCallback(async () => {
+    const { data } = await api.get('/api/v1/auth/apple/start');
+    if (data && data.authorize_url) {
+      window.location.href = data.authorize_url;
+    }
+    return data;
+  }, []);
+  const appleCompleteSignup = useCallback(async ({ pending_signup_id, consents, policy_text_version }) => {
+    const { data } = await api.post('/api/v1/auth/apple/complete', {
+      pending_signup_id, consents, policy_text_version,
+    });
+    setUser(data.user);
+    return data;
+  }, []);
+
+  // ---- Phone one-time code login (Twilio Verify) ------------------------
+  const otpStatus = useCallback(async () => {
+    const { data } = await api.get('/api/v1/auth/otp/status');
+    return data;
+  }, []);
+  const otpStart = useCallback(async (phone) => {
+    const { data } = await api.post('/api/v1/auth/otp/start', { phone });
+    return data;
+  }, []);
+  const otpVerify = useCallback(async ({ phone, code }) => {
+    const { data } = await api.post('/api/v1/auth/otp/verify', { phone, code });
+    if (data.status === 'logged_in') setUser(data.user);
+    return data;
+  }, []);
+
   const value = useMemo(() => ({
     user, loading, signup, login, logout, refresh,
     googleStart, googleExchange, googleCompleteSignup,
+    appleStart, appleCompleteSignup,
+    otpStatus, otpStart, otpVerify,
   }), [user, loading, signup, login, logout, refresh,
-       googleStart, googleExchange, googleCompleteSignup]);
+       googleStart, googleExchange, googleCompleteSignup,
+       appleStart, appleCompleteSignup,
+       otpStatus, otpStart, otpVerify]);
   return <AuthCtx.Provider value={value}>{children}</AuthCtx.Provider>;
 }
 

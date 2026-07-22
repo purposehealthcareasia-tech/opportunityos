@@ -142,6 +142,9 @@ async def log_outcome(
 
     await audit.write(user["id"], "outcome.logged", f"application:{application_id}",
                       {"event": req.event, "transition": transition_result, "error": transition_error})
+    # Fire push notification (silently ignores per-category opt-outs).
+    from domains.notifications import events as notif_events
+    await notif_events.on_outcome_logged(user["id"], application_id, outcome["id"], req.event)
     return {"outcome": outcome, "transition": transition_result, "application_state": app_row["state"]}
 
 
@@ -279,6 +282,9 @@ async def schedule_interview(
     else:
         transition_error = "state_source_not_eligible_for_interview"
 
+    # Fire push notification for the interview.
+    from domains.notifications import events as notif_events
+    await notif_events.on_interview_scheduled(user["id"], application_id, doc["id"])
     return {
         "interview": doc,
         "outcome": outcome,

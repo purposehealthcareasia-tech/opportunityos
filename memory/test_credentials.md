@@ -98,6 +98,39 @@ sealed + prefs Phoenix+Remote+$90k floor + approved claims.
 - Any real end-to-end validation requires a HUMAN with a Google account
   clicking the button — mark as `HUMAN_REQUIRED` in test plans.
 
+## Sign in with Apple (2026-02-21)
+
+- Standards-based OIDC. Preview status is **CONFIGURATION_REQUIRED** —
+  frontend renders a disabled "Continue with Apple — not yet available"
+  button + tooltip explaining the state.
+- Backend tests use mocked id_tokens (`tests/test_auth_apple_signin.py`),
+  full JWKS-verify path exercised via a locally generated P-256 keypair
+  and a stubbed httpx client. No real Apple endpoint calls in tests.
+- Real click-through requires HUMAN with an Apple ID once the founder
+  provisions `APPLE_CLIENT_ID`, `APPLE_TEAM_ID`, `APPLE_KEY_ID`,
+  `APPLE_PRIVATE_KEY`, and `APPLE_REDIRECT_URI`.
+
+## Phone OTP login (Twilio Verify, 2026-02-21)
+
+- Login-only flow: a user with an attached phone gets a code and signs in.
+- Preview status is **CONFIGURATION_REQUIRED** — frontend Phone tab shows
+  "Phone sign-in is not yet configured on this server. Use email or
+  Google/Apple sign-in for now." No fake Send-code button.
+- Backend tests mock `start_verify` / `check_verify` on the Twilio provider
+  (`tests/test_auth_otp_login.py`). No real SMS is ever sent by the suite.
+
+## Web Push notifications (2026-02-21)
+
+- Standards-based VAPID. Preview status is **CONNECTED** — the VAPID key
+  pair was generated once via `py_vapid` and lives in `backend/.env`
+  (`VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`).
+- **DO NOT** regenerate these keys casually on deploy — regeneration
+  invalidates every existing browser subscription. Set once in prod
+  secrets and leave it alone.
+- Automated tests (`tests/test_notifications_webpush.py`) mock `pywebpush`
+  and never actually send a push. Real delivery requires a browser to
+  subscribe first — mark as `HUMAN_REQUIRED` in test plans.
+
 ---
 
 ## Curl smoke test

@@ -1,5 +1,134 @@
 # OpportunityOS — CHANGELOG
 
+## 2026-02-21 · 16-integration audit closure + 3 new integrations (P0)
+
+Full backend regression **402 / 402** pytest green. Frontend production build
+green (~168 kB gz main). No live vendor calls made in the audit path.
+
+### New integrations shipped this pass
+1. **Web Push (VAPID · standards-based)** — playbook consulted; Emergent
+   does NOT provide a managed web-push service for React web apps (their
+   managed push is Expo/mobile-only). Built the compliant standards path:
+   VAPID key pair (generated once via `py_vapid`, private key env-only,
+   NEVER regenerated on deploy — regeneration invalidates all existing
+   subscriptions), `pywebpush` on the backend, Service Worker on the
+   frontend, direct delivery to FCM/Mozilla autopush.
+   Files: `backend/integrations/push/webpush_provider.py`,
+   `backend/domains/notifications/{__init__,models,service,router,events,sweep}.py`,
+   `backend/routers/*` (wired into server), `frontend/public/sw.js`,
+   `frontend/src/lib/push.js`, `frontend/src/components/NotificationsSettings.jsx`,
+   `backend/tests/test_notifications_webpush.py` (20 tests).
+   Provider status: **CONNECTED** (VAPID pair present in preview env).
+2. **Sign in with Apple (standards-based OIDC)** — playbook consulted;
+   Emergent does NOT provide a managed Apple sign-in. Built the compliant
+   OIDC standards path: authorization-code flow with `response_mode=form_post`,
+   ES256 client-secret JWT signed with the Apple `.p8` key, JWKS-based
+   id_token verification, state+nonce single-use CSRF+replay defense.
+   Consent-first pending signup preserved. Private-relay-email semantics
+   correctly refuse to auto-link into an existing non-relay account; those
+   users get a distinct account instead.
+   Files: `backend/integrations/auth/apple_provider.py`,
+   `backend/domains/auth/apple_service.py`, `backend/domains/auth/router.py`
+   (new `/apple/start`, `/apple/callback`, `/apple/complete`),
+   `backend/middleware/csrf.py` (CSRF-exempt `/apple/callback` +
+   `/apple/complete`), `frontend/src/lib/auth.jsx` (appleStart /
+   appleCompleteSignup), `frontend/src/pages/Login.jsx` (honest disabled
+   button when `apple_auth_not_configured`).
+   `backend/tests/test_auth_apple_signin.py` (16 tests including bad-signature,
+   bad-nonce, expired, unknown-kid, wrong-audience, private-relay non-linking,
+   duplicate-sub reuse, describe-never-leaks-private-key).
+   Provider status: **CONFIGURATION_REQUIRED** (no APPLE_* env vars yet —
+   founder must supply .p8 / Team ID / Key ID / Services ID / redirect URI).
+3. **Phone OTP login (Twilio Verify — frontend UI + auth endpoints)** —
+   the backend Twilio Verify adapter existed but no auth endpoint or UI
+   consumed it. Built `POST /api/v1/auth/otp/start`, `POST /api/v1/auth/otp/verify`
+   (login only for accounts with an attached phone), `POST /api/v1/auth/otp/attach`
+   (authenticated attach), and `GET /api/v1/auth/otp/status` (truthful
+   `configured=false` when TWILIO_* env is absent, so the frontend renders
+   an honest disabled state).
+   Files: `backend/domains/auth/otp_service.py`, `backend/domains/auth/router.py`,
+   `frontend/src/pages/Login.jsx` (Phone one-time code mode with honest
+   "not yet available" state), `frontend/src/lib/auth.jsx` (otpStart /
+   otpVerify / otpStatus).
+   `backend/tests/test_auth_otp_login.py` (10 tests including phone
+   normalization, 503 without creds, happy-path login, no-account-for-phone
+   404, incorrect-code 401, phone-already-attached-elsewhere 409).
+   Provider status: **CONFIGURATION_REQUIRED** (Twilio env vars pending).
+
+### Provider count expanded 14 → 16
+`admin/integrations` now lists all 16 integrations from the founder's
+canonical panel. Count assertions updated in
+`test_iteration14_advisory_fix.py`, `test_iteration15_advisory_fix_hardened.py`,
+`test_milestone_a_integrations.py`.
+
+
+## 2026-02-21 · Deployment readiness fix — PROD_MODE seed guard (P0)
+
+Full backend regression **356 / 356** pytest green (+3 new deploy-readiness
+tests). Independently verified in `/app/test_reports/iteration_17.json` —
+all 6 request items GREEN, zero blockers, zero action_items, `retest_needed=false`.
+
+### Blocker · Preview fixture credentials would leak into production Mongo
+- **Root cause:** `run_seeds()` in `domains/seeds/seeder.py` was called
+  unconditionally from `lifespan()` on every backend startup and would
+  create hardcoded-password accounts (`admin@opportunityos.dev` /
+  `Admin!Console1`, `support@opportunityos.dev` / `Support!Console1`,
+  `ujjwal@opportunityos.dev` / `Passport!Test0`,
+  `fixture-ead@opportunityos.dev` / `Fixture!Test1`) plus 15 SampleCo
+  demo jobs the first time it hit a fresh production Mongo. All four
+  passwords are documented in `/app/memory/test_credentials.md`, so
+  anyone with access to the repo could log in as admin on prod.
+
+### Fix · smallest safe change
+- `domains/seeds/seeder.py::run_seeds` now branches on `settings.PROD_MODE`:
+  - **Always** seed reference data (`taxonomy` + `feature_flags`) — these
+    are legit for production day-one.
+  - **Skip in prod:** demo `companies` (which includes SampleCo demo
+    domain), all 15 sample jobs, the two hardcoded-password admin/support
+    bootstraps, User Zero seed, and the fixture-user rebase. Returns a
+    `prod_mode_seed_skipped: True` sentinel in the counts dict.
+- `domains/fixtures/internal_router.py::rebase_fixture` now raises
+  HTTPException(503, `{error: "fixture_rebase_disabled_in_prod"}`) when
+  `settings.PROD_MODE=True`, so ops can never mistake this preview-only
+  test-data tool for a data-recovery endpoint. Existing X-Service-Token
+  gate still enforced ahead of the prod-mode check.
+- **Preview behavior UNCHANGED** (`PROD_MODE=false`). Live-probe confirmed
+  the 9-passing / 6-excluded / 2-requires-us-person / 4-no-sponsorship
+  acceptance-check-B geometry is intact.
+
+### Tests
+- New `tests/test_deploy_readiness_prod_mode_seed_guard.py` — 3 tests:
+  - `test_prod_mode_seed_skips_fixture_accounts`: PROD_MODE=true → NO
+    admin/support/ujjwal/fixture accounts in `users`, NO SampleCo demo
+    jobs, YES taxonomy + YES feature_flags.
+  - `test_preview_mode_seed_creates_full_fixture`: PROD_MODE=false → all
+    four fixture accounts, 15 sample jobs, taxonomy + feature_flags.
+  - `test_fixture_rebase_endpoint_disabled_in_prod_mode`: direct handler
+    invocation raises HTTPException(503, `fixture_rebase_disabled_in_prod`).
+- Isolation: each async test creates its own ephemeral Motor client bound
+  to the test's event loop, uses monkeypatch for `get_db` redirection,
+  and drops the ephemeral DB via `pymongo` (sync) in teardown so no
+  Motor state leaks into downstream pytest-asyncio tests.
+
+### Deploy-time flip / rotation / vendor-key checklist (unchanged from PRD)
+- `PROD_MODE=true` — enables the seed guard, activates CORS localhost
+  strip, and locks fail-fast on `CI_TEST_ISSUER_ENABLED=true`.
+- `CI_TEST_ISSUER_ENABLED=false` — disable the Bearer JWT fallback.
+- `CORS_ALLOW_ORIGINS=<prod host>` — must be non-empty in prod
+  (server refuses to boot otherwise).
+- `JWT_SECRET` — rotate to a fresh 64-byte random value on deploy.
+- `INTERNAL_SERVICE_TOKEN` — rotate; the internal ingest and
+  webhook-target endpoints depend on it.
+- `EMERGENT_LLM_KEY` — must be set so `EmergentObjectStorage` is
+  selected over local-disk fallback; local disk does not persist
+  across k8s pod rebuilds.
+- Vendor keys (only if activating that provider): `RESEND_*`,
+  `SENDGRID_*`, `TWILIO_*`, `ELEVENLABS_*`, `RAZORPAY_*`, `PAYPAL_*`,
+  `PAYSTACK_*`.
+- Register webhook URLs shown in the Admin Integrations dashboard with
+  each vendor.
+
+
 ## 2026-02-21 · Code review remediation (post-iteration-15)
 
 Full backend regression **352 / 352** pytest green (+8 new CR-fix tests).

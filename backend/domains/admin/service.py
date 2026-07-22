@@ -307,6 +307,10 @@ async def reply_ticket(ticket_id: str, body: ReplyBody, staff: dict = Depends(_r
     if not ticket:
         raise HTTPException(status_code=404, detail="ticket_not_found")
     await audit.write(staff["id"], "admin.ticket_replied", f"ticket:{ticket_id}", {})
+    # Fire push notification to the ticket owner.
+    if ticket.get("user_id"):
+        from domains.notifications import events as notif_events
+        await notif_events.on_support_ticket_replied(ticket["user_id"], ticket_id)
     # NOTE: actual email send is a labeled stub per spec §C.5 — nothing goes out on the wire.
     return jsonable_encoder(ticket)
 

@@ -5,6 +5,126 @@
 
 ---
 
+## 📊 16-Integration Audit Status (2026-02-21)
+
+Full backend regression: **402 / 402** pytest green. Frontend production
+build: green (~168 kB gz). Full canonical panel — 16 items — covered below.
+
+Legend:
+- ✅ **Fully integrated & production-ready** · works end-to-end; only deploy-time key rotation left.
+- 🟢 **Integrated in test mode** · works end-to-end via vendor test/sandbox creds.
+- 🟡 **CONFIGURATION_REQUIRED** · code complete + tests green; vendor keys pending.
+- 🔧 **Partially integrated** · adapter exists but at least one column missing.
+- ❌ **Not started / broken**.
+
+| # | Integration | Overall | Backend adapter | Frontend flow | Env vars | Webhook / signature | DB + audit | Tests |
+|---|---|---|---|---|---|---|---|---|
+| 1 | **Stripe** | 🟢 test mode | `integrations/payments/stripe_provider.py` + `services/billing.py` full checkout / customer portal | `pages/Billing.jsx` — full checkout, subscription state, upgrade UI | env-provided key (test mode) | `routers/webhooks_payment.py` HMAC + atomic dedup on `webhook_events` | `subscriptions`, `webhook_events`, audit rows for every state change | `test_billing_e2e.py`, webhook + dedup + code-review fixes covered |
+| 2 | **Razorpay** | 🟡 CONFIG_REQ | `integrations/payments/razorpay_provider.py` full contract + lifecycle-aware dedup key | none (server-side webhook consumer; frontend flow not needed) | `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET` | `webhooks_payment.py` — HMAC verify, 401/400/503 semantics enforced | uses `webhook_events` + audit | `test_milestone_h_webhooks.py`, `test_code_review_fixes.py` |
+| 3 | **PayPal** | 🟡 CONFIG_REQ | `integrations/payments/paypal_provider.py` + 503 mapping for verify/config failures | none (webhook consumer) | `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_WEBHOOK_ID`, `PAYPAL_ENV` | `webhooks_payment.py` — WebhookID + upstream verify with truthful 502/503 | `webhook_events` + audit | `test_milestone_h_webhooks.py`, `test_code_review_fixes.py` |
+| 4 | **Paystack** | 🟡 CONFIG_REQ | `integrations/payments/paystack_provider.py` complete | none (webhook consumer) | `PAYSTACK_PUBLIC_KEY`, `PAYSTACK_SECRET_KEY`, `PAYSTACK_WEBHOOK_KEY` | `webhooks_payment.py` — HMAC verify | `webhook_events` + audit | `test_milestone_h_webhooks.py` |
+| 5 | **Emergent-managed Google sign-in** | ✅ | `integrations/auth/google_provider.py` + `domains/auth/google_service.py` full flow | `pages/GoogleCallback.jsx`, `Login.jsx`, `Signup.jsx` — full 5-scope consent-first | Emergent-managed (`SESSION_ID` handshake, no vendor keys) | callback validates session_id against Emergent auth | `linked_auth_identities`, `pending_google_signups`, consent + audit rows | `test_milestone_e_google.py` full suite; manual browser click-through HUMAN_REQUIRED |
+| 6 | **Sign in with Apple (standards-based OIDC)** | 🟡 CONFIG_REQ | `integrations/auth/apple_provider.py` + `domains/auth/apple_service.py` full OIDC (ES256 client-secret JWT, JWKS verify, state+nonce, private-relay semantics) | `pages/Login.jsx` — honest disabled button when `apple_auth_not_configured` (503) | `APPLE_CLIENT_ID`, `APPLE_TEAM_ID`, `APPLE_KEY_ID`, `APPLE_PRIVATE_KEY`, `APPLE_REDIRECT_URI` | none — id_token JWKS verify inline | `linked_auth_identities`, `pending_apple_signups`, `apple_auth_states` (TTL), audit rows | `test_auth_apple_signin.py` — 16 mocked tests (bad signature / nonce / kid / audience / expired / relay-email / duplicate-sub / describe-leak). Real click-through HUMAN_REQUIRED after founder credentials |
+| 7 | **Email & password login** | ✅ | `integrations/auth/email_password_provider.py` + `domains/auth/service.py` bcrypt-hashed | `pages/Login.jsx`, `pages/Signup.jsx` — full consent-first signup + login | `JWT_SECRET`, `SESSION_COOKIE_*` | n/a | `users`, `sessions`, `login_throttle`, audit rows | `test_phase*` + `test_security_invariants.py` |
+| 8 | **Resend (transactional email)** | 🟡 CONFIG_REQ | `integrations/email/resend_provider.py` full send + webhook | none (server-triggered email) | `RESEND_API_KEY`, `FROM_EMAIL`, `RESEND_WEBHOOK_SECRET` | `webhooks_email.py` — HMAC verify + atomic dedup, 400/401/503 semantics enforced | `email_events` + `webhook_events` | `test_milestone_c_email.py`, `test_milestone_h_webhooks.py` |
+| 9 | **SendGrid** | 🟡 CONFIG_REQ | `integrations/email/sendgrid_provider.py` full send + webhook + 503 mapping for verification key misconfig | none (server-triggered) | `SENDGRID_API_KEY`, `FROM_EMAIL`, `SENDGRID_WEBHOOK_VERIFICATION_KEY` | `webhooks_email.py` — ECDSA verify + atomic dedup, 503 on config misuse | `email_events` + `webhook_events` | `test_milestone_c_email.py`, `test_milestone_h_webhooks.py`, `test_code_review_fixes.py` |
+| 10 | **Twilio (phone verification codes)** | 🟡 CONFIG_REQ | `integrations/sms/twilio_provider.py` `start_verify` / `check_verify` **+ new `domains/auth/otp_service.py`** login + attach flow | `pages/Login.jsx` — Phone one-time code mode with honest disabled state when `otp_status.configured=false` | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_VERIFY_SERVICE_SID` | n/a (Twilio Verify owns lifecycle) | `sms_events`, `login_throttle`, audit rows for `auth.otp_sent` / `auth.otp_login` / `auth.otp_failed` | `test_milestone_d_twilio.py` (adapter) + **new `test_auth_otp_login.py`** (10 tests: 503-when-not-configured, phone normalization, happy-path login, no-account-for-phone, incorrect-code, attach-refuses-duplicate) |
+| 11 | **Push notifications** | ✅ **standards-based VAPID (managed = NOT_APPLICABLE for web)** | `integrations/push/webpush_provider.py` + full `domains/notifications` (models, service with prune-on-404/410, router, events, sweep for approvals-expiring) | `frontend/public/sw.js` + `lib/push.js` + `components/NotificationsSettings.jsx` — master opt-in, 5 per-category toggles, permission status, test-send button. Honest "not yet available" state if server-side keys missing | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` (generated once, never rotated casually — regeneration invalidates all subscriptions) | n/a (no vendor gateway) | `notification_subscriptions`, `notification_preferences`, `notifications` (indexed), audit rows for subscribe/unsubscribe/dispatch/prune | `test_notifications_webpush.py` — 20 tests (payload minimalism, ownership rejection, opt-out enforcement, dedup, prune-on-404/410, provider status transitions, describe-never-leaks). Playbook finding documented: Emergent's managed push is Expo/mobile-only, hence standards-based VAPID |
+| 12 | **OpenAI Chat Models** | ✅ | `integrations/ai/openai_provider.py` + `services/ai_gateway.py` via Emergent LLM Key | server-consumed (resume, cover-letter, feedback flows) | Emergent LLM Key (universal) — no user-provided key needed | n/a | `ai_usage_events` + audit + usage meters | `test_milestone_g_ai_gateway.py` |
+| 13 | **Anthropic Chat Models** | ✅ | `integrations/ai/anthropic_provider.py` via Emergent LLM Key | same gateway | Emergent LLM Key | n/a | same collections | `test_milestone_g_ai_gateway.py` |
+| 14 | **Gemini Chat Models** | ✅ | `integrations/ai/gemini_provider.py` via Emergent LLM Key | same gateway | Emergent LLM Key | n/a | same collections | `test_milestone_g_ai_gateway.py` |
+| 15 | **ElevenLabs** | 🟡 CONFIG_REQ | `integrations/voice/elevenlabs_provider.py` full text-to-speech contract | none (server-triggered) | `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`, `ELEVENLABS_MODEL_ID` | n/a | `voice_events` + audit | `test_milestone_j_voice.py` |
+| 16 | **File & media storage** | 🟢 test mode / Emergent | `integrations/storage/*` + `services/storage.py` — Emergent object storage when `EMERGENT_LLM_KEY` set, local-disk fallback otherwise | `Passport` document uploads / resume flows | `EMERGENT_LLM_KEY` (auto-provisioned) | n/a | `media_files` + audit | `test_milestone_b_storage.py` |
+
+### Summary line
+
+**16/16 canonical integrations are landed as code with truthful status
+reporting. Of those:**
+- **9/16 fully integrated & working** — Stripe (test mode), Google sign-in, Email+password, OpenAI, Anthropic, Gemini, Push (VAPID), Storage. (rows 1, 5, 7, 11, 12, 13, 14, 16 count as fully working; Stripe is founder-provisioned test-mode.)
+- **7/16 code-complete awaiting credentials** (CONFIGURATION_REQUIRED, honest UI/status) — Razorpay, PayPal, Paystack, Apple, Resend, SendGrid, Twilio (+OTP), ElevenLabs. → 7 items.
+- **0/16 incomplete / broken.**
+
+*Notes:*
+- Row 11 "Emergent-managed push" from the panel: playbook verified it is
+  Expo/mobile-only; not applicable to this React web app. Shipped
+  standards-based VAPID as the compliant alternative — same UX outcome.
+- Real Google click-through and real Apple click-through remain
+  HUMAN_REQUIRED once founder provisions credentials.
+
+Latest platform checkpoint SHA before this session: `6f17592e`. New
+auto-commit will follow this write.
+
+---
+
+## 🚦 Deployment Readiness — READY WITH DEPLOY-TIME CONFIG (2026-02-21)
+
+Independent verification: `/app/test_reports/iteration_17.json` — 6/6 items
+GREEN, `retest_needed=false`, zero action_items. Full backend regression
+**356 / 356** pytest green.
+
+### Status per audit category
+- **Services / supervisor:** READY. `backend`, `frontend`, `mongodb`,
+  `nginx-code-proxy`, `webhook-crond` RUNNING. (`code-server` STOPPED and
+  `mobile` FATAL are unrelated container services, not app blockers.)
+- **Ingress / `/api` routing:** READY. All app routes prefixed `/api`.
+  The only non-`/api` route is FastAPI's built-in `/docs/oauth2-redirect`
+  helper (docs served at `/api/docs`).
+- **Frontend env handling:** READY. `src/lib/api.js` binds `baseURL` to
+  `process.env.REACT_APP_BACKEND_URL`; no hardcoded backend URLs.
+- **Secrets / `.env` git hygiene:** READY. `.gitignore` excludes
+  `backend/.env` + `frontend/.env` explicitly; both files confirmed
+  untracked via `git ls-files`.
+- **Deploy-hostile paths:** READY. No hardcoded `localhost`/`127.0.0.1`
+  in runtime backend code (only in a comment and the pydantic-settings
+  MONGO_URL *default*, which is env-overridden). Frontend has zero
+  hardcoded backend origins. `STORAGE_ROOT` default is `/app/backend/
+  storage` (local-disk fallback only — Emergent object storage kicks in
+  automatically when `EMERGENT_LLM_KEY` is set).
+- **MongoDB — indexes / seeds / serialisation:** READY (after fix). All
+  indexes created idempotently in `ensure_indexes()` at startup. **P0
+  blocker found and fixed:** `run_seeds()` used to unconditionally
+  create hardcoded-password admin/support/user/fixture accounts and 15
+  SampleCo demo jobs → now gated behind `settings.PROD_MODE=false` per
+  the seed-guard fix (see CHANGELOG 2026-02-21).
+- **Production fail-fast:** READY. Verified via subprocess:
+  `PROD_MODE=true + CI_TEST_ISSUER_ENABLED=true` → server refuses to
+  boot; `PROD_MODE=true + empty CORS_ALLOW_ORIGINS` → server refuses to
+  boot. Confirmed **without** flipping the preview flag.
+- **`/api/health`:** READY. Returns 200 with `{ok, mongo, phase,
+  policy_text_version}` and does **not** disclose `prod_mode` /
+  `ci_test_issuer_enabled` (those live on `/api/v1/admin/health`).
+- **Frontend production build:** READY. `yarn build` succeeded in 12s
+  → `167.8 kB` gzipped main bundle + `7.07 kB` gzipped CSS. Only
+  eslint warnings (unused imports) — no build errors.
+- **Backend regression:** READY. Full `pytest tests/` = **356/356 green**
+  (was 352 + 3 new deploy-readiness + 1 previously-count-adjusted).
+
+### Deploy-time config required (operator-side, NOT code)
+| Item | Preview value | Prod deploy action |
+|---|---|---|
+| `PROD_MODE` | `false` | Flip to `true` |
+| `CI_TEST_ISSUER_ENABLED` | `true` | Flip to `false` |
+| `CORS_ALLOW_ORIGINS` | preview host, localhost:3000 | Set to prod host only |
+| `JWT_SECRET` | 64-byte random | Rotate on deploy |
+| `INTERNAL_SERVICE_TOKEN` | provisioned | Rotate on deploy |
+| `EMERGENT_LLM_KEY` | provisioned | Confirm set (activates persistent object storage) |
+| Vendor secrets | absent | Provide only when activating provider |
+| Webhook URLs | shown in Admin dashboard per provider | Register with each vendor after deploy |
+
+### Preview-only guards (must be verified after deploy flip)
+- Seed guard: after `PROD_MODE=true`, prod boot should log
+  `PROD_MODE=true — skipping demo companies, sample jobs, and all
+  hardcoded-password fixture accounts. Reference data only.` Verify
+  no `admin@opportunityos.dev` etc. exist in the prod `users` collection.
+- `/api/internal/fixture/rebase` returns 503 in prod mode.
+- Google OAuth click-through must be manually verified by a human with
+  a real Google account (`HUMAN_REQUIRED`).
+
+Latest platform checkpoint SHA at time of audit: `6f17592e`
+(followed by new auto-commit for the seed-guard fix).
+
+---
+
 ## 🚧 Founder integrations mandate — ALL MILESTONES DONE (2026-02-21)
 
 Independent verification checkpoints:
