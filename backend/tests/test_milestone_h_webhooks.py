@@ -139,13 +139,18 @@ class TestExternalEventIdExtractor:
         raw = json.dumps({"id": "evt_test_abc", "type": "x"}).encode()
         assert _extract_external_event_id("stripe", raw) == "evt_test_abc"
 
-    def test_razorpay_style_payment_entity_id(self):
+    def test_razorpay_style_composite_key(self):
+        """Post-code-review: Razorpay dedup key is now event+payment_id+ts,
+        NOT just payment_id. Two events on the same payment yield distinct
+        keys (see tests/test_code_review_fixes.py::TestRazorpayDedupKey)."""
         from routers.webhooks_payment import _extract_external_event_id
         raw = json.dumps({
             "event": "payment.captured",
+            "created_at": 1737400060,
             "payload": {"payment": {"entity": {"id": "pay_rz_1"}}},
         }).encode()
-        assert _extract_external_event_id("razorpay", raw) == "pay_rz_1"
+        v = _extract_external_event_id("razorpay", raw)
+        assert v == "rzp:payment.captured:pay_rz_1:1737400060"
 
     def test_paystack_style_data_id(self):
         from routers.webhooks_payment import _extract_external_event_id

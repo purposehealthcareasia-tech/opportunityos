@@ -55,7 +55,12 @@ async def receive_email_webhook(provider_slug: str, request: Request):
             "webhook_secret_not_configured",
             "webhook_public_key_not_configured",
         }
-        status = 503 if code in _SERVER_MISCONFIG else 400
+        # Runtime server misconfig (SendGrid PEM cannot be parsed because the
+        # `cryptography` library is missing, or the operator pasted a bad
+        # PEM) → 503. Vendor-side or client-side signature failure → 400.
+        _SERVER_MISCONFIG_PREFIX = ("cryptography_missing", "bad_key_or_signature")
+        status = 503 if (code in _SERVER_MISCONFIG
+                          or code.startswith(_SERVER_MISCONFIG_PREFIX)) else 400
         # Record the rejection for the admin dashboard.
         await integrations_health.record_event(
             provider=provider_slug, kind="webhook_rejected",
@@ -66,6 +71,11 @@ async def receive_email_webhook(provider_slug: str, request: Request):
                                      "reason": code})
 
     # Idempotent insert via unique index on (provider, external_event_id).
+    # Guard the race between find_one and insert_one — vendors retry aggressively
+    # and two concurrent duplicates would otherwise trigger a
+    # `pymongo.errors.DuplicateKeyError` on the second insert, surfacing as
+    # HTTP 500. That breaks the "never 500" invariant.
+    from pymongo.errors import DuplicateKeyError
     db = get_db()
     existing = await db.webhook_events.find_one(
         {"provider": provider_slug, "external_event_id": verified.idempotency_key},
@@ -75,13 +85,21 @@ async def receive_email_webhook(provider_slug: str, request: Request):
 
     import uuid
     row_id = str(uuid.uuid4())
-    await db.webhook_events.insert_one({
-        "id": row_id,
-        "provider": provider_slug,
-        "external_event_id": verified.idempotency_key,
-        "payload_json": verified.payload_json,
-        "ts": utc_now(),
-    })
+    try:
+        await db.webhook_events.insert_one({
+            "id": row_id,
+            "provider": provider_slug,
+            "external_event_id": verified.idempotency_key,
+            "payload_json": verified.payload_json,
+            "ts": utc_now(),
+        })
+    except DuplicateKeyError:
+        # A concurrent request stored the same event id between our find_one
+        # and this insert — safe to treat as a duplicate.
+        row = await db.webhook_events.find_one(
+            {"provider": provider_slug, "external_event_id": verified.idempotency_key},
+        )
+        return {"status": "duplicate", "id": (row or {}).get("id")}
     await integrations_health.record_event(
         provider=provider_slug, kind="webhook_received",
         detail={"external_event_id": verified.idempotency_key},

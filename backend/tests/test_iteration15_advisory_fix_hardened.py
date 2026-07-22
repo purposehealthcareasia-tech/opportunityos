@@ -22,8 +22,24 @@ import pytest
 import requests
 
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
-assert BASE_URL, "REACT_APP_BACKEND_URL must be set"
+def _resolve_base_url() -> str:
+    v = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
+    if v:
+        return v
+    # Fallback: read from the frontend .env so the same suite works whether
+    # or not the shell exported REACT_APP_BACKEND_URL.
+    try:
+        with open("/app/frontend/.env") as fh:
+            for line in fh:
+                if line.startswith("REACT_APP_BACKEND_URL="):
+                    return line.strip().split("=", 1)[1].rstrip("/")
+    except Exception:
+        pass
+    return ""
+
+
+BASE_URL = _resolve_base_url()
+assert BASE_URL, "REACT_APP_BACKEND_URL must be set (or /app/frontend/.env readable)"
 
 ADMIN_EMAIL = "admin@opportunityos.dev"
 ADMIN_PASSWORD = "Admin!Console1"

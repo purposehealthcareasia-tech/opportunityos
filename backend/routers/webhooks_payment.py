@@ -43,7 +43,21 @@ router = APIRouter(prefix="/api/webhook/payment", tags=["webhooks:payment"])
 
 
 def _extract_external_event_id(provider_slug: str, raw: bytes) -> str:
-    """Best-effort idempotency key extraction from the raw body."""
+    """Best-effort idempotency key extraction from the raw body.
+
+    Vendor-specific notes:
+      - Stripe / PayPal: top-level `id` is the event id — use as-is.
+      - Paystack: `data.id` is the event id.
+      - Razorpay: there is NO top-level event id. `payload.payment.entity.id`
+        is the *payment* id and is STABLE across multiple events for one
+        payment (authorized → captured → refunded). Using it alone would
+        silently discard the second and third events as "duplicates" once
+        Razorpay is live. We therefore compose the key from event name +
+        payment id + created_at so different events for the same payment
+        get distinct keys, while true vendor retries (identical body) still
+        collide correctly.
+      - Fallback: SHA-256 of the raw body (guarantees vendor-retry dedup).
+    """
     try:
         payload = json.loads(raw.decode("utf-8"))
     except Exception:
@@ -52,19 +66,25 @@ def _extract_external_event_id(provider_slug: str, raw: bytes) -> str:
         import hashlib
         return f"hash:{hashlib.sha256(raw).hexdigest()[:32]}"
     if isinstance(payload, dict):
-        # Stripe/PayPal: {id:"evt_..."}. Razorpay: {payload:{payment:{entity:{id}}}}.
-        # Paystack: {data:{id}}.
+        # Razorpay: composite key of event + payment_id + created_at.
+        if provider_slug == "razorpay":
+            event = payload.get("event")
+            created_at = payload.get("created_at")
+            payment_id = None
+            try:
+                payment_id = (payload.get("payload") or {}).get("payment", {}).get("entity", {}).get("id")
+            except Exception:
+                pass
+            if event and payment_id and created_at is not None:
+                return f"rzp:{event}:{payment_id}:{created_at}"
+            # Fall through to body-hash if Razorpay is missing any component.
+
+        # Stripe/PayPal: `id` is the event id.
         for key in ("id", "event_id"):
             v = payload.get(key)
             if isinstance(v, str) and v:
                 return v
-        # Razorpay canonical: payment/order.id under payload.
-        try:
-            v = (payload.get("payload") or {}).get("payment", {}).get("entity", {}).get("id")
-            if isinstance(v, str) and v:
-                return v
-        except Exception:
-            pass
+        # Paystack canonical: {data:{id}}.
         try:
             v = (payload.get("data") or {}).get("id")
             if isinstance(v, (str, int)) and v:
@@ -110,9 +130,11 @@ async def receive_payment_webhook(provider_slug: str, request: Request):
         _SERVER_MISCONFIG_PREFIX = (
             # PayPal server-to-server verification: OAuth token exchange
             # failed → auth_failed:...  |  network hiccup → upstream_error:...
-            # Both are server-side / vendor-side problems, not client fault.
+            # PayPal verify endpoint returned non-2xx → verify_failed:HTTP N...
+            # All are server-side / vendor-side problems, not client fault.
             "auth_failed",
             "upstream_error",
+            "verify_failed",
         )
         server_misconfig = (
             code in _SERVER_MISCONFIG_EXACT
@@ -128,6 +150,10 @@ async def receive_payment_webhook(provider_slug: str, request: Request):
                                      "reason": code})
 
     external_event_id = _extract_external_event_id(provider_slug, raw)
+    # Guard the race between find_one and insert_one — see webhooks_email.py
+    # for the equivalent rationale. Vendors retry aggressively; two concurrent
+    # duplicates must NEVER surface as HTTP 500.
+    from pymongo.errors import DuplicateKeyError
     db = get_db()
     existing = await db.webhook_events.find_one({
         "provider": provider_slug, "external_event_id": external_event_id,
@@ -140,13 +166,19 @@ async def receive_payment_webhook(provider_slug: str, request: Request):
         payload_json = json.loads(raw.decode("utf-8"))
     except Exception:
         payload_json = None
-    await db.webhook_events.insert_one({
-        "id": row_id,
-        "provider": provider_slug,
-        "external_event_id": external_event_id,
-        "payload_json": payload_json,
-        "ts": utc_now(),
-    })
+    try:
+        await db.webhook_events.insert_one({
+            "id": row_id,
+            "provider": provider_slug,
+            "external_event_id": external_event_id,
+            "payload_json": payload_json,
+            "ts": utc_now(),
+        })
+    except DuplicateKeyError:
+        row = await db.webhook_events.find_one({
+            "provider": provider_slug, "external_event_id": external_event_id,
+        })
+        return {"status": "duplicate", "id": (row or {}).get("id")}
     await integrations_health.record_event(
         provider=provider_slug, kind="webhook_received",
         detail={"external_event_id": external_event_id[:120]},
