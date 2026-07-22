@@ -1,5 +1,6 @@
 import logging
 import uuid
+from core.config import settings
 from core.db import get_db
 from core.security import hash_password
 from core.time_utils import utc_now
@@ -475,15 +476,44 @@ async def _cleanup_non_sample_test_jobs() -> int:
 
 
 async def run_seeds() -> dict:
-    """Idempotent. Safe to call on every startup."""
-    log.info("Running seeds…")
+    """Idempotent. Safe to call on every startup.
+
+    **Production safety guard** (2026-02-21 deployment readiness fix):
+    When `PROD_MODE=true` the seeder ONLY provisions safe reference data
+    (taxonomy + feature_flags). Demo data (SampleCo company, 15 sample jobs)
+    and hardcoded-password fixture accounts (admin@ / support@ / ujjwal@ /
+    fixture-ead@) are preview-only and MUST NEVER land in a production
+    database. Real production admin bootstrap is a separate deploy-time
+    concern (e.g. an admin-invite flow gated by an env-provisioned token),
+    not a hardcoded password in `data.py`.
+    """
+    log.info("Running seeds… (PROD_MODE=%s)", settings.PROD_MODE)
+
     counts = {
         "taxonomy": await _upsert_taxonomy(),
-        "companies": await _upsert_companies(),
-        "purged_test_jobs": await _cleanup_non_sample_test_jobs(),
-        "sample_jobs": await _upsert_sample_jobs(),
         "feature_flags": await _upsert_feature_flags(),
     }
+
+    if settings.PROD_MODE:
+        log.info(
+            "PROD_MODE=true — skipping demo companies, sample jobs, and all "
+            "hardcoded-password fixture accounts. Reference data only."
+        )
+        counts.update({
+            "companies": 0,
+            "purged_test_jobs": 0,
+            "sample_jobs": 0,
+            "admin_users": 0,
+            "user_zero_id": None,
+            "fixture_user_id": None,
+            "prod_mode_seed_skipped": True,
+        })
+        log.info("Seed counts: %s", counts)
+        return counts
+
+    counts["companies"] = await _upsert_companies()
+    counts["purged_test_jobs"] = await _cleanup_non_sample_test_jobs()
+    counts["sample_jobs"] = await _upsert_sample_jobs()
 
     admin_id = await _ensure_user(seed_data.ADMIN_USER["email"], seed_data.ADMIN_USER["password"], seed_data.ADMIN_USER["name"])
     await _ensure_admin_role(admin_id, "admin")

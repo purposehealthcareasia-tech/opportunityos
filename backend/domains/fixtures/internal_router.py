@@ -41,7 +41,19 @@ async def _check_service_token(
 
 @router.post("/rebase", status_code=200, dependencies=[Depends(_check_service_token)])
 async def rebase_fixture():
-    """Nuke all mutable state for the fixture user and re-seed to acceptance-check-B."""
+    """Nuke all mutable state for the fixture user and re-seed to acceptance-check-B.
+
+    **Production safety** (2026-02-21 deployment readiness fix): This endpoint
+    is preview/CI only. When `PROD_MODE=true` the fixture user does not exist
+    (see `domains/seeds/seeder.py::run_seeds`), and re-baselining synthetic
+    test data in production would be a destructive no-op at best. Refuse with
+    503 so ops never mistakes this for a data-recovery tool.
+    """
+    if settings.PROD_MODE:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"error": "fixture_rebase_disabled_in_prod"},
+        )
     fx_id = await seeder._rebase_fixture_user()
     return {
         "ok": True,
