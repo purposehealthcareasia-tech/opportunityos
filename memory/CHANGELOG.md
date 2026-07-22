@@ -1,5 +1,122 @@
 # OpportunityOS — CHANGELOG
 
+## 2026-02-21 · 16-integration audit — CORRECTED taxonomy + totals (docs-only)
+
+**DOCS-ONLY PASS. No feature code changed. No new backend/frontend tests run
+for this correction.** Latest full backend regression remains **402 / 402**
+pytest green from the prior feature pass; frontend `yarn build` remains
+green. HEAD SHA at correction time: `c3df1f54`
+(`git log --oneline -1`).
+
+### Why this correction exists
+The prior CHANGELOG entry below (dated 2026-02-21 · "16-integration audit
+closure + 3 new integrations") reported provider-registry runtime status
+(`CONNECTED` / `TEST_MODE` / `CONFIGURATION_REQUIRED`) verbatim as if that
+were the founder-facing audit taxonomy. It is not. It also implicitly
+treated the provider registry / Admin Integrations dashboard as if it were
+countable alongside product integrations. This entry supersedes that
+taxonomy in favour of the founder-mandated audit vocabulary and math.
+
+### Mandated audit taxonomy (one status per row)
+- `PRODUCTION_READY` — fully working end-to-end, no pending human step,
+  no prod-flag caveat.
+- `TEST_MODE` — working on test / platform credentials (Stripe test key,
+  Emergent LLM key, Emergent object storage).
+- `HUMAN_VERIFICATION_REQUIRED` — code CONNECTED but the final real-world
+  step needs a human (e.g. real Google OAuth click-through, real browser
+  push delivery).
+- `CONFIGURATION_REQUIRED` — code complete; awaiting founder-supplied
+  credentials.
+- `PARTIAL` / `BROKEN` — not applicable to any row this pass.
+
+### Registry / Admin dashboard is INFRASTRUCTURE — not counted
+The provider registry and Admin Integrations dashboard are the surface
+that reports each provider's runtime status. They are infrastructure, not
+a product integration, and are NOT one of the 16 rows and NOT part of
+any total.
+
+### Corrected 16-row totals
+- **1 / 16 `PRODUCTION_READY`** · Email & password.
+- **5 / 16 `TEST_MODE`** · Stripe, OpenAI, Anthropic, Gemini, File & media storage.
+- **2 / 16 `HUMAN_VERIFICATION_REQUIRED`** · Emergent-managed Google sign-in, Push notifications.
+- **8 / 16 `CONFIGURATION_REQUIRED`** · Razorpay, PayPal, Paystack, Apple sign-in, Resend, SendGrid, Twilio + OTP, ElevenLabs.
+- **0 / 16 `PARTIAL`** and **0 / 16 `BROKEN`**.
+
+The full corrected 16-row table (with per-row test evidence, required env
+variable names only, and covering commit SHAs) lives at the top of
+`/app/memory/PRD.md` under the section
+**"📊 16-Integration Audit — CORRECTED (2026-02-21)"**. This CHANGELOG
+entry is authoritative for taxonomy + totals; PRD.md is authoritative
+for the row-by-row detail.
+
+### Corrections vs. the superseded entry below
+- **Web Push (row 11)** — superseded entry said "Provider status:
+  **CONNECTED**". Corrected audit status: **`HUMAN_VERIFICATION_REQUIRED`**.
+  Rationale: VAPID key pair, provider, Service Worker, backend flow and
+  20 unit tests (against a mocked `pywebpush`) are all in place, but a
+  real push delivered to a real device requires a browser to subscribe
+  first — no automation produces that evidence.
+- **Emergent-managed Google sign-in (row 5)** — provider registry reports
+  runtime `CONNECTED` (session-id handshake works and is unit-tested with
+  a mocked Emergent endpoint). Corrected audit status:
+  **`HUMAN_VERIFICATION_REQUIRED`**, because end-to-end verification
+  requires a human clicking "Continue with Google" in a real browser
+  against real Google.
+- **Apple sign-in (row 6)** — status stays **`CONFIGURATION_REQUIRED`**
+  (no APPLE_* env vars).
+- **Twilio + OTP (row 10)** — status stays **`CONFIGURATION_REQUIRED`**
+  (no TWILIO_* env vars).
+- **Stripe (row 1)** — status is **`TEST_MODE`**, not "PRODUCTION_READY".
+  The env-provisioned key is a test-mode key; flipping to live mode is a
+  deploy-time key rotation and remains founder-side.
+- **OpenAI (12), Anthropic (13), Gemini (14), File & media storage (16)**
+  — status is **`TEST_MODE`** (Emergent LLM Key / Emergent object storage
+  is a platform credential path, not a founder-owned production
+  credential path).
+- **Email & password (row 7)** — status is **`PRODUCTION_READY`**. Only
+  row that meets that bar this pass.
+- **Razorpay (2), PayPal (3), Paystack (4), Resend (8), SendGrid (9),
+  ElevenLabs (15)** — status stays **`CONFIGURATION_REQUIRED`**
+  (founder-supplied vendor credentials pending).
+
+### Honesty callouts recorded in the corrected audit
+1. **ElevenLabs (row 15) has no dedicated test file.** The earlier PRD
+   claimed `test_milestone_j_voice.py` existed. It does not. ElevenLabs
+   is currently exercised only through registry-level tests
+   (`test_milestone_a_integrations.py`, `test_iteration14_advisory_fix.py`,
+   `test_iteration15_advisory_fix_hardened.py`). CONFIGURATION_REQUIRED
+   status is still truthful because the provider correctly reports it.
+   A dedicated ElevenLabs test suite is **deferred to P2 backlog** per
+   founder ruling (2026-02-21).
+2. **Push notifications is HUMAN_VERIFICATION_REQUIRED, not
+   PRODUCTION_READY.** See correction #1 above.
+3. **Emergent-managed Google sign-in is HUMAN_VERIFICATION_REQUIRED, not
+   CONNECTED.** See correction #2 above.
+4. **Stripe is TEST_MODE, not PRODUCTION_READY.** See correction #5 above.
+
+### What did NOT change
+- No feature code files were modified for this correction.
+- No provider adapters, notification service, Apple service, OTP service,
+  or router files were modified.
+- No tests were added, removed, or re-run for this correction (latest
+  full regression **402 / 402** predates this pass and remains the
+  reference figure).
+- Frontend `yarn build` was not re-run for this correction (last known
+  build passed in the previous feature pass).
+- No secrets, VAPID private key, test passwords, or `.env` contents are
+  disclosed anywhere in this entry.
+
+### Standing follow-ups (unchanged from prior CHANGELOG · P1, founder-side)
+- Real Google OAuth click-through (HUMAN_VERIFICATION_REQUIRED).
+- Real browser Web Push delivery test (HUMAN_VERIFICATION_REQUIRED).
+- Apple / Twilio / Resend / SendGrid / Razorpay / PayPal / Paystack /
+  ElevenLabs credential rollout (CONFIGURATION_REQUIRED → TEST_MODE /
+  CONNECTED without code changes).
+- Production rollout flip: `PROD_MODE=true`, `CI_TEST_ISSUER_ENABLED=false`,
+  `CORS_ALLOW_ORIGINS` locked to prod host, JWT + internal token rotation,
+  `EMERGENT_LLM_KEY` confirmed, webhook URLs registered with each vendor.
+
+
 ## 2026-02-21 · 16-integration audit closure + 3 new integrations (P0)
 
 Full backend regression **402 / 402** pytest green. Frontend production build
