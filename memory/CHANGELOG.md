@@ -1,5 +1,74 @@
 # OpportunityOS — CHANGELOG
 
+## 2026-02-21 · Code review remediation (post-iteration-15)
+
+Full backend regression **352 / 352** pytest green (+8 new CR-fix tests).
+Independently verified in `/app/test_reports/iteration_16.json` — 94/94 across
+CR fixes + targeted regression + broader security & Milestone A regression.
+Zero blockers, zero action_items.
+
+### CR-FIX-1 · Concurrent-duplicate webhook race (MEDIUM)
+- **Bug:** `find_one → insert_one` was not atomic. Two concurrent duplicate
+  deliveries would both pass the find_one check, then the second insert
+  raised `pymongo.errors.DuplicateKeyError`, surfacing as HTTP 500 —
+  violating the "never 500" mandate.
+- **Fix:** wrap `insert_one` in `try / except DuplicateKeyError`. On
+  duplicate-key, re-read the row the racer stored and return
+  `{status: "duplicate", id: <row.id>}`. Applied to both
+  `routers/webhooks_email.py` and `routers/webhooks_payment.py`.
+- **Tests:** `tests/test_code_review_fixes.py::
+  test_payment_webhook_race_returns_duplicate_not_500` +
+  `::test_email_webhook_race_returns_duplicate_not_500` (in-process Motor
+  stub simulates the exact race).
+
+### CR-FIX-2 · Razorpay dedup key collision (MEDIUM)
+- **Bug:** Razorpay bodies have no top-level event id. Milestone H used
+  `payload.payment.entity.id` as the dedup key, but that is the *payment*
+  id — stable across the `authorized → captured → refunded` lifecycle.
+  Once live, only the first of three events per payment would be recorded;
+  the other two would be silently discarded as "duplicates".
+- **Fix:** `_extract_external_event_id("razorpay", body)` now composes
+  `rzp:{event}:{payment_id}:{created_at}`. Different events on the same
+  payment yield distinct keys, while true vendor retries (identical body)
+  still collide correctly. Missing any component falls back to a
+  SHA-256 body hash so we never silently over-collapse.
+- **Tests:** `tests/test_code_review_fixes.py::TestRazorpayDedupKey`
+  (4 cases: distinct-events, retry-collides, missing-component-hash,
+  no-collateral-damage-to-Stripe/Paystack).
+
+### CR-FIX-3 · SendGrid `cryptography_missing` → 503 (LOW)
+- **Bug:** If the `cryptography` library was missing at runtime, the
+  SendGrid verifier raised `WebhookVerificationError("cryptography_missing:...")`,
+  which the router mapped to HTTP 400 — mis-blaming the vendor for a
+  packaging problem on our side.
+- **Fix:** Extended `_SERVER_MISCONFIG_PREFIX` in
+  `routers/webhooks_email.py` to include `cryptography_missing` and
+  `bad_key_or_signature` (bad operator-pasted PEM).
+
+### CR-FIX-4 · PayPal `verify_failed:HTTP...` → 503 (LOW)
+- **Bug:** When PayPal's `/verify-webhook-signature` endpoint returned
+  non-2xx (transient upstream 5xx), the router surfaced HTTP 400.
+- **Fix:** Extended `_SERVER_MISCONFIG_PREFIX` in
+  `routers/webhooks_payment.py` to include `verify_failed` alongside
+  `auth_failed` and `upstream_error`.
+
+### Six live webhook routes — semantics probe
+Post-fix curl matrix (preview):
+- `resend`, `sendgrid`, `stripe`, `razorpay`, `paystack`, `paypal`
+  → all return HTTP **503** on missing-secret.
+- Unknown provider → HTTP **404**.
+- Never HTTP 500, never 2xx.
+
+### Deferred (non-blocking follow-ups noted by the tester)
+- Add a DEBUG log when the Razorpay dedup fallback fires (visibility only).
+- Split `bad_key_or_signature` into `operator_bad_pem` vs `signature_mismatch`
+  for a cleaner 503/400 split.
+- Split PayPal `verify_failed` into `verify_failed:HTTP` (upstream 5xx →
+  503) vs `verify_failed:FAILURE` (potential client replay → 400).
+- Extract the race-guard pattern into `core/webhook_dedup.py` **when** a
+  third webhook category lands (YAGNI until then).
+
+
 ## 2026-02-21 · Advisory fix (webhook HTTP semantics) + Milestone I (Admin dashboard visual polish)
 
 Full backend regression **304 / 304** pytest green (+29 iteration14 advisory

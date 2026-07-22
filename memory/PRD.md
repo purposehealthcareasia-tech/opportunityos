@@ -12,8 +12,9 @@ Independent verification checkpoints:
 - Milestones B – H → `/app/test_reports/iteration_13.json`
 - Advisory fix (webhook HTTP semantics, 503/400/404, never 500/2xx) → `/app/test_reports/iteration_14.json`
 - Milestone I visual polish + advisory-fix hardening → `/app/test_reports/iteration_15.json`
+- Code-review remediation (4 fixes) → `/app/test_reports/iteration_16.json`
 
-Full backend regression at close of Milestone I: **304 / 304** pytest green.
+Full backend regression at close of code-review pass: **352 / 352** pytest green.
 
 **Milestone A · Integrations foundation + Admin dashboard — DONE (2026-02-21)**
 - Verified: `/app/test_reports/iteration_12.json`. Full backend regression **190 / 190** green.
