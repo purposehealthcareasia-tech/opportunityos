@@ -1,8 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Send, ExternalLink, ArrowRight, TestTube2, Clock, CheckCircle2, XCircle } from 'lucide-react';
+import { Send, ArrowRight, TestTube2, Clock } from 'lucide-react';
 import { api, withIdempotency } from '../lib/api';
-import Card, { CardHeader } from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import { LoadingBlock, ErrorBlock, EmptyBlock } from '../lib/scope';
 

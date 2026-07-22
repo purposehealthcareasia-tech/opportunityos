@@ -15,7 +15,6 @@ export default function PrivacyPage() {
   const [releases, setReleases] = useState([]);
   const [loading, setLoading] = useState(true);
   const [flash, setFlash] = useState(null);
-  const [exportJob, setExportJob] = useState(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const load = useCallback(async () => {
@@ -45,7 +44,6 @@ export default function PrivacyPage() {
   const startExport = async () => {
     try {
       const r = await api.post('/api/v1/privacy/export', {});
-      setExportJob({ id: r.data.job_id, status: r.data.status });
       // Immediately poll for ready.
       const detail = await api.get(`/api/v1/privacy/export/${r.data.job_id}`);
       if (detail.data.status === 'ready' && detail.data.download) {

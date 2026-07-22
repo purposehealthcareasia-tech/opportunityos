@@ -1,8 +1,8 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
-  ArrowLeft, Sparkles, ShieldCheck, ShieldOff, AlertTriangle, CheckCircle2, XCircle,
-  Undo2, Send, TestTube2, RefreshCw, FileText, Download, MessageSquare, HelpCircle, Ban,
+  ArrowLeft, Sparkles, ShieldCheck, ShieldOff, AlertTriangle, CheckCircle2,
+  Undo2, Send, TestTube2, RefreshCw, FileText, Download, HelpCircle, Ban,
 } from 'lucide-react';
 import { api, withIdempotency } from '../lib/api';
 import Card, { CardHeader } from '../components/ui/Card';
@@ -93,8 +93,6 @@ function ResumeDiffTab({ packet, onReload }) {
   const manifest = tailored?.render_manifest || {};
   const lines = manifest.lines || [];
   const validator = manifest.validator_result;
-  const outcome = manifest.outcome;
-  const refusal = manifest.refusal;
 
   const act = async (lineId, action) => {
     setBusy(`${lineId}:${action}`);
@@ -544,7 +542,6 @@ export default function ApplicationPrepPage() {
   const { applicationId } = useParams();
   const nav = useNavigate();
   const [packet, setPacket] = useState(null);
-  const [screenersView, setScreenersView] = useState(null);
   const [error, setError] = useState('');
   const [tab, setTab] = useState('resume');
   const [submitBusy, setSubmitBusy] = useState(false);
@@ -562,7 +559,6 @@ export default function ApplicationPrepPage() {
         api.get(`/api/v1/applications/${applicationId}/screeners`),
       ]);
       setPacket({ ...p, screeners_view: s });
-      setScreenersView(s);
       // If already submitted, pull the receipt.
       if (['submitted', 'response', 'interview', 'offer', 'closed'].includes(p.application?.state)) {
         try {

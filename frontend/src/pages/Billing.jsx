@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { CreditCard, Check, AlertTriangle, Loader2, RefreshCw, Info } from 'lucide-react';
+import { CreditCard, AlertTriangle, Loader2, RefreshCw, Info } from 'lucide-react';
 import { api } from '../lib/api';
 import { safeAssign } from '../lib/utils';
 

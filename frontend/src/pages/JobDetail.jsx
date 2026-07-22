@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
-  ArrowLeft, Building2, MapPin, ExternalLink, ShieldCheck, ShieldOff, AlertTriangle,
+  ArrowLeft, Building2, MapPin, ExternalLink, ShieldCheck, ShieldOff,
   HelpCircle, Send, EyeOff, TestTube2, CheckCircle2, XCircle, Clock, Sparkles,
 } from 'lucide-react';
 import { api, withIdempotency } from '../lib/api';

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Loader2, MailOpen, Copy, Check, AlertTriangle } from 'lucide-react';
 import { api } from '../lib/api';

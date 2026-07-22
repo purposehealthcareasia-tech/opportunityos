@@ -163,13 +163,42 @@ async def set_preferences(user_id: str, updates: dict[str, bool], *, actor: str)
 # Subscription lifecycle
 # ---------------------------------------------------------------------------
 
+def _valid_urlsafe_b64(value: Any) -> bool:
+    """The Web Push spec requires `p256dh` and `auth` to be URL-safe base64.
+    Reject structurally invalid keys at register time so pywebpush never
+    faults on `binascii.Error` at dispatch time (see prod log line
+    `backend.err.log` 20:49:50 — malformed subscription caused unhandled
+    dispatch crash before this guard was added)."""
+    if not isinstance(value, str) or not value:
+        return False
+    # Enforce urlsafe base64 alphabet strictly — no whitespace, no `+/`,
+    # no stray punctuation. p256dh is exactly 65 bytes (=> 87 chars unpadded);
+    # auth is 16 bytes (=> 22 chars unpadded). Accept a range to stay robust.
+    import re
+    if not re.fullmatch(r"[A-Za-z0-9_\-]+", value):
+        return False
+    import base64
+    try:
+        pad = "=" * (-len(value) % 4)
+        base64.urlsafe_b64decode(value + pad)
+        return True
+    except Exception:
+        return False
+
+
 async def register_subscription(*, user_id: str, subscription: dict[str, Any],
                                  user_agent: str | None) -> dict[str, Any]:
     """Upsert a push subscription for `user_id`. Idempotent by endpoint."""
     endpoint = subscription["endpoint"]
+    if not isinstance(endpoint, str) or not (
+        endpoint.startswith("https://") or endpoint.startswith("http://")
+    ):
+        raise ValueError("subscription_invalid_endpoint")
     keys = subscription.get("keys") or {}
     if not keys.get("p256dh") or not keys.get("auth"):
         raise ValueError("subscription_missing_keys")
+    if not _valid_urlsafe_b64(keys.get("p256dh")) or not _valid_urlsafe_b64(keys.get("auth")):
+        raise ValueError("subscription_malformed_keys")
     now = utc_now()
     db = get_db()
     doc_id = str(uuid.uuid4())
@@ -349,6 +378,18 @@ async def dispatch(user_id: str, category: str, data: dict[str, Any] | None = No
                                        "error": str(e)[:200]})
                 log.warning("webpush send failed user=%s code=%s err=%s",
                             user_id, code, str(e)[:200])
+        except (ValueError, TypeError) as e:  # malformed keys or endpoint
+            # A subscription with keys we cannot decode will NEVER succeed.
+            # Prune it so we stop retrying every dispatch and stop logging
+            # the same base64 traceback (see prod log line
+            # `backend.err.log` 20:49:50 pre-fix).
+            await _prune_dead(user_id, s["endpoint"],
+                              reason=f"malformed_subscription:{type(e).__name__}")
+            pruned += 1
+            device_results.append({"endpoint_tail": s["endpoint"][-24:],
+                                   "status": "pruned", "error": "malformed"})
+            log.warning("webpush malformed subscription pruned user=%s err=%s",
+                        user_id, str(e)[:120])
         except Exception as e:  # pragma: no cover
             failed += 1
             device_results.append({"endpoint_tail": s["endpoint"][-24:],

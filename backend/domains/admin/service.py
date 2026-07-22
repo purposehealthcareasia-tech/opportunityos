@@ -350,7 +350,32 @@ async def system_health(staff: dict = Depends(_require_admin)):
             # SEC-004(d) — deploy-flag disclosure lives HERE, behind admin auth,
             # not on the public `/api/health`.
             "prod_mode": bool(settings.PROD_MODE),
-            "ci_test_issuer_enabled": bool(settings.CI_TEST_ISSUER_ENABLED)}
+            "ci_test_issuer_enabled": bool(settings.CI_TEST_ISSUER_ENABLED),
+            # Ops visibility — what commit is actually running in this pod.
+            "build_sha": _read_build_sha()}
+
+
+def _read_build_sha() -> str:
+    """Best-effort build/commit SHA for admin ops visibility.
+
+    Preference order:
+      1. `BUILD_SHA` env var (set by CI/CD).
+      2. First 12 chars of the top line of `/app/.git/HEAD` → resolved.
+      3. `unknown` — never raises.
+    """
+    import os
+    v = (os.environ.get("BUILD_SHA") or "").strip()
+    if v:
+        return v[:40]
+    try:
+        head = open("/app/.git/HEAD", "r", encoding="utf-8").read().strip()
+        if head.startswith("ref:"):
+            ref_path = head.split(" ", 1)[1].strip()
+            sha = open(f"/app/.git/{ref_path}", "r", encoding="utf-8").read().strip()
+            return sha[:40]
+        return head[:40]
+    except Exception:
+        return "unknown"
 
 
 # ---------- Observability (C.7) — labeled STUB ----------

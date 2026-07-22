@@ -145,6 +145,64 @@ class TestSubscriptionLifecycle:
         row = await isolated_db.notification_subscriptions.find_one({"endpoint": endpoint})
         assert row["active"] is False and row["revoked_at"] is not None
 
+    @pytest.mark.asyncio
+    async def test_register_rejects_malformed_base64_keys(self, isolated_db):
+        """Guards against the prod bug where a subscription with invalid
+        base64 in p256dh/auth caused pywebpush to raise binascii.Error at
+        dispatch time (see `backend.err.log` line 20:49:50 pre-fix)."""
+        endpoint = _fake_endpoint()
+        # p256dh has 17 chars → not a valid base64 length (17 % 4 == 1).
+        bad_keys = {"p256dh": "not-base-64-!!!!!", "auth": "AAAA"}
+        with pytest.raises(ValueError, match="subscription_malformed_keys"):
+            await svc.register_subscription(
+                user_id="u", subscription={"endpoint": endpoint, "keys": bad_keys},
+                user_agent=None,
+            )
+        # Nothing persisted.
+        assert await isolated_db.notification_subscriptions.count_documents({}) == 0
+
+    @pytest.mark.asyncio
+    async def test_register_rejects_non_https_endpoint(self, isolated_db):
+        with pytest.raises(ValueError, match="subscription_invalid_endpoint"):
+            await svc.register_subscription(
+                user_id="u",
+                subscription={"endpoint": "ftp://evil.example/x", "keys": _fake_keys()},
+                user_agent=None,
+            )
+
+
+class TestMalformedSubscriptionPruning:
+    @pytest.mark.asyncio
+    async def test_pywebpush_binascii_error_prunes_subscription(self, isolated_db, monkeypatch):
+        """Regression: if a subscription somehow lands in Mongo with
+        malformed base64 keys (e.g. pre-fix legacy row), dispatch must
+        prune it, NOT keep retrying forever."""
+        import binascii
+        monkeypatch.setenv("VAPID_PUBLIC_KEY", "x"); monkeypatch.setenv("VAPID_PRIVATE_KEY", "y")
+        monkeypatch.setenv("VAPID_SUBJECT", "mailto:test@opportunityos.dev")
+        endpoint = _fake_endpoint()
+        # Bypass registration validation to seed a pre-existing malformed row.
+        await isolated_db.notification_subscriptions.insert_one({
+            "id": "sub-1", "user_id": "u", "endpoint": endpoint,
+            "keys": {"p256dh": "malformed", "auth": "malformed"},
+            "user_agent": "legacy", "active": True, "revoked_at": None,
+            "created_at": None, "last_seen_at": None,
+        })
+        def _raise(*a, **k):
+            raise binascii.Error(
+                "Invalid base64-encoded string: number of data characters (17) "
+                "cannot be 1 more than a multiple of 4"
+            )
+        with patch("pywebpush.webpush", side_effect=_raise):
+            res = await svc.dispatch(
+                "u", "application_updates",
+                data={"application_id": "a1"}, dedup_key="outcome:o1",
+            )
+        assert res["pruned"] == 1 and res["sent"] == 0 and res["failed"] == 0
+        row = await isolated_db.notification_subscriptions.find_one({"endpoint": endpoint})
+        assert row["active"] is False
+        assert row["prune_reason"].startswith("malformed_subscription:")
+
 
 # ---------------------------------------------------------------------------
 # Dispatch — opt-out enforcement, dedup, prune, VAPID absence.

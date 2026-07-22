@@ -5,6 +5,80 @@
 
 ---
 
+## 🚀 Deployment-Readiness — FINAL PASS (2026-02-21)
+
+**Label: `DEPLOY_READY_WITH_EXTERNAL_BLOCKERS`.**
+
+The code, build, tests, config, and startup guards are all verified. What
+remains is external — production credentials, DNS, vendor webhook
+registrations, and two human click-through smoke tests. Nothing else in
+this repo can turn those into `PRODUCTION_READY` on its own.
+
+**Fresh HEAD SHA at end of pass:** see `git log --oneline -1`.
+**Backend regression:** **405 / 405 pytest green** (was 402; +3 new
+malformed-subscription pruning tests).
+**Frontend production build:** clean under `CI=true` —
+**171.81 kB gz** main bundle, **7.14 kB gz** CSS, zero lint errors.
+**Prod fail-fast:** verified — server refuses to boot on
+`PROD_MODE=true + CI_TEST_ISSUER_ENABLED=true` and on
+`PROD_MODE=true + empty CORS_ALLOW_ORIGINS`, boots clean with a valid
+prod origin.
+
+### What was fixed this pass
+1. **P0 · deployment blocker** — `.gitignore` was blocking `backend/.env`
+   and `frontend/.env`. Emergent's deploy pipeline requires those files
+   present in the repo so it can overwrite them with production values on
+   deploy. `.gitignore` now permits them and keeps only `.env.local` /
+   `.env.*.local` ignored. Detected by `deployment_agent` static scan.
+2. **P0 · real runtime bug** — Web-push dispatch crashed with
+   `binascii.Error` on a malformed `p256dh` / `auth`. Prior tests mocked
+   `pywebpush` and never exercised this path, so it slipped through.
+   Fixed in two places:
+   - `register_subscription()` now rejects non-urlsafe-base64 keys and
+     non-`https://` endpoints with `400 subscription_malformed_keys` /
+     `subscription_invalid_endpoint` before anything is stored.
+   - `dispatch()` now catches `ValueError` / `TypeError` (which is what
+     `binascii.Error` inherits) and prunes the offending subscription
+     with `prune_reason=malformed_subscription:<type>`, so a legacy bad
+     row never causes repeat 500-log noise.
+   - New tests: `TestSubscriptionLifecycle::test_register_rejects_malformed_base64_keys`,
+     `TestSubscriptionLifecycle::test_register_rejects_non_https_endpoint`,
+     `TestMalformedSubscriptionPruning::test_pywebpush_binascii_error_prunes_subscription`.
+3. **Frontend lint** — 15 unused-import warnings across 9 pages that
+   would break a strict `CI=true` build. Removed. Production build now
+   clean under CI mode.
+4. **Ops observability** — `GET /api/v1/admin/health` now returns
+   `build_sha` (from `BUILD_SHA` env var if set, else `/app/.git/HEAD`)
+   so operators can confirm which commit is actually running in a pod.
+5. **New operator handoff doc** — `/app/memory/DEPLOYMENT.md` — full
+   preflight checklist, prod fail-fast reference, deploy sequence,
+   credential rollout table (per provider + exact webhook URL),
+   human-verification workflows (Google + Web Push), rollback /
+   incident procedures, observability signals, final go-live checklist.
+
+### Remaining external blockers (nothing more can be done in-repo)
+- Real Google OAuth click-through smoke test in a real browser.
+- Real Web Push subscribe + test-send + OS-receipt smoke test in a real
+  browser.
+- Apple Developer credentials (`APPLE_CLIENT_ID`, `APPLE_TEAM_ID`,
+  `APPLE_KEY_ID`, `APPLE_PRIVATE_KEY`, `APPLE_REDIRECT_URI`).
+- Twilio Verify credentials (`TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`,
+  `TWILIO_VERIFY_SERVICE_SID`).
+- Resend / SendGrid / Razorpay / PayPal / Paystack / ElevenLabs
+  credentials (see `DEPLOYMENT.md` §3 for the exact env var names).
+- Stripe live-mode key rotation (currently `TEST_MODE` on the shared
+  Emergent Stripe test key).
+- Managed production MongoDB URL with daily backups configured.
+- `CORS_ALLOW_ORIGINS` set to the prod origin (loopback is auto-stripped
+  in `PROD_MODE=true`).
+- `JWT_SECRET` and `INTERNAL_SERVICE_TOKEN` rotated to fresh 64-byte
+  values for prod.
+- Persistent-volume mount confirmed if relying on the local-disk storage
+  fallback (Emergent object storage is durable; local disk in a
+  fresh container is not).
+
+---
+
 ## 📊 16-Integration Audit — CORRECTED (2026-02-21)
 
 **HEAD SHA at audit time:** `c3df1f54` (`git log --oneline -1`).

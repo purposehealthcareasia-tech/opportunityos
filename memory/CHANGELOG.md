@@ -1,5 +1,75 @@
 # OpportunityOS — CHANGELOG
 
+## 2026-02-21 · Deployment-readiness FINAL pass — P0 blockers cleared (P0)
+
+**Full backend regression: 405 / 405 pytest green** (was 402; +3 new
+malformed-subscription pruning tests). **Frontend `CI=true yarn build`:
+clean, 171.81 kB gz main bundle.** Prod fail-fast verified.
+
+### P0 · Fixed
+- **`.gitignore` was blocking `.env` files.** `deployment_agent` static
+  scan flagged that Emergent's deploy pipeline needs `backend/.env` and
+  `frontend/.env` present in the repo so it can overwrite them with
+  production values on deploy. Old rules removed; only `.env.local` /
+  `.env.*.local` remain ignored for ad-hoc local overrides.
+- **Web-push dispatch crashed on malformed `p256dh` / `auth`.** Prod log
+  captured `binascii.Error: Invalid base64-encoded string ...` at
+  `backend/domains/notifications/service.py:328`. Tests mocked
+  `pywebpush` so this path was never exercised.
+  - `register_subscription()` now rejects non-urlsafe-base64 keys and
+    non-`https://` endpoints with a 400 before storage.
+  - `dispatch()` now catches `ValueError` / `TypeError` (which is what
+    `binascii.Error` inherits from) and prunes the offending row with
+    `prune_reason=malformed_subscription:<type>`, stopping the retry
+    loop that was firing on every dispatch.
+  - 3 new regression tests in `test_notifications_webpush.py`.
+
+### P1 · Fixed
+- **Frontend `CI=true` build.** 15 unused imports across 9 pages
+  (`Admin`, `Applications`, `Approvals`, `Billing`, `Feed`, `JobDetail`,
+  `Privacy`, `Tracker`, `ApplicationPrep`) would break a strict CI
+  build. All removed. Build now compiles cleanly with
+  `Treating warnings as errors because process.env.CI = true`.
+- **Ops build visibility.** `GET /api/v1/admin/health` (admin cookie
+  gated) now returns `build_sha` — from `BUILD_SHA` env var if set,
+  else best-effort read of `/app/.git/HEAD`. Public `/api/health` is
+  unchanged (never leaks deploy flags).
+
+### P2 · Added
+- **`/app/memory/DEPLOYMENT.md`** — operator runbook: env-var
+  preflight table, prod fail-fast reference, deploy sequence,
+  per-provider credential rollout with exact webhook URLs, human
+  verification workflows for Google + Web Push, rollback / incident
+  procedures, ops observability signals, final go-live checklist.
+
+### Verified this pass (no code change needed)
+- `PROD_MODE=true + CI_TEST_ISSUER_ENABLED=true` → `RuntimeError` at
+  import (verified via subprocess).
+- `PROD_MODE=true + empty CORS_ALLOW_ORIGINS` → `RuntimeError` at import
+  (verified via subprocess).
+- `PROD_MODE=true + CORS_ALLOW_ORIGINS=https://prod.example.com` →
+  boots clean.
+- Public `GET /api/health` returns `{ok, mongo, phase,
+  policy_text_version}` only — no deploy flags.
+- Internal fixture-rebase endpoint returns 503 in `PROD_MODE=true`
+  (existing guard, unchanged).
+- Seeder skips demo companies / sample jobs / hardcoded-password
+  fixture accounts in `PROD_MODE=true` (existing guard, unchanged).
+
+### Files changed
+- `.gitignore`
+- `backend/domains/notifications/service.py`
+- `backend/tests/test_notifications_webpush.py` (+3 tests)
+- `backend/domains/admin/service.py` (build_sha)
+- `frontend/src/pages/{Admin,Applications,Approvals,Billing,Feed,JobDetail,Privacy,Tracker,ApplicationPrep}.jsx` (unused imports)
+- `memory/PRD.md`, `memory/CHANGELOG.md`, `memory/DEPLOYMENT.md` (new)
+
+### Deploy label
+**`DEPLOY_READY_WITH_EXTERNAL_BLOCKERS`** — repo is complete; external
+credentials, DNS, vendor webhook registrations, and two human
+click-through smoke tests (Google, Web Push) remain.
+
+
 ## 2026-02-21 · 16-integration audit — CORRECTED taxonomy + totals (docs-only)
 
 **DOCS-ONLY PASS. No feature code changed. No new backend/frontend tests run

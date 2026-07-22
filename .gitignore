@@ -1,9 +1,11 @@
-# Environment files - never commit secrets
-.env
-*.env
-!*.env.example
-backend/.env
-frontend/.env
+# Environment files
+# NOTE: backend/.env and frontend/.env are intentionally NOT ignored.
+# The Emergent deploy pipeline requires them present in the repo and
+# auto-overwrites them with production values on deploy. See PRD /
+# CHANGELOG deployment-readiness sections.
+# .venv-local ignores below cover ad-hoc local `.env.local`-style files.
+.env.local
+.env.*.local
 
 # Python
 __pycache__/

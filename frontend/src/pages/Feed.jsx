@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
-  Rss, ExternalLink, ShieldCheck, ShieldOff, AlertTriangle, Clock, MapPin, Building2,
-  Send, X, Info, ArrowRight, Ban, EyeOff, LinkIcon, TestTube2, HelpCircle,
+  Rss, ExternalLink, ShieldOff, AlertTriangle, Clock, MapPin, Building2,
+  Send, X, ArrowRight, Ban, EyeOff, LinkIcon, TestTube2, HelpCircle,
 } from 'lucide-react';
 import { api, withIdempotency } from '../lib/api';
 import Card, { CardHeader } from '../components/ui/Card';

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { CheckCircle2, Clock, AlertTriangle, ShieldCheck, Loader2 } from 'lucide-react';
+import { Clock, ShieldCheck, Loader2 } from 'lucide-react';
 import { api } from '../lib/api';
 
 /**
