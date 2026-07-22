@@ -6,6 +6,10 @@
 # .venv-local ignores below cover ad-hoc local `.env.local`-style files.
 .env.local
 .env.*.local
+# Candidate prod secrets are handed to the founder out-of-band and MUST
+# never enter git history.
+memory/.prod_secrets_DO_NOT_COMMIT
+memory/.*.secret
 
 # Python
 __pycache__/
