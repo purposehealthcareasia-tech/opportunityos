@@ -1,8 +1,15 @@
-"""Drive app to awaiting_approval via API for UI test."""
-import json, urllib.parse, uuid, requests
+"""Drive app to awaiting_approval via API for UI test.
 
-BASE = "https://lynk-preview-2.preview.emergentagent.com"
-SVC = "oppos_int_svc_zK4a9jH2mN8pQ7rS3vT6wY0xB1cD5eF8kL7mR9qP"
+Reads INTERNAL_SERVICE_TOKEN from the environment (never hardcoded). Run as:
+    INTERNAL_SERVICE_TOKEN=$(awk -F= '/^INTERNAL_SERVICE_TOKEN=/{print $2}' \
+        /app/backend/.env) python /app/test_reports/_drive_awaiting.py
+"""
+import json, os, sys, urllib.parse, uuid, requests
+
+BASE = os.environ.get("APP_BASE_URL", "https://lynk-preview-2.preview.emergentagent.com")
+SVC = os.environ.get("INTERNAL_SERVICE_TOKEN")
+if not SVC:
+    sys.exit("INTERNAL_SERVICE_TOKEN env var is required — refusing to run without it.")
 
 def h(t, i=None):
     d = {"Authorization": f"Bearer {t}", "Content-Type": "application/json"}
