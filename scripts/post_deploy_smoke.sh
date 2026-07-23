@@ -18,8 +18,10 @@
 #   • Never mutates production data outside the founder's own fresh signup
 #     used for the journey probe.
 #
-# Source SHA at time of authoring: 82a143443e3b92a06f9ac90c17663dd07e5cf5e5
-# Rollback SHA:                    d247a3836041eb0e69ca86cd1fe0b16167fa7aa1
+# Source SHA at time of authoring: 82a14344 (verified launch SHA post
+# hardcoded-token-fix). Rollback SHA: d247a3836041eb0e69ca86cd1fe0b16167fa7aa1.
+# The script auto-detects HEAD at run time (see check 2), so this comment
+# will not go stale.
 # ============================================================================
 
 set -eo pipefail
@@ -77,8 +79,16 @@ check "public health does NOT expose prod_mode / ci_test_issuer_enabled / build_
 #  2 — Deployed build_sha == source SHA
 # ---------------------------------------------------------------------------
 echo "== 2 · deployed build sha"
-SOURCE_SHA="82a143443e3b92a06f9ac90c17663dd07e5cf5e5"
-if [[ -n "$OVERRIDE_SOURCE_SHA" ]]; then SOURCE_SHA="$OVERRIDE_SOURCE_SHA"; fi
+# Source SHA is auto-detected from the working repo at run time (the smoke
+# plan is invoked from the same checkout that was deployed). Can be
+# overridden with OVERRIDE_SOURCE_SHA=... if you're smoke-testing a
+# different revision than HEAD.
+if [[ -n "$OVERRIDE_SOURCE_SHA" ]]; then
+  SOURCE_SHA="$OVERRIDE_SOURCE_SHA"
+else
+  SOURCE_SHA="$(git -C "$(dirname "$0")/.." rev-parse HEAD 2>/dev/null || echo unknown)"
+fi
+echo "  source SHA = ${SOURCE_SHA:0:12}"
 if [[ -z "$ADMIN_EMAIL" || -z "$ADMIN_PASSWORD" ]]; then
   echo "  SKIP · admin health probe (needs ADMIN_EMAIL + ADMIN_PASSWORD env vars for the bootstrap prod admin)"
 else
