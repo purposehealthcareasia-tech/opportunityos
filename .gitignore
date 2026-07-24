@@ -1,9 +1,14 @@
 # Environment files
-# NOTE: backend/.env and frontend/.env are intentionally NOT ignored.
-# The Emergent deploy pipeline requires them present in the repo and
-# auto-overwrites them with production values on deploy. See PRD /
-# CHANGELOG deployment-readiness sections.
-# .venv-local ignores below cover ad-hoc local `.env.local`-style files.
+# Public-repo architecture (2026-02-21): backend/.env + frontend/.env are
+# intentionally UNTRACKED. Emergent's publish pipeline reads them from the
+# workspace filesystem (support_agent confirmed), NOT from git — so they
+# never need to be in the tracked repo. Historical values that were
+# tracked before 2026-02-21 are world-readable via git history but are
+# fossils; no current live deploy value ever matches them.
+# config.py defaults are fail-safe (PROD_MODE=False, CI_TEST_ISSUER_ENABLED=False
+# when unset), so a missing workspace .env would boot in safe not-prod mode.
+backend/.env
+frontend/.env
 .env.local
 .env.*.local
 # Candidate prod secrets are handed to the founder out-of-band and MUST
