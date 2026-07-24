@@ -31,3 +31,22 @@
   - Removed .expo/ from git tracking
   - expo-doctor: 18/18 pass, expo export: clean
 - **Files modified**: 10 files, 4 new assets
+
+## Iteration 3 — Phase 3: ApplicationPrep, Privacy, store compliance sweep
+- **Commit**: 26e5a2ab
+- **Date**: 2026-07-24
+- **Changes**:
+  - Created `app/prep/[applicationId].tsx` — full ApplicationPrep workflow (3 tabs: Resume, Screeners, Summary; complete state machine; all testIDs)
+  - Created `app/privacy.tsx` — Privacy & Data management (consent scopes, release log, export, delete account)
+  - Fixed `preferences.tsx` TypeScript TS2345 error (explicit DEFAULT_PREFS type annotation)
+  - Added "Open prep →" link in applications list
+  - Added "Privacy & Data" nav link in settings
+  - Registered prep/[applicationId] and privacy routes in root layout
+  - Added web.splash.backgroundColor to app.json
+  - Classified Expo web splash as KNOWN WEB-PREVIEW ARTIFACT
+  - Icon raw pixel hash: EXACT MATCH (9c46c21b…)
+  - Privacy URL: documented WEB-LANE BLOCKER (no public unauthenticated route)
+  - Created readiness sweep closure table: phase3_readiness_sweep.md
+  - expo-doctor: 18/18, tsc: 0 errors, ESLint: 0 issues, export: clean
+- **Files modified**: 7 (2 new, 5 modified)
+- **Web files referenced**: frontend/src/pages/ApplicationPrep.jsx, frontend/src/pages/Applications.jsx, frontend/src/pages/Privacy.jsx, frontend/src/lib/api.js
