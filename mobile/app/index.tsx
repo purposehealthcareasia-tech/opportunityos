@@ -36,9 +36,9 @@ export default function LandingScreen() {
         <View style={styles.header}>
           <View style={styles.logoRow}>
             <View style={styles.logoBox}>
-              <Text style={styles.logoLetter}>O</Text>
+              <Text style={styles.logoLetter}>F</Text>
             </View>
-            <Text style={[styles.logoName, { color: c.ink }]}>OpportunityOS</Text>
+            <Text style={[styles.logoName, { color: c.ink }]}>Fynd</Text>
           </View>
         </View>
 
@@ -113,7 +113,7 @@ export default function LandingScreen() {
         </View>
 
         <View style={styles.footer}>
-          <Text style={{ fontSize: 11, color: c.inkMuted }}>OpportunityOS · v0.1</Text>
+          <Text style={{ fontSize: 11, color: c.inkMuted }}>Fynd · v1.0</Text>
         </View>
       </ScrollView>
     </SafeAreaView>

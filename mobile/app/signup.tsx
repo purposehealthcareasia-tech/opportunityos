@@ -86,7 +86,7 @@ export default function SignupScreen() {
           <View style={styles.content}>
             <Text style={[styles.title, { color: c.ink }]}>Create your account</Text>
             <Text style={[styles.subtitle, { color: c.inkMuted }]}>
-              You control what OpportunityOS does on your behalf. Each scope is a promise about how your data is used.
+              You control what Fynd does on your behalf. Each scope is a promise about how your data is used.
             </Text>
 
             <View style={[styles.card, { backgroundColor: c.card, borderColor: c.border }]}>
@@ -140,7 +140,7 @@ export default function SignupScreen() {
             </View>
 
             <Text style={{ fontSize: 12, color: c.inkMuted, marginTop: 16, lineHeight: 17 }}>
-              By creating an account, you agree that OpportunityOS will act as a candidate-fiduciary. We will never auto-submit without your explicit approval, and we will never invent facts about you.
+              By creating an account, you agree that Fynd will act as a candidate-fiduciary. We will never auto-submit without your explicit approval, and we will never invent facts about you.
             </Text>
           </View>
         </ScrollView>
