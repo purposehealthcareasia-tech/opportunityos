@@ -1,14 +1,17 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, RefreshControl, StyleSheet } from 'react-native';
-import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../src/lib/theme';
 import { api } from '../src/lib/api';
 import { LoadingBlock, ErrorBlock } from '../src/components/StatusBlocks';
 import Button from '../src/components/Button';
+import AuthGate from '../src/components/AuthGate';
 
 export default function ApprovalsScreen() {
-  const router = useRouter();
+  return <AuthGate><ApprovalsContent /></AuthGate>;
+}
+
+function ApprovalsContent() {
   const [apps, setApps] = useState<any[]>([]);
   const [approved, setApproved] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);

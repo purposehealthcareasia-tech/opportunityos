@@ -6,6 +6,7 @@ import Input from '../src/components/Input';
 import Button from '../src/components/Button';
 import { Card, CardHeader } from '../src/components/Card';
 import { LoadingBlock, ErrorBlock } from '../src/components/StatusBlocks';
+import AuthGate from '../src/components/AuthGate';
 
 const DEFAULT_PREFS = {
   role_families: [],
@@ -19,6 +20,10 @@ const DEFAULT_PREFS = {
 };
 
 export default function PreferencesScreen() {
+  return <AuthGate><PreferencesContent /></AuthGate>;
+}
+
+function PreferencesContent() {
   const [prefs, setPrefs] = useState(DEFAULT_PREFS);
   const [version, setVersion] = useState(0);
   const [loading, setLoading] = useState(true);

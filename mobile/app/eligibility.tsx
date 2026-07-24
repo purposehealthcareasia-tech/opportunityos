@@ -1,11 +1,12 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, StyleSheet } from 'react-native';
+import React, { useCallback, useEffect, useState } from 'react';
+import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../src/lib/theme';
 import { api, withIdempotency } from '../src/lib/api';
 import Button from '../src/components/Button';
 import { Card, CardHeader } from '../src/components/Card';
 import { LoadingBlock, ErrorBlock } from '../src/components/StatusBlocks';
+import AuthGate from '../src/components/AuthGate';
 
 const STATUSES = [
   { k: 'citizen', label: 'US citizen' },
@@ -19,6 +20,10 @@ const STATUSES = [
 ];
 
 export default function EligibilityScreen() {
+  return <AuthGate><EligibilityContent /></AuthGate>;
+}
+
+function EligibilityContent() {
   const [status, setStatus] = useState('unspecified');
   const [version, setVersion] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -89,8 +94,6 @@ export default function EligibilityScreen() {
     </ScrollView>
   );
 }
-
-import { Platform } from 'react-native';
 
 const styles = StyleSheet.create({
   container: { flex: 1 },

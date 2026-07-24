@@ -4,10 +4,15 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../src/lib/theme';
 import { api } from '../src/lib/api';
 import { LoadingBlock, ErrorBlock } from '../src/components/StatusBlocks';
+import AuthGate from '../src/components/AuthGate';
 
 const FUNNEL_STAGES = ['prepared', 'submitted', 'response', 'interview', 'offer'];
 
 export default function AnalyticsScreen() {
+  return <AuthGate><AnalyticsContent /></AuthGate>;
+}
+
+function AnalyticsContent() {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');

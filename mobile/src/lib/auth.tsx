@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useMemo, useState, useCallback } from 'react';
 import { api, setOnUnauthorized } from './api';
+import { hydrateTokens, captureSessionFromResponse, clearTokens } from './session';
 
 interface User {
   id: string;
@@ -11,7 +12,13 @@ interface User {
 interface AuthContextType {
   user: User | null;
   loading: boolean;
-  signup: (params: { email: string; password: string; name: string; consents: Record<string, boolean>; policy_text_version: string }) => Promise<User>;
+  signup: (params: {
+    email: string;
+    password: string;
+    name: string;
+    consents: Record<string, boolean>;
+    policy_text_version: string;
+  }) => Promise<User>;
   login: (params: { email: string; password: string }) => Promise<User>;
   logout: () => Promise<void>;
   refresh: () => Promise<User | null>;
@@ -36,29 +43,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  /* Boot: hydrate tokens from secure-store then validate session */
   useEffect(() => {
-    setOnUnauthorized(() => setUser(null));
-    refresh();
-  }, [refresh]);
+    setOnUnauthorized(() => {
+      clearTokens();
+      setUser(null);
+    });
+    (async () => {
+      await hydrateTokens();
+      await refresh();
+    })();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const signup = useCallback(async ({ email, password, name, consents, policy_text_version }: any) => {
-    const { data } = await api.post('/api/v1/auth/signup', {
+    const response = await api.post('/api/v1/auth/signup', {
       email, password, name, consents, policy_text_version,
     });
-    setUser(data.user);
-    return data.user;
+    await captureSessionFromResponse(response);
+    setUser(response.data.user);
+    return response.data.user;
   }, []);
 
   const login = useCallback(async ({ email, password }: { email: string; password: string }) => {
-    const { data } = await api.post('/api/v1/auth/login', { email, password });
-    setUser(data.user);
-    return data.user;
+    const response = await api.post('/api/v1/auth/login', { email, password });
+    await captureSessionFromResponse(response);
+    setUser(response.data.user);
+    return response.data.user;
   }, []);
 
   const logout = useCallback(async () => {
     try {
       await api.post('/api/v1/auth/logout', {});
-    } catch {}
+    } catch { /* ignore — clearing client state is sufficient */ }
+    await clearTokens();
     setUser(null);
   }, []);
 

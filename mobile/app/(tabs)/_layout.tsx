@@ -14,7 +14,7 @@ export default function TabLayout() {
     if (!loading && !user) {
       router.replace('/login');
     }
-  }, [user, loading]);
+  }, [user, loading, router]);
 
   if (loading) {
     return (

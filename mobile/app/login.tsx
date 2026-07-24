@@ -10,12 +10,19 @@ import Button from '../src/components/Button';
 
 export default function LoginScreen() {
   const router = useRouter();
-  const { login } = useAuth();
+  const { login, user, loading } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const c = Colors.light;
+
+  // Redirect if already authenticated (e.g. reload on /login with valid session)
+  React.useEffect(() => {
+    if (!loading && user) {
+      router.replace('/(tabs)/feed');
+    }
+  }, [user, loading, router]);
 
   async function handleLogin() {
     setError('');

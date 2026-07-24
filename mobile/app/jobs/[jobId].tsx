@@ -6,8 +6,13 @@ import { Colors } from '../../src/lib/theme';
 import { api } from '../../src/lib/api';
 import { REASON_LABELS } from '../../src/lib/utils';
 import { LoadingBlock, ErrorBlock } from '../../src/components/StatusBlocks';
+import AuthGate from '../../src/components/AuthGate';
 
 export default function JobDetailScreen() {
+  return <AuthGate><JobDetailContent /></AuthGate>;
+}
+
+function JobDetailContent() {
   const { jobId } = useLocalSearchParams<{ jobId: string }>();
   const [job, setJob] = useState<any>(null);
   const [loading, setLoading] = useState(true);

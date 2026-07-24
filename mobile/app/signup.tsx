@@ -13,7 +13,7 @@ import Checkbox from '../src/components/Checkbox';
 
 export default function SignupScreen() {
   const router = useRouter();
-  const { signup } = useAuth();
+  const { signup, user, loading: authLoading } = useAuth();
   const [scopes, setScopes] = useState(CONSENT_SCOPES_FALLBACK);
   const [policyVersion, setPolicyVersion] = useState(POLICY_TEXT_VERSION_FALLBACK);
   const [name, setName] = useState('');
@@ -23,6 +23,13 @@ export default function SignupScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const c = Colors.light;
+
+  // Redirect if already authenticated
+  React.useEffect(() => {
+    if (!authLoading && user) {
+      router.replace('/(tabs)/feed');
+    }
+  }, [user, authLoading, router]);
 
   useEffect(() => {
     (async () => {
