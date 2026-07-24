@@ -1,5 +1,56 @@
 # OpportunityOS — CHANGELOG
 
+## 2026-02-21 · Public-repo pre-publish architecture change (P0)
+
+**Repo is public.** Historical `backend/.env` values (tracked since
+`d247a383`) are world-readable. Support_agent confirmed publish reads
+from workspace filesystem, not GitHub, so `.env` files never needed to
+be tracked at all — untracking is the correct architecture.
+
+### Executed (this pass)
+- `ccffaa73` — `git rm --cached backend/.env frontend/.env` + `.gitignore`
+  additions. Workspace files remain in the pod as the sole publish-time
+  config source. No future secret material enters git.
+- Workspace `backend/.env` (post-P2) populated with the real prod
+  secrets from `/app/memory/.prod_secrets_DO_NOT_COMMIT` +
+  `PROD_MODE=true` + `CI_TEST_ISSUER_ENABLED=false` + placeholder
+  `CORS_ALLOW_ORIGINS=https://placeholder.emergent.host`. This is what
+  Publish #1 will boot with — real prod secrets from t=0.
+- Boot probe against the actual workspace file passed (exit 0,
+  `PROD_MODE=True`, `CI_TEST_ISSUER_ENABLED=False`, 138 routes).
+- Real prod secret cross-scan: 0 hits across all tracked files AND all
+  git history (verified `git log --all -p -S`).
+
+### Consciously accepted trade-off (rider 3)
+The shared preview pod now holds real prod secrets in its workspace
+`.env`. This is safe for launch because:
+- Preview backend supervisor was NOT restarted after the Step A + rotation
+  commits, so it still has the old preview env loaded in memory.
+- Only the deployed prod container reads the workspace file at
+  Publish time.
+- The prod secrets never enter git under this architecture.
+
+**Follow-up P1 (post-launch stability):** restore preview-specific
+values in workspace `backend/.env` and restart preview supervisor so
+preview never runs prod credentials in-process. Scheduled AFTER the
+smoke plan is green and both human click-throughs are done.
+
+### Founder follow-ups (post-launch)
+1. Email Emergent support to rotate `EMERGENT_LLM_KEY` — historical
+   values in tracked git history are publicly discoverable.
+2. Reissue the Emergent-managed GitHub push token (embedded in
+   `.git/config` origin URL — exposed in supervision transcript).
+3. Optionally flip repo to private — architecturally not required
+   under this design but provides defense-in-depth.
+
+### `config.py` defaults verified fail-safe
+- `PROD_MODE` defaults to `False` when env var unset (safe non-prod).
+- `CI_TEST_ISSUER_ENABLED` defaults to `False` when env var unset
+  (**auth-bypass-safe** — CI test issuer stays OFF).
+- Therefore a missing workspace `.env` at boot would boot cleanly in
+  safe not-prod mode, never open an auth bypass.
+
+
 ## 2026-02-21 · Deployment-readiness FINAL pass — P0 blockers cleared (P0)
 
 **Full backend regression: 405 / 405 pytest green** (was 402; +3 new
