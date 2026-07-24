@@ -33,6 +33,8 @@ from core.deps import get_current_user
 from core.time_utils import utc_now
 from core.config import settings
 from domains.audit import service as audit
+from domains.subscriptions import service as subs_svc
+from services import plans as plans_svc
 
 
 router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
@@ -197,6 +199,67 @@ async def admin_refund(sub_id: str, body: RefundBody, staff: dict = Depends(_req
     await audit.write(staff["id"], "admin.refund_issued", f"subscription:{sub_id}",
                       {"reason": body.reason, "note": body.note, "tx_id": tx.get("id") if tx else None})
     return {"refunded": True, "reason": body.reason, "tx_id": (tx or {}).get("id")}
+
+
+# ---------- Plan grant (comp / migration / support tool) ----------
+# Admin-only path to set a user's subscription plan directly, bypassing Stripe.
+# Use cases: founder self-comp, migration from legacy plans, support-desk
+# escalations for VIPs or partner accounts. Idempotent by design — repeating
+# the same grant is a no-op that still writes an audit row so we retain the
+# ledger of who asked when.
+
+class GrantPlanBody(BaseModel):
+    user_id: str = Field(..., min_length=1, max_length=200,
+                          description="Target user id (uuid).")
+    plan_slug: str = Field(..., description="Plan slug: one of free|plus|pro|max.")
+    note: str = Field(default="", max_length=1000,
+                       description="Free-text audit note (why the grant was issued).")
+
+
+@router.post("/subscriptions/grant")
+async def admin_grant_plan(body: GrantPlanBody,
+                           staff: dict = Depends(_require_admin_only)):
+    """Grant / set a user's subscription plan directly. Admin-only, audited,
+    idempotent. Does NOT touch Stripe — see /api/v1/billing/checkout for the
+    paid flow. Intended for comp accounts, migrations, and support escalations."""
+    plan_slug = (body.plan_slug or "").strip().lower()
+    if plan_slug not in plans_svc.PLANS:
+        raise HTTPException(status_code=400, detail={
+            "error": "invalid_plan_slug",
+            "allowed": sorted(plans_svc.PLANS.keys()),
+        })
+    db = get_db()
+    user = await db.users.find_one({"id": body.user_id}, {"_id": 0, "id": 1, "email": 1})
+    if not user:
+        raise HTTPException(status_code=404, detail={"error": "user_not_found"})
+
+    existing = await db.subscriptions.find_one({"user_id": body.user_id},
+                                                 {"_id": 0, "plan": 1, "id": 1})
+    previous_plan = (existing or {}).get("plan")
+    already_on_plan = previous_plan == plan_slug
+
+    sub = await subs_svc.set_plan(body.user_id, plan_slug,
+                                     actor=f"admin:{staff['id']}")
+
+    await audit.write(
+        staff["id"],
+        "admin.plan_granted",
+        f"user:{body.user_id}",
+        {
+            "plan": plan_slug,
+            "previous_plan": previous_plan,
+            "already_on_plan": already_on_plan,
+            "note": body.note,
+        },
+    )
+    return {
+        "granted": not already_on_plan,
+        "already_on_plan": already_on_plan,
+        "plan": plan_slug,
+        "previous_plan": previous_plan,
+        "subscription_id": sub.get("id"),
+        "user_id": body.user_id,
+    }
 
 
 # ---------- Manual queue (A4) ----------
