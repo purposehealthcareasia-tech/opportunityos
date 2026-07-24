@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, RefreshControl, StyleSheet, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, RefreshControl, StyleSheet, KeyboardAvoidingView, Platform, Linking } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../src/lib/theme';
@@ -157,6 +157,11 @@ export default function SettingsScreen() {
           <TouchableOpacity style={[styles.navLink, { borderColor: c.border }]} onPress={() => router.push('/analyticsScreen')}>
             <Ionicons name="bar-chart-outline" size={18} color={c.ink} />
             <Text style={{ fontSize: 14, color: c.ink, flex: 1 }}>Analytics</Text>
+            <Ionicons name="chevron-forward" size={16} color={c.inkMuted} />
+          </TouchableOpacity>
+          <TouchableOpacity testID="nav-privacy" style={[styles.navLink, { borderColor: c.border }]} onPress={() => router.push('/privacy')}>
+            <Ionicons name="lock-closed-outline" size={18} color={c.ink} />
+            <Text style={{ fontSize: 14, color: c.ink, flex: 1 }}>Privacy & Data</Text>
             <Ionicons name="chevron-forward" size={16} color={c.inkMuted} />
           </TouchableOpacity>
         </View>

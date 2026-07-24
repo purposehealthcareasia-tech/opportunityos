@@ -123,18 +123,27 @@ export default function ApplicationsScreen() {
             </View>
             <TimelineBar state={a.state} />
 
-            {a.state !== 'closed' && (
-              <View style={styles.transitionRow}>
-                {a.state === 'shortlisted' && (
-                  <Button size="sm" variant="secondary" onPress={() => transition(a, 'preparing')} loading={busyId === a.id} testID={`app-transition-${a.id}-preparing`}>
-                    <Text style={{ fontSize: 12, color: c.ink }}>Start Preparing</Text>
+            <View style={styles.transitionRow}>
+              <TouchableOpacity
+                testID={`application-prep-link-${a.id}`}
+                onPress={() => router.push(`/prep/${a.id}`)}
+                activeOpacity={0.7}
+              >
+                <Text style={{ fontSize: 12, color: Colors.accent, textDecorationLine: 'underline' }}>Open prep →</Text>
+              </TouchableOpacity>
+              {a.state !== 'closed' && (
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  {a.state === 'shortlisted' && (
+                    <Button size="sm" variant="secondary" onPress={() => transition(a, 'preparing')} loading={busyId === a.id} testID={`app-transition-${a.id}-preparing`}>
+                      <Text style={{ fontSize: 12, color: c.ink }}>Start Preparing</Text>
+                    </Button>
+                  )}
+                  <Button size="sm" variant="ghost" onPress={() => transition(a, 'closed')} loading={busyId === a.id}>
+                    <Text style={{ fontSize: 12, color: c.inkMuted }}>Close</Text>
                   </Button>
-                )}
-                <Button size="sm" variant="ghost" onPress={() => transition(a, 'closed')} loading={busyId === a.id}>
-                  <Text style={{ fontSize: 12, color: c.inkMuted }}>Close</Text>
-                </Button>
-              </View>
-            )}
+                </View>
+              )}
+            </View>
           </TouchableOpacity>
         ))
       )}

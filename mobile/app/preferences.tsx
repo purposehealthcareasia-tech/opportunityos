@@ -8,11 +8,20 @@ import { Card, CardHeader } from '../src/components/Card';
 import { LoadingBlock, ErrorBlock } from '../src/components/StatusBlocks';
 import AuthGate from '../src/components/AuthGate';
 
-const DEFAULT_PREFS = {
+const DEFAULT_PREFS: {
+  role_families: string[];
+  locations: string[];
+  remote_ok: boolean;
+  salary_floor_usd: number | null;
+  search_intensity: string;
+  employer_include: string[];
+  employer_exclude: string[];
+  notes: string;
+} = {
   role_families: [],
   locations: [],
   remote_ok: false,
-  salary_floor_usd: null as number | null,
+  salary_floor_usd: null,
   search_intensity: 'medium',
   employer_include: [],
   employer_exclude: [],
