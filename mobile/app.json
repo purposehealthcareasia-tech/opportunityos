@@ -1,0 +1,29 @@
+{
+  "expo": {
+    "name": "OpportunityOS",
+    "slug": "opportunityos",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "opportunityos",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.opportunityos.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0F172A"
+      },
+      "package": "com.opportunityos.app"
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store"
+    ]
+  }
+}
