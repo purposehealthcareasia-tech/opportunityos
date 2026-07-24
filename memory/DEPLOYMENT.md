@@ -374,3 +374,141 @@ curl -sI -H "Origin: https://evil.example.com" \
 curl -sI -H "Origin: https://evil.example.com" https://fynd.llc/api/health \
   | grep -i access-control
 ```
+
+### 7.1 · Escalation (2026-07-24) — edge OVERWRITES app-emitted exact-origin echo
+
+Follow-up forensics while adding the Expo web preview origin
+`https://lynk-preview-2.expo.preview.emergentagent.com` to the workspace
+`CORS_ALLOW_ORIGINS` allowlist upgraded the earlier finding. The preview
+edge does not merely inject a wildcard onto CORS-header-less responses —
+**it overwrites an app-emitted exact-origin `Access-Control-Allow-Origin`
+header with `*`** and strips `Access-Control-Allow-Credentials` from the
+OPTIONS preflight response entirely.
+
+**Setup:** `CORS_ALLOW_ORIGINS` (workspace, preview-safe) contains four
+origins including the Expo web preview host. Backend restarted; running
+process view confirms `CORS_ORIGINS_COUNT=4`.
+
+**Direct-loopback probe (`http://localhost:8001`), `Origin:
+https://lynk-preview-2.expo.preview.emergentagent.com`:**
+
+```
+OPTIONS /api/v1/auth/login
+→ HTTP/1.1 200
+  vary: Origin
+  access-control-allow-origin: https://lynk-preview-2.expo.preview.emergentagent.com
+  access-control-allow-credentials: true
+  access-control-allow-methods: DELETE, GET, HEAD, OPTIONS, PATCH, POST, PUT
+  access-control-allow-headers: content-type,x-csrf-token
+  access-control-max-age: 600
+
+GET /api/health
+→ HTTP/1.1 200
+  vary: Origin
+  access-control-allow-origin: https://lynk-preview-2.expo.preview.emergentagent.com
+  access-control-allow-credentials: true
+  access-control-expose-headers: X-Idempotent-Replay
+
+POST /api/v1/auth/login  (invalid body → 422; headers preserved)
+→ HTTP/1.1 422
+  vary: Origin
+  access-control-allow-origin: https://lynk-preview-2.expo.preview.emergentagent.com
+  access-control-allow-credentials: true
+  access-control-expose-headers: X-Idempotent-Replay
+```
+
+App CORS behavior is standards-clean: exact-origin echo for the
+allowlisted origin, credentials header present on both the preflight and
+the actual response.
+
+**Public preview edge (`https://lynk-preview-2.preview.emergentagent.com`),
+identical `Origin`:**
+
+```
+OPTIONS /api/v1/auth/login
+→ HTTP/2 204
+  server: cloudflare
+  access-control-allow-origin: *                                  ← WILDCARD OVERWRITE
+  access-control-allow-headers: *
+  access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS, HEAD, PATCH
+  access-control-max-age: 300
+  (access-control-allow-credentials — HEADER STRIPPED)
+
+GET /api/health
+→ HTTP/2 200
+  server: cloudflare
+  access-control-allow-origin: *                                  ← WILDCARD OVERWRITE
+  access-control-allow-credentials: true                          ← spec-invalid with `*`
+  access-control-allow-headers: *
+  access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS, HEAD, PATCH
+  access-control-max-age: 300
+
+POST /api/v1/auth/login  (invalid body → 422)
+→ HTTP/2 422
+  server: cloudflare
+  access-control-allow-origin: *                                  ← WILDCARD OVERWRITE
+  access-control-allow-credentials: true                          ← spec-invalid with `*`
+  access-control-allow-headers: *
+  access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS, HEAD, PATCH
+  access-control-max-age: 300
+  set-cookie: __cf_bm=<REDACTED>; ...                             ← Cloudflare bot cookie, not app session
+```
+
+Fingerprints proving the rewrite is edge-side (Cloudflare) and not the
+app:
+- `access-control-allow-origin` changes from the exact allowlisted origin
+  to `*`.
+- `access-control-allow-methods` is reordered from Starlette's
+  alphabetical `DELETE, GET, HEAD, OPTIONS, PATCH, POST, PUT` to Cloudflare's
+  functional `GET, POST, PUT, DELETE, OPTIONS, HEAD, PATCH`.
+- `access-control-max-age` drops from the app's `600` to `300`.
+- `access-control-allow-headers` becomes `*` regardless of the
+  `Access-Control-Request-Headers` value the app echoed.
+- `access-control-allow-credentials` disappears from OPTIONS preflight
+  responses but stays present on the actual GET/POST response.
+- `server: cloudflare` present.
+
+### 7.2 · Consequence (CORS spec walk-through)
+
+1. Browser sends `OPTIONS` preflight before any credentialed cross-origin
+   POST. Edge returns `ACAO: *` **without** `access-control-allow-credentials`.
+   Per spec, a credentialed follow-up requires *both* an exact-origin
+   echo AND `access-control-allow-credentials: true` on the preflight.
+   The browser therefore **cancels the follow-up credentialed request
+   before it is sent** and reports a CORS failure.
+2. For simple credentialed GETs (`credentials: 'include'`), the response
+   has `ACAO: *` alongside `access-control-allow-credentials: true` —
+   spec-invalid. The browser refuses to deliver the body to the caller
+   and refuses to store any `Set-Cookie`.
+3. Native mobile runtimes (Expo native builds, iOS/Android HTTP clients)
+   **do not enforce CORS**. They succeed against this backend regardless
+   of edge headers. Native Expo devices are therefore unaffected by this
+   issue.
+
+### 7.3 · Impact scope
+
+- Browser Expo web preview → preview backend: **blocked cross-origin for
+  credentialed auth.**
+- Same-origin SPA in preview (`lynk-preview-2.preview.emergentagent.com`
+  → same backend): **unaffected** (no cross-origin, no preflight
+  required).
+- Native mobile → preview backend: **unaffected.**
+- Any surface → production `https://fynd.llc`: **unaffected**; production
+  custom domain on the same Cloudflare edge does NOT exhibit the
+  overwrite (verified in §7 initial probe with hostile origin).
+
+### 7.4 · Action items (revised)
+
+- **App-level:** none. `server.py:150–164` is standards-clean and now
+  proven to emit correct exact-origin + credentials headers for the
+  allowlisted Expo web origin.
+- **Platform ticket (upgraded severity):** ask Emergent Platform Support
+  to **stop rewriting CORS response headers on `*.preview.emergentagent.com`**.
+  Preview should honor app-emitted CORS headers verbatim. The wildcard
+  overwrite blocks any browser-based credentialed cross-origin
+  authentication to preview subdomains — the exact scenario needed to
+  test the Expo web build.
+- **Testing:** until the platform fix lands, mobile Phase 1 browser-based
+  auth verification must use native Expo builds (or a same-origin proxy),
+  not the Expo Web preview host through the preview edge.
+
