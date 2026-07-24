@@ -235,3 +235,142 @@ Before flipping `PROD_MODE=true` for the first time:
       as the FIRST post-deploy human check.
 - [ ] Web Push subscribe + test-send smoke test (§4.2) is planned as
       the SECOND post-deploy human check.
+
+
+---
+
+## 7 · Platform CORS injection on preview subdomains (2026-02-21)
+
+### Symptom
+
+An independent tester probing the public **preview** URL
+(`https://<slug>.preview.emergentagent.com`) observed:
+
+```
+GET /api/health   Origin: https://evil.example.com
+→ 200
+   server: cloudflare
+   access-control-allow-origin: *              ← unexpected
+   access-control-allow-credentials: true      ← app-emitted
+   access-control-allow-headers: *             ← unexpected
+   access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS, HEAD, PATCH
+   access-control-max-age: 300                 ← app default is 600
+   access-control-expose-headers: X-Idempotent-Replay
+```
+
+The `ACAO: *` combined with `access-control-allow-credentials: true` is
+CORS-spec illegal — browsers must reject any credentialed response with a
+wildcard origin — and looks alarming.
+
+### Root cause: platform ingress, NOT the app
+
+Reproducer (2026-02-21, HEAD `b74d7185`):
+
+- Direct `curl -H "Origin: https://evil.example.com" http://localhost:8001/api/health`
+  → returns **only** the app headers (`access-control-allow-credentials: true`,
+  `access-control-expose-headers: X-Idempotent-Replay`). **No** `ACAO`, no
+  `allow-headers`, no `allow-methods`, no `max-age`. The app correctly
+  refuses to echo an unlisted origin.
+- Same request through the public preview URL adds a permissive envelope
+  (`ACAO: *`, `access-control-allow-headers: *`, `access-control-max-age:
+  300`, `x-robots-tag: noindex, nofollow`, `server: cloudflare`). The
+  method list order (`GET, POST, PUT, DELETE, OPTIONS, HEAD, PATCH`)
+  differs from Starlette's alphabetical order (`DELETE, GET, HEAD, OPTIONS,
+  PATCH, POST, PUT`) which the app returns on `/api/v1/*` endpoints. That
+  ordering delta plus the `max-age: 300` (vs app default 600) confirms the
+  extra headers are appended by the preview edge (Cloudflare ingress), not
+  by the FastAPI process.
+
+The app CORS configuration is standards-clean:
+
+- `server.py:150–164` — with `CORS_ALLOW_ORIGINS` populated, the middleware
+  uses `allow_origins=<the exact list>` and `allow_credentials=True`. Never
+  a wildcard alongside credentials.
+- `server.py:165–181` — the empty-allowlist dev fallback uses
+  `allow_origins=["*"]` but **with `allow_credentials=False`**, which is
+  the only legal wildcard configuration.
+- `server.py:169–173` — `PROD_MODE=true` with an empty allowlist refuses
+  to start (`RuntimeError`).
+
+### Production evidence (2026-02-21, `https://fynd.llc`)
+
+The same hostile-origin probes against the custom-domain production host:
+
+```
+GET  /api/health, Origin: https://evil.example.com
+→ 200, server: cloudflare
+   access-control-allow-credentials: true
+   access-control-expose-headers: X-Idempotent-Replay
+   x-content-type-options: nosniff
+   (no access-control-allow-origin — CORRECT app behavior echoed through)
+
+OPTIONS /api/v1/auth/me, Origin: https://evil.example.com,
+     Access-Control-Request-Method: GET
+→ 400, server: cloudflare
+   vary: Origin
+   access-control-allow-credentials: true
+   access-control-allow-methods: DELETE, GET, HEAD, OPTIONS, PATCH, POST, PUT
+   access-control-max-age: 600     ← app default, NOT 300
+   x-content-type-options: nosniff
+   (no access-control-allow-origin — CORRECT)
+```
+
+Prod is behind the same Cloudflare edge but the wildcard CORS envelope is
+**NOT** injected for the custom domain. So this is specifically a
+`*.preview.emergentagent.com` ingress default, not a global Emergent
+behavior. Prod runtime enforces app-level CORS unchanged.
+
+### Residual-risk assessment on the preview URL
+
+Even with `ACAO: *` present on preview responses, the observable browser
+behavior is:
+
+1. `fetch(preview, {credentials: 'include'})` — the browser sees `ACAO: *`
+   in the response and per CORS spec REFUSES to deliver the response body
+   to the JavaScript caller (credentialed responses require an exact-origin
+   echo). Cookies are never exfiltrated. **No credential leak.**
+2. `fetch(preview, {credentials: 'omit'})` — the browser accepts the
+   response, but the request carried no cookie / no session, so the caller
+   sees only what an anonymous public request would see. On this app that
+   is limited to `/api/health`, `/api/v1/meta/policy`,
+   `/api/v1/notifications/vapid-public-key`, `/api/v1/auth/apple/status`
+   and `/api/v1/auth/otp/status` — all intentionally public.
+3. State-changing requests (`POST`/`PUT`/`PATCH`/`DELETE`) are gated by the
+   `CSRFMiddleware` double-submit cookie. A cross-origin browser attacker
+   cannot read the CSRF cookie (SameSite + no credentialed response
+   delivery) and therefore cannot forge the header.
+4. Idempotency middleware still requires an `Idempotency-Key` header on
+   the writes that use it; the wildcard preflight doesn't grant the
+   attacker the ability to read replay tokens.
+
+**Net:** the wildcard injection is cosmetic on preview and does not weaken
+the authenticated data plane. It is worth removing to keep preview
+security signalling honest, but there is no action the app can take —
+Emergent Platform Support owns the preview ingress config.
+
+### Action items
+
+- **App-level:** none. Code is standards-compliant.
+- **Platform ticket (post-launch):** ask Emergent Platform Support to stop
+  appending `ACAO: *` + wildcard `allow-headers` on `*.preview.emergentagent.com`
+  responses, so preview honors the same origin-allowlist behavior the app
+  actually implements. Reference this document.
+- **Documentation:** this section (§7) IS the finding. Do not treat the
+  preview wildcard as a production regression — production evidence above
+  confirms it does not propagate to custom domains.
+
+### Verification recipe
+
+```bash
+# App is clean (should show NO access-control-allow-origin)
+curl -sI -H "Origin: https://evil.example.com" http://localhost:8001/api/health \
+  | grep -i access-control
+
+# Preview shows the platform-injected wildcard (documented behavior)
+curl -sI -H "Origin: https://evil.example.com" \
+  https://<slug>.preview.emergentagent.com/api/health | grep -i access-control
+
+# Prod echoes only app CORS (no wildcard)
+curl -sI -H "Origin: https://evil.example.com" https://fynd.llc/api/health \
+  | grep -i access-control
+```
