@@ -2,6 +2,7 @@ import logging
 from collections import Counter
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -188,6 +189,50 @@ app.add_middleware(CSRFMiddleware)
 async def unhandled_exception_handler(request: Request, exc: Exception):
     log.exception("Unhandled: %s %s", request.method, request.url.path)
     return JSONResponse(status_code=500, content={"detail": "internal_error"})
+
+
+# SEC-004(e): FastAPI's default 422 handler echoes the raw request body
+# under `detail[].input`. That leaks plaintext credentials whenever a
+# malformed signup / login / reset payload triggers Pydantic validation.
+# This handler scrubs a fixed denylist of sensitive keys from every `input`
+# value before serialisation. Non-sensitive keys, error types, error msgs
+# and locations are preserved so callers can still debug their payloads.
+_VALIDATION_SCRUB_KEYS = frozenset({
+    "password", "password_hash", "token", "otp",
+    "code", "session_id", "refresh_token",
+})
+
+
+def _scrub_input(value):
+    """Recursively remove sensitive keys from a validation `input` payload."""
+    if isinstance(value, dict):
+        return {
+            k: ("<redacted>" if k in _VALIDATION_SCRUB_KEYS else _scrub_input(v))
+            for k, v in value.items()
+        }
+    if isinstance(value, list):
+        return [_scrub_input(item) for item in value]
+    return value
+
+
+@app.exception_handler(RequestValidationError)
+async def scrub_validation_error(request: Request, exc: RequestValidationError):
+    """422 handler that never lets a submitted password, token, otp code,
+    session id or refresh token leak back to the caller inside the error
+    body. Preserves loc / msg / type so schema debugging still works."""
+    scrubbed = []
+    for err in exc.errors():
+        item = {
+            "type": err.get("type"),
+            "loc": err.get("loc"),
+            "msg": err.get("msg"),
+        }
+        if "input" in err:
+            item["input"] = _scrub_input(err.get("input"))
+        if "ctx" in err:
+            item["ctx"] = err.get("ctx")
+        scrubbed.append(item)
+    return JSONResponse(status_code=422, content={"detail": scrubbed})
 
 
 @app.get("/api/health", tags=["meta"])
