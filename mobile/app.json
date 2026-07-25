@@ -23,7 +23,8 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0B0D10"
       },
-      "package": "com.purposehealthcarelabs.fynd"
+      "package": "com.purposehealthcarelabs.fynd",
+      "versionCode": 1
     },
     "web": {
       "bundler": "metro",
