@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Delete your Fynd account — Fynd</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="description" content="How to permanently delete your Fynd account and associated data. Two request routes (in-app + email), what's removed, what's retained, and how long." />
+<meta name="robots" content="index,follow" />
+<link rel="canonical" href="https://fynd.llc/delete-account.html" />
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+                 "Helvetica Neue", Arial, sans-serif;
+    background: #0B0D10;
+    color: #E9EDF1;
+    line-height: 1.55;
+    font-size: 16px;
+  }
+  a { color: #7CD1FF; text-decoration: underline; }
+  a:hover { color: #A9E1FF; }
+  main { max-width: 720px; margin: 0 auto; padding: 40px 20px 80px; }
+  header.crumbs {
+    max-width: 720px; margin: 0 auto; padding: 16px 20px;
+    border-bottom: 1px solid #1F252B;
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 14px;
+  }
+  header.crumbs a { color: #9AA4AE; text-decoration: none; }
+  h1 { font-size: 28px; margin: 0 0 8px; letter-spacing: -0.01em; }
+  h2 { font-size: 18px; margin: 28px 0 8px; letter-spacing: -0.005em; }
+  p, li { font-size: 15px; }
+  ul, ol { padding-left: 22px; margin: 8px 0 12px; }
+  li { margin: 6px 0; }
+  .muted { color: #9AA4AE; font-size: 13px; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 14px; }
+  strong { color: #F5F7FA; }
+  em { color: #D1D6DC; }
+  .hero {
+    border: 1px solid #2A343E;
+    background: rgba(124, 209, 255, 0.05);
+    border-radius: 10px;
+    padding: 18px 20px;
+    margin: 12px 0 24px;
+  }
+  .hero h2 { margin-top: 0; }
+  ol.steps { padding-left: 28px; }
+  ol.steps li { margin: 8px 0; }
+  footer { border-top: 1px solid #1F252B; margin-top: 40px; padding-top: 16px; font-size: 12px; color: #9AA4AE; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+  @media (prefers-color-scheme: light) {
+    body { background: #FFFFFF; color: #14181D; }
+    header.crumbs { border-color: #E4E8EC; }
+    header.crumbs a { color: #5A6470; }
+    a { color: #0958D9; }
+    .muted { color: #5A6470; }
+    footer { border-color: #E4E8EC; color: #5A6470; }
+    strong { color: #14181D; }
+    em { color: #333940; }
+    .hero { border-color: #C8D1DA; background: #F4F8FB; }
+  }
+</style>
+</head>
+<body>
+
+<header class="crumbs">
+  <a href="/">← Fynd</a>
+  <a href="/privacy.html">Privacy policy</a>
+</header>
+
+<main>
+  <h1>Delete your Fynd account</h1>
+  <p class="muted">App: <strong>Fynd</strong> · Developer: <strong>Purpose Healthcare Labs</strong> · Bundle id: <code>com.purposehealthcarelabs.fynd</code></p>
+
+  <div class="hero">
+    <h2>Two ways to request deletion</h2>
+    <ol class="steps">
+      <li>
+        <strong>Delete from inside the app</strong> — recommended.
+        See the <a href="#in-app">in-app instructions</a> below (web and mobile).
+      </li>
+      <li>
+        <strong>Email <a href="mailto:privacy@fynd.llc?subject=Delete%20my%20Fynd%20account">privacy@fynd.llc</a></strong>
+        from the email address on your account with the subject
+        &ldquo;Delete my Fynd account&rdquo;. We respond within
+        <strong>30 days</strong> (see the response-time policy in our
+        <a href="/privacy.html#your-rights">Privacy Policy §7</a>).
+      </li>
+    </ol>
+  </div>
+
+  <h2 id="in-app">In-app deletion path</h2>
+
+  <p><strong>Fynd Web (<a href="https://fynd.llc">https://fynd.llc</a>)</strong></p>
+  <ol class="steps">
+    <li>Sign in.</li>
+    <li>Open the sidebar and click <strong>Privacy &amp; Data</strong> (route <code>/privacy</code>).</li>
+    <li>Scroll to the <strong>Delete account</strong> section (marked with the red trash icon).</li>
+    <li>Click <strong>&ldquo;Delete my account…&rdquo;</strong>.</li>
+    <li>Read the confirmation block (&ldquo;This starts the 30-day countdown.&rdquo;) and click <strong>&ldquo;Yes, start 30-day deletion&rdquo;</strong>.</li>
+  </ol>
+
+  <p><strong>Fynd for iOS / Android (native app)</strong></p>
+  <ol class="steps">
+    <li>Sign in.</li>
+    <li>Open the <strong>Settings</strong> tab (bottom tab bar).</li>
+    <li>Tap <strong>Privacy &amp; Data</strong>.</li>
+    <li>Scroll to the <strong>Delete account</strong> card.</li>
+    <li>Tap <strong>&ldquo;Delete my account…&rdquo;</strong>, then confirm on the red confirmation card.</li>
+  </ol>
+
+  <h2 id="what-happens">What deletion removes</h2>
+  <p>When you confirm deletion in the app (or after we process an email request), your account enters a <strong>30-day soft-delete window</strong>. During that window you can sign in and the account is restored. After the window expires, all of the following personal data is <em>permanently removed</em> from Fynd&rsquo;s primary storage:</p>
+  <ul>
+    <li>Your <strong>account identity</strong> — email address, display name, hashed password, and any linked third-party identity records (Google, Apple).</li>
+    <li>Your <strong>Career Passport</strong> — résumé content, skill claims, project descriptions, education and employment history you entered.</li>
+    <li>Your <strong>uploaded documents</strong> — every résumé and cover letter you drafted or uploaded in-app.</li>
+    <li>Your <strong>applications</strong> — jobs you imported, drafts, approvals, submission receipts, and interview notes.</li>
+    <li>Your <strong>screening answers</strong> — every screener response you gave inside ApplicationPrep.</li>
+    <li>Your <strong>preferences and eligibility signals</strong> — locations, seniority, work authorisation, salary expectations, deal-breakers.</li>
+    <li>Your <strong>consent records</strong> — grant/revoke history for the five consent scopes, once retention for legal defense expires (see below).</li>
+    <li>Your <strong>notification subscriptions</strong> — Web Push VAPID subscriptions and any phone number you attached for SMS OTP.</li>
+    <li>Your <strong>billing metadata</strong> — subscription plan, coupon usage, and Stripe customer/session ids stored on Fynd. Fynd never held your full card number; card records are held by Stripe under Stripe&rsquo;s own retention policy.</li>
+  </ul>
+
+  <h2 id="what-is-retained">What is retained, and for how long</h2>
+  <p>Two categories of data continue to be retained after deletion, quoted directly from our <a href="/privacy.html#retention">Privacy Policy §8</a>:</p>
+  <ul>
+    <li><strong>Audit-log entries required for legal defense</strong> — retained in <em>pseudonymised</em> form for up to <strong>24 months</strong> after account deletion. These entries no longer identify you and cannot be linked back to your account.</li>
+    <li><strong>Application receipts &amp; materials hashes</strong> — retained for <strong>24 months</strong> after the corresponding submission so you can prove what was sent, then purged.</li>
+  </ul>
+  <p>Nothing else is retained. Fynd does not keep &ldquo;marketing shadow copies&rdquo;, third-party advertising profiles, or trained-model artefacts derived from your data.</p>
+
+  <h2 id="response-time">How long we take to complete a deletion</h2>
+  <ul>
+    <li><strong>In-app path:</strong> your soft-delete window starts <em>immediately</em> when you tap the confirmation. Permanent removal occurs <strong>30 days later</strong>.</li>
+    <li><strong>Email path:</strong> we acknowledge and process the request within <strong>30 days</strong> per our <a href="/privacy.html#your-rights">Privacy Policy §7</a>, then the same 30-day soft-delete window begins.</li>
+  </ul>
+
+  <h2 id="restore-window">Restoring your account</h2>
+  <p>Sign back in during the 30-day soft-delete window and your account is restored with all data intact. After 30 days, restoration is not possible.</p>
+
+  <h2 id="contact">Questions or a stuck request</h2>
+  <p>If the in-app deletion fails, or you have questions about the process, email <a href="mailto:privacy@fynd.llc?subject=Fynd%20deletion%20question">privacy@fynd.llc</a>. Reference this page (<code>https://fynd.llc/delete-account.html</code>) in the message.</p>
+
+  <footer>
+    <span>© 2026 Purpose Healthcare Labs, operating Fynd on the OpportunityOS backend.</span>
+    <span>
+      <a href="/privacy.html">Privacy policy</a> ·
+      <a href="/">Back to Fynd</a>
+    </span>
+  </footer>
+</main>
+
+</body>
+</html>
