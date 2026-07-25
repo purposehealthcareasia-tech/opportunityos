@@ -6,6 +6,9 @@
   "build": {
     "production": {
       "autoIncrement": false,
+      "ios": {
+        "image": "macos-sequoia-15.6-xcode-26.0"
+      },
       "env": {
         "EXPO_PUBLIC_BACKEND_URL": "https://fynd.llc"
       }
@@ -13,6 +16,9 @@
     "preview": {
       "distribution": "internal",
       "autoIncrement": false,
+      "ios": {
+        "image": "macos-sequoia-15.6-xcode-26.0"
+      },
       "env": {
         "EXPO_PUBLIC_BACKEND_URL": "https://fynd.llc"
       }
