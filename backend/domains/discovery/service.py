@@ -19,15 +19,36 @@ from core.db import get_db
 from core.time_utils import utc_now
 from domains.audit import service as audit
 from domains.discovery.adapters.public_apis import FETCHERS
+from domains.discovery.adapters import usajobs as usajobs_adapter
 from domains.discovery.catalog import (
     ALL_BOARDS,
     FOUNDER_CONFIRMED_UNREACHABLE,
+)
+from domains.discovery.classify import (
+    classify_lane, distance_from_phoenix_mi, LANE_A, LANE_B,
 )
 
 
 log = logging.getLogger("oppos.discovery")
 
 INTER_COMPANY_DELAY_S = 0.25
+
+# Sources this preview cannot legitimately ingest today. Recorded in the
+# per-run audit so a reviewer sees why they're not in ALL_BOARDS.
+SKIPPED_SOURCES: list[dict] = [
+    {"name": "NEOGOV / governmentjobs.com portals",
+     "why": "no_compliant_public_json_endpoint",
+     "notes": "front-door redirects our request to the site root; no documented public JSON API. Portals affected: Phoenix, Tempe, Mesa, Scottsdale, Chandler, Maricopa County, AZ State. HTML behind bot-detection is out of policy."},
+    {"name": "AZ State Portal (azstatejobs.gov)",
+     "why": "no_public_json_endpoint",
+     "notes": "returns 403/404 on all probed paths."},
+    {"name": "AZ K-12 district portals (Frontline, PowerSchool, TalentEd, etc.)",
+     "why": "vendor_specific_no_public_json_confirmed",
+     "notes": "each district's careers page is behind a vendor front-end; no confirmed public JSON API. Substitute-teaching info surfaced as a labeled credential card, not fabricated postings."},
+    {"name": "ASU Workday cxs",
+     "why": "tenant_path_not_publicly_documented",
+     "notes": "asu.wd1.myworkdayjobs.com/wday/cxs paths probed returned 404 for common site slugs; needs an official documented URL from ASU before ingest."},
+]
 
 
 # ------------------------------------------------------------ mapping
@@ -43,6 +64,13 @@ def _to_jobs_doc(row: dict, existing: Optional[dict]) -> dict:
     first_seen = (existing or {}).get("first_seen") or now
     # taxonomy heuristic — use the department if present as a rough label
     taxonomy_family = row.get("department") or None
+    lane = classify_lane(
+        title=row.get("title", ""),
+        department=row.get("department"),
+        employment_type=row.get("employment_type"),
+        description=row.get("jd_text"),
+    )
+    distance_mi = distance_from_phoenix_mi(row.get("location") or "")
     doc = {
         "id": (existing or {}).get("id") or _new_uuid(),
         "canonical_key": _canonical_key(row["source_ats"], row["external_id"]),
@@ -77,21 +105,29 @@ def _to_jobs_doc(row: dict, existing: Optional[dict]) -> dict:
             "remote": bool(row.get("remote")),
             "employment_type": row.get("employment_type"),
             "department": row.get("department"),
+            "hiring_path": row.get("hiring_path"),
         },
-        "tags": _tags_for(row),
+        "tags": _tags_for(row, lane, distance_mi),
         "is_newgrad": bool(row.get("is_newgrad")),
+        # Two-lane classification (Phase 2)
+        "lane": lane,
+        "distance_from_phoenix_mi": distance_mi,
     }
     return doc
 
 
-def _tags_for(row: dict) -> list[str]:
+def _tags_for(row: dict, lane: str, distance_mi: Optional[float]) -> list[str]:
     tags = []
+    tags.append(f"lane_{lane}")
     if row.get("is_newgrad"): tags.append("new_grad")
     if row.get("remote"):     tags.append("remote")
     if row.get("employment_type"):
         et = str(row["employment_type"]).lower().replace(" ", "_")
         if et:
             tags.append(f"emp_{et}")
+    if distance_mi is not None:
+        if distance_mi <= 25:   tags.append("phx_25mi")
+        elif distance_mi <= 60: tags.append("phx_60mi")
     loc = (row.get("location") or "").lower()
     if any(k in loc for k in ("phoenix", "chandler", "tempe", "gilbert",
                                 "mesa", "scottsdale", "arizona", " az")):
@@ -189,19 +225,59 @@ async def refresh_all(actor: str = "discovery-scheduler") -> dict:
                                         "error": type(e).__name__})
         await asyncio.sleep(INTER_COMPANY_DELAY_S)
 
+    # USAJOBS federal fetch — CONFIG-REQUIRED (needs env keys).
+    usajobs_status = usajobs_adapter.status_reason()
+    usajobs_report = {"status": usajobs_status, "postings_seen": 0,
+                       "inserted": 0, "updated": 0}
+    try:
+        federal_rows = await usajobs_adapter.fetch_usajobs()
+    except Exception as e:
+        federal_rows = []
+        usajobs_report["error"] = f"{type(e).__name__}:{str(e)[:80]}"
+    if federal_rows:
+        db = get_db()
+        ins = upd = 0
+        for row in federal_rows:
+            key = _canonical_key(row["source_ats"], row["external_id"])
+            existing = await db.jobs.find_one({"canonical_key": key},
+                                                projection={"_id": 0})
+            doc = _to_jobs_doc(row, existing)
+            if existing:
+                await db.jobs.update_one({"canonical_key": key}, {"$set": doc})
+                upd += 1
+            else:
+                await db.jobs.insert_one(doc)
+                ins += 1
+        usajobs_report.update({"postings_seen": len(federal_rows),
+                                "inserted": ins, "updated": upd})
+        total_inserted += ins
+        total_updated += upd
+
     elapsed = (datetime.now(timezone.utc) - start).total_seconds()
+
+    # Recount lane totals so the report answers the founder's questions.
+    db = get_db()
+    lane_a = await db.jobs.count_documents({"lane": LANE_A, "status": "live"})
+    lane_b = await db.jobs.count_documents({"lane": LANE_B, "status": "live"})
+    within_25mi = await db.jobs.count_documents({"distance_from_phoenix_mi": {"$lte": 25}})
+    within_60mi = await db.jobs.count_documents({"distance_from_phoenix_mi": {"$lte": 60}})
 
     summary = {
         "elapsed_s": round(elapsed, 2),
         "companies_kept": sum(per_source_kept.values()),
         "companies_dropped": sum(per_source_dropped.values()),
-        "postings_seen": sum(per_source_postings.values()),
+        "postings_seen": sum(per_source_postings.values()) + usajobs_report["postings_seen"],
         "postings_inserted": total_inserted,
         "postings_updated": total_updated,
         "per_source_kept": per_source_kept,
         "per_source_dropped": per_source_dropped,
         "per_source_postings": per_source_postings,
+        "usajobs": usajobs_report,
+        "skipped_sources": SKIPPED_SOURCES,
         "founder_confirmed_unreachable_retry": unreachable_report,
+        "lane_totals": {"career": lane_a, "income_now": lane_b},
+        "phoenix_radius_totals": {"within_25mi": within_25mi,
+                                   "within_60mi": within_60mi},
     }
     log.info("discovery.refresh_all: done %s", summary)
     await audit.write(actor, "discovery.refresh_all", "jobs:*", summary)

@@ -99,6 +99,19 @@ GREENHOUSE_BOARDS: list[tuple[str, str]] = [
     ("Nextdoor", "nextdoor"),
     ("Peloton", "peloton"),
     ("Datadog", "datadog"),
+
+    # === Lane B — hourly, retail, delivery, tutoring, healthcare-support ===
+    # Verified live at build time; many of these carry a mix of corporate
+    # (Lane A) and hourly (Lane B) rows. Lane classifier runs per row.
+    ("Sweetgreen", "sweetgreen"),
+    ("Guild Education", "guild"),
+    ("Wonderschool", "wonderschool"),
+    ("Lyft", "lyft"),
+    ("One Medical", "onemedical"),
+    ("Forward Health", "forward"),
+    ("BetterHelp", "betterhelp"),
+    ("Talkspace", "talkspace"),
+    ("SoFi", "sofi"),
 ]
 
 LEVER_BOARDS: list[tuple[str, str]] = [
@@ -149,6 +162,8 @@ ASHBY_BOARDS: list[tuple[str, str]] = [
     ("Roboflow", "roboflow"),
     ("Nabla", "nabla"),
     ("Instructure", "instructure"),
+    # Lane-B friendly
+    ("Handshake Corp", "handshake"),
 ]
 
 # Verified-external but preview-egress unreachable at build time.

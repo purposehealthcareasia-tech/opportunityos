@@ -47,11 +47,25 @@ def _shape_job_card(job: dict, score_row: dict | None) -> dict:
         "employment_type": disc.get("employment_type"),
         "department": disc.get("department"),
         "source_ats": disc.get("source_ats"),
+        # Phase 2 — two-lane feed + Phoenix distance
+        "lane": job.get("lane"),
+        "distance_from_phoenix_mi": job.get("distance_from_phoenix_mi"),
     }
 
 
 @router.get("/feed")
-async def feed(user: dict = Depends(require_consent("discover_jobs"))):
+async def feed(user: dict = Depends(require_consent("discover_jobs")),
+                lane: str | None = None,
+                within_mi: int | None = None,
+                sort: str = "best_fit"):
+    """Feed for the signed-in candidate.
+
+    Query params (Phase 2):
+      * lane        - 'career' | 'income_now' | None (all)
+      * within_mi   - if set, only jobs whose distance_from_phoenix_mi <= N
+      * sort        - 'best_fit' (default, by match score) | 'nearest'
+                       (Phoenix distance ascending, remote/unknown last)
+    """
     # Phase 6 — feed_enabled feature flag (§C.4). Flag OFF returns an honest 503 the UI
     # renders as "temporarily disabled by operations".
     from services import feature_flags as ff
@@ -74,6 +88,14 @@ async def feed(user: dict = Depends(require_consent("discover_jobs"))):
     # the two surfaces are directly comparable.
     jobs = [j for j in all_live if j["id"] not in hidden]
     hidden_count = sum(1 for j in all_live if j["id"] in hidden)
+
+    # Phase 2 — lane + distance filters (never remove; only narrow the view).
+    if lane in ("career", "income_now"):
+        jobs = [j for j in jobs if j.get("lane") == lane]
+    if within_mi is not None and within_mi > 0:
+        jobs = [j for j in jobs
+                if isinstance(j.get("distance_from_phoenix_mi"), (int, float))
+                and j["distance_from_phoenix_mi"] <= within_mi]
 
     passing: list[dict] = []
     excluded: list[dict] = []
@@ -113,9 +135,23 @@ async def feed(user: dict = Depends(require_consent("discover_jobs"))):
     if scored_new_count:
         await um.increment_jobs_processed(user["id"], scored_new_count)
 
-    passing.sort(key=lambda x: (x.get("score") or 0), reverse=True)
+    # Sort choice — Phase 2 introduces 'nearest' for Lane B users who
+    # care about proximity + recency; default remains best-fit score.
+    if sort == "nearest":
+        def _sort_key(x):
+            d = x.get("distance_from_phoenix_mi")
+            if not isinstance(d, (int, float)):
+                d = 1e6  # remote/unknown sink to the end
+            posted = x.get("posted_at") or ""
+            return (d, -len(posted))  # nearer first, more recent second
+        passing.sort(key=_sort_key)
+    else:
+        passing.sort(key=lambda x: (x.get("score") or 0), reverse=True)
     return {
         "weights_version": WEIGHTS_VERSION,
+        "lane": lane or "all",
+        "sort": sort,
+        "within_mi": within_mi,
         "passing": passing,
         "excluded": excluded,
         "totals": {
