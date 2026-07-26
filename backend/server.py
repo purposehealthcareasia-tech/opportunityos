@@ -122,6 +122,12 @@ async def lifespan(_app: FastAPI):
     # Kick off the approvals-expiring push sweep (runs every 30 min).
     import asyncio
     _sweep_task = asyncio.create_task(notifications_sweep_forever())
+    # Discovery scheduler (6h) — pulls real jobs from Greenhouse/Lever/Ashby.
+    try:
+        from domains.discovery.scheduler import start_scheduler as _disc_start
+        _disc_start()
+    except Exception:
+        log.exception("discovery scheduler start failed")
     try:
         yield
     finally:
@@ -129,6 +135,11 @@ async def lifespan(_app: FastAPI):
         try:
             await _sweep_task
         except (Exception, asyncio.CancelledError):
+            pass
+        try:
+            from domains.discovery.scheduler import stop_scheduler as _disc_stop
+            _disc_stop()
+        except Exception:
             pass
     log.info("OpportunityOS backend shutting down…")
 
@@ -294,3 +305,6 @@ app.include_router(integrations_router)
 app.include_router(email_webhook_router)
 app.include_router(payment_webhook_router)
 app.include_router(notifications_router)
+
+from domains.discovery.scheduler import router as discovery_router  # noqa: E402
+app.include_router(discovery_router)

@@ -17,6 +17,7 @@ def _shape_job_card(job: dict, score_row: dict | None) -> dict:
     from services.gate_engine import _is_stale
     stale = _is_stale(job)
     effective_status = "stale" if stale and job.get("status") == "live" else job.get("status")
+    disc = job.get("discovery") or {}
     return {
         "id": job["id"],
         "canonical_key": job.get("canonical_key"),
@@ -34,6 +35,18 @@ def _shape_job_card(job: dict, score_row: dict | None) -> dict:
         "score": (score_row or {}).get("score"),
         "confidence": (score_row or {}).get("confidence"),
         "weights_version": (score_row or {}).get("weights_version"),
+        # Discovery/enrichment surfaces exposed to the client so the
+        # feed UI can filter and label rows. Never invented — these are
+        # populated by the discovery adapters from the ATS payload.
+        "source": job.get("source"),
+        "apply_url": job.get("origin_url"),
+        "is_newgrad": bool(job.get("is_newgrad")),
+        "tags": job.get("tags") or [],
+        "remote": bool(disc.get("remote")),
+        "posted_at": disc.get("posted_at"),
+        "employment_type": disc.get("employment_type"),
+        "department": disc.get("department"),
+        "source_ats": disc.get("source_ats"),
     }
 
 
