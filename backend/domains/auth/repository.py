@@ -3,11 +3,11 @@ from core.db import get_db
 
 
 async def by_email(email: str) -> dict | None:
-    return await get_db().users.find_one({"email": email.lower()})
+    return await get_db().users.find_one({"email": email.lower()}, {"_id": 0})
 
 
 async def by_id(user_id: str) -> dict | None:
-    return await get_db().users.find_one({"id": user_id})
+    return await get_db().users.find_one({"id": user_id}, {"_id": 0})
 
 
 async def create(doc: dict[str, Any]) -> None:
