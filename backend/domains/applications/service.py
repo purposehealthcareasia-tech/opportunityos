@@ -13,6 +13,14 @@ class DuplicateApplication(Exception):
     pass
 
 
+class EmployerCapReached(Exception):
+    """Raised when the rolling 30-day per-employer cap is exceeded."""
+
+    def __init__(self, cap_info: dict):
+        self.cap_info = cap_info
+        super().__init__("employer_cap_reached")
+
+
 def route_decision(job: dict) -> dict:
     """Router v0.1 — returns only guided_manual | email_application | manual_queue.
 
@@ -38,6 +46,14 @@ def route_decision(job: dict) -> dict:
 
 
 async def shortlist(user_id: str, job: dict) -> dict:
+    # Phase 3 Founder Brief — enforce the rolling 30-day per-employer cap
+    # BEFORE inserting a new application. Duplicates for the same job are
+    # separately blocked by the DuplicateApplication path below.
+    from services import employer_cap as cap_svc
+    cap = await cap_svc.check_cap(user_id, job)
+    if not cap["ok"]:
+        raise EmployerCapReached(cap)
+
     r = route_decision(job)
     doc = {
         "id": str(uuid.uuid4()),

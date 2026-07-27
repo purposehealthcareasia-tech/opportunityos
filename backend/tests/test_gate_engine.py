@@ -154,3 +154,171 @@ def test_gate_engine_never_uses_zip_or_age(monkeypatch):
             # A string literal like "zip_code" would count — but not the docstring which contains "zip" as a substring.
             hits.append(("Str", node.value, node.lineno))
     assert not hits, f"gate_engine references forbidden features (callable-scope): {hits}"
+
+
+# =====================================================================
+# Phase 3 Founder Brief — degree-blind eligibility.
+# Only work-authorization, legally-mandatory licensure, and geographic
+# impossibility may hard-exclude. Education + experience mismatches must
+# surface as visible NOTES on the card but stay queueable.
+# =====================================================================
+def test_education_mismatch_stays_queueable_with_note():
+    job = _mkjob(requirements={"degree_level": "PhD", "skills_required": [], "years_min": None})
+    ctx = _ctx(approved_education=[{"degree": "BS", "institution": "State U"}])
+    res = gate_engine.evaluate(ctx, job)
+    edu = [g for g in res["gates"] if g["name"] == "education_requirement"][0]
+    assert edu["status"] == "pass"
+    assert edu["reason"] is None
+    assert "PhD" in (edu["note"] or "") and "BS" in (edu["note"] or "")
+    assert "education_below_requirement" not in res["fail_reasons"]
+    assert any(n["gate"] == "education_requirement" for n in res["notes"])
+
+
+def test_education_unknown_stays_queueable_with_note():
+    job = _mkjob(requirements={"degree_level": "MS", "skills_required": [], "years_min": None})
+    ctx = _ctx(approved_education=[])  # No education claim
+    res = gate_engine.evaluate(ctx, job)
+    edu = [g for g in res["gates"] if g["name"] == "education_requirement"][0]
+    assert edu["status"] == "pass"
+    assert edu["reason"] is None
+    assert "MS" in (edu["note"] or "")
+    assert "education_unknown" not in res["unknown_reasons"]
+
+
+def test_education_pass_when_candidate_meets_requirement():
+    job = _mkjob(requirements={"degree_level": "BS", "skills_required": [], "years_min": None})
+    ctx = _ctx(approved_education=[{"degree": "MS", "institution": "State U"}])
+    res = gate_engine.evaluate(ctx, job)
+    edu = [g for g in res["gates"] if g["name"] == "education_requirement"][0]
+    assert edu["status"] == "pass"
+    assert edu["note"] is None
+
+
+def test_experience_mismatch_stays_queueable_with_note():
+    """Same degree-blind principle applied to experience_band per Phase 3 brief."""
+    job = _mkjob(requirements={"degree_level": None, "skills_required": [], "years_min": 10})
+    ctx = _ctx(approved_employment=[{"start": "2023-01", "end": "2024-06"}])  # ~1.4 yrs
+    res = gate_engine.evaluate(ctx, job)
+    exp = [g for g in res["gates"] if g["name"] == "experience_band"][0]
+    assert exp["status"] == "pass"
+    assert "10+" in (exp["note"] or "") or "10.0+" in (exp["note"] or "") or "10" in (exp["note"] or "")
+    assert "experience_below_band" not in res["fail_reasons"]
+
+
+def test_experience_unknown_stays_queueable_with_note():
+    job = _mkjob(requirements={"degree_level": None, "skills_required": [], "years_min": 5})
+    ctx = _ctx(approved_employment=[])
+    res = gate_engine.evaluate(ctx, job)
+    exp = [g for g in res["gates"] if g["name"] == "experience_band"][0]
+    assert exp["status"] == "pass"
+    assert exp["reason"] is None
+    assert "experience_missing" not in res["unknown_reasons"]
+
+
+# =====================================================================
+# Licensure gate precision (Phase 3 Founder Brief).
+# Hard-fail ONLY on legally-mandatory license mismatch. Ambiguous /
+# "preferred" credentials must NEVER exclude — surface as note.
+# =====================================================================
+def test_licensure_hard_fails_on_missing_legal_license_cdl():
+    job = _mkjob(requirements={"licenses": ["CDL Class A"], "skills_required": [], "years_min": None})
+    ctx = _ctx(approved_certifications=[])
+    res = gate_engine.evaluate(ctx, job)
+    lic = [g for g in res["gates"] if g["name"] == "licensure"][0]
+    assert lic["status"] == "fail"
+    assert lic["reason"] is not None and lic["reason"].startswith("missing_legal_license:")
+    assert "CDL" in lic["reason"]
+    assert any(r.startswith("missing_legal_license:") for r in res["fail_reasons"])
+
+
+def test_licensure_hard_fails_on_missing_rn():
+    job = _mkjob(requirements={"licenses": ["Registered Nurse (RN)"], "skills_required": [], "years_min": None})
+    ctx = _ctx(approved_certifications=[])
+    res = gate_engine.evaluate(ctx, job)
+    lic = [g for g in res["gates"] if g["name"] == "licensure"][0]
+    assert lic["status"] == "fail"
+    assert "RN" in (lic["reason"] or "")
+
+
+def test_licensure_hard_fails_on_missing_finra_series7():
+    job = _mkjob(requirements={"licenses": ["Series 7"], "skills_required": [], "years_min": None})
+    ctx = _ctx(approved_certifications=[])
+    res = gate_engine.evaluate(ctx, job)
+    lic = [g for g in res["gates"] if g["name"] == "licensure"][0]
+    assert lic["status"] == "fail"
+    assert "FINRA" in (lic["reason"] or "")
+
+
+def test_licensure_passes_when_user_holds_matching_credential():
+    job = _mkjob(requirements={"licenses": ["CDL Class A"], "skills_required": [], "years_min": None})
+    ctx = _ctx(approved_certifications=[{"name": "CDL Class A - AZ"}])
+    res = gate_engine.evaluate(ctx, job)
+    lic = [g for g in res["gates"] if g["name"] == "licensure"][0]
+    assert lic["status"] == "pass"
+    assert lic["reason"] is None
+
+
+def test_licensure_ambiguous_credential_stays_queueable_with_note_pmp():
+    """PMP is a credential but NOT statutorily required — must not exclude."""
+    job = _mkjob(requirements={"licenses": ["PMP"], "skills_required": [], "years_min": None})
+    ctx = _ctx(approved_certifications=[])
+    res = gate_engine.evaluate(ctx, job)
+    lic = [g for g in res["gates"] if g["name"] == "licensure"][0]
+    assert lic["status"] == "pass"
+    assert "PMP" in (lic["note"] or "")
+    assert not any(r.startswith("missing_legal_license:") for r in res["fail_reasons"])
+
+
+def test_licensure_ambiguous_credential_stays_queueable_with_note_aws():
+    """AWS/Azure cert is helpful but not legally mandatory."""
+    job = _mkjob(requirements={"licenses": ["AWS Solutions Architect Professional"], "skills_required": [], "years_min": None})
+    ctx = _ctx(approved_certifications=[])
+    res = gate_engine.evaluate(ctx, job)
+    lic = [g for g in res["gates"] if g["name"] == "licensure"][0]
+    assert lic["status"] == "pass"
+    assert lic["note"] is not None
+
+
+def test_licensure_no_requirements_passes_clean():
+    job = _mkjob(requirements={"licenses": [], "skills_required": [], "years_min": None})
+    ctx = _ctx(approved_certifications=[])
+    res = gate_engine.evaluate(ctx, job)
+    lic = [g for g in res["gates"] if g["name"] == "licensure"][0]
+    assert lic["status"] == "pass"
+    assert lic["note"] is None
+
+
+def test_licensure_mixed_legal_and_ambiguous_hard_fails_on_legal():
+    """If both a legal-mandatory license AND an ambiguous credential are required,
+    the legal one wins → hard-fail."""
+    job = _mkjob(requirements={"licenses": ["CDL Class A", "OSHA 30"], "skills_required": [], "years_min": None})
+    ctx = _ctx(approved_certifications=[{"name": "OSHA 30"}])  # holds ambiguous, missing legal
+    res = gate_engine.evaluate(ctx, job)
+    lic = [g for g in res["gates"] if g["name"] == "licensure"][0]
+    assert lic["status"] == "fail"
+    assert "CDL" in (lic["reason"] or "")
+
+
+def test_only_three_hard_gate_families_can_fail():
+    """Founder Brief: only work-authorization, legally-mandatory licensure, and
+    geographic impossibility may hard-exclude. Confirm education + experience
+    can no longer produce a fail regardless of input."""
+    # Job that would previously have failed on BOTH education + experience.
+    job = _mkjob(requirements={"degree_level": "PhD",
+                                "skills_required": [],
+                                "years_min": 15,
+                                "licenses": []})
+    ctx = _ctx(
+        eligibility={"status": "citizen"},
+        preferences={},
+        approved_education=[{"degree": "AS"}],
+        approved_employment=[{"start": "2024-01", "end": "2024-06"}],  # ~0.4 yrs
+    )
+    res = gate_engine.evaluate(ctx, job)
+    edu = [g for g in res["gates"] if g["name"] == "education_requirement"][0]
+    exp = [g for g in res["gates"] if g["name"] == "experience_band"][0]
+    assert edu["status"] == "pass" and exp["status"] == "pass"
+    # This job now passes every gate — it should be in the feed with 2 notes.
+    assert res["pass_all"] is True
+    assert len(res["notes"]) >= 2
+    assert {n["gate"] for n in res["notes"]} >= {"education_requirement", "experience_band"}

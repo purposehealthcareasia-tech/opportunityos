@@ -118,4 +118,14 @@ async def ensure_indexes() -> None:
     await db.export_jobs.create_index([("user_id", ASCENDING), ("created_at", DESCENDING)])
     await db.internal_analytics_events.create_index([("ts", DESCENDING)])
     await db.internal_error_events.create_index([("ts", DESCENDING)])
+    # Phase 3 (Founder Brief) — walk-in log + persona variants + discovery
+    await db.walkins.create_index([("user_id", ASCENDING), ("walked_in_at", DESCENDING)])
+    await db.walkins.create_index([("user_id", ASCENDING), ("created_at", DESCENDING)])
+    await db.walkins.create_index("application_id")
+    await db.personas.create_index([("user_id", ASCENDING), ("created_at", DESCENDING)])
+    await db.personas.create_index([("user_id", ASCENDING), ("superseded_by", ASCENDING)])
+    # Discovery runs audit — needed for future audit inspection
+    await db.discovery_runs.create_index([("ts", DESCENDING)])
+    # jobs.first_seen index used by supply-reality new-today count
+    await db.jobs.create_index("first_seen")
 

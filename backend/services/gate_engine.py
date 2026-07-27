@@ -5,6 +5,16 @@ identical gate results for the same (user, job) pair. Do not fork this file.
 
 FEATURE ALLOWLIST: gates and scoring must not use zip code or age proxies. Ever.
 
+Phase 3 Founder Brief — degree-blind eligibility (2026-02):
+  Only THREE gate families may hard-exclude a job:
+    (a) work authorization  → work_auth · itar · sponsorship · stem_opt_viability
+    (b) legally mandatory licenses/certifications → licensure (precise match only)
+    (c) geographic impossibility → location_onsite
+  Everything else surfaces as a visible NOTE on the card so the candidate can
+  see the requirement, but the job remains queueable. Over-filtering is the
+  failure mode. `education_requirement` and `experience_band` therefore emit
+  status="pass" + note for any mismatch (never "fail").
+
 14-gate contract (Founder Directive #3):
 
   1. vacancy_open           — job.status == 'live' and not stale
@@ -15,10 +25,10 @@ FEATURE ALLOWLIST: gates and scoring must not use zip code or age proxies. Ever.
   6. stem_opt_viability     — E-Verify/STEM-OPT window vs plausible start
   7. itar                   — requires_us_person vs candidate status
   8. security_clearance     — job requires clearance vs candidate holds clearance
-  9. licensure              — job requires listed license vs candidate holds it
+  9. licensure              — legally-mandatory license required vs candidate holds it
  10. location_onsite        — job geo vs preferences (locations / remote_ok)
- 11. experience_band        — years_min vs candidate approved employment years
- 12. education_requirement  — degree_level vs candidate approved education level
+ 11. experience_band        — years_min vs candidate approved employment years (NOTE-only, degree-blind principle)
+ 12. education_requirement  — degree_level vs candidate approved education level (NOTE-only, degree-blind principle)
  13. salary_floor           — user prefs floor vs posted comp range
  14. employer_exclusions    — company domain in user's exclude list
 
@@ -38,7 +48,7 @@ GateStatus = Literal["pass", "fail", "unknown"]
 US_PERSON_STATUSES = {"citizen", "permanent_resident"}
 NEEDS_SPONSORSHIP_STATUSES = {"ead_opt", "stem_opt", "h1b", "tn", "other"}
 
-DEGREE_ORDER = {"HS": 0, "AS": 1, "BS": 2, "MS": 3, "PhD": 4}
+DEGREE_ORDER = {"HS": 0, "AS": 1, "BS": 2, "MS": 3, "PHD": 4}
 
 
 @dataclass
@@ -47,9 +57,11 @@ class GateResult:
     status: GateStatus
     reason: str | None = None
     detail: str | None = None
+    note: str | None = None  # visible-but-non-blocking requirement note surfaced to UI on pass
 
     def to_dict(self) -> dict[str, Any]:
-        return {"name": self.name, "status": self.status, "reason": self.reason, "detail": self.detail}
+        return {"name": self.name, "status": self.status, "reason": self.reason,
+                "detail": self.detail, "note": self.note}
 
 
 # ---------- Context builder ----------
@@ -232,14 +244,118 @@ def _gate_security_clearance(ctx: dict, job: dict) -> GateResult:
 
 
 def _gate_licensure(ctx: dict, job: dict) -> GateResult:
+    """Legally-mandatory license/certification gate (Phase 3 Founder Brief).
+
+    HARD-FAIL only when:
+      (a) the job's structured `requirements.licenses` list explicitly names a
+          license that matches the LEGAL_LICENSE regex catalog
+          (statutory licensure — CDL, RN, LPN, PE, CPA, Bar admission, FINRA
+          series, EMT/Paramedic, trade licenses, pharmacy, radiology, etc.),
+      AND
+      (b) the candidate's approved certifications do NOT name-match it.
+
+    "Preferred" wording, ambiguous credentials (e.g. PMP), or the JD merely
+    mentioning a license outside `requirements.licenses` → visible NOTE, never a
+    hard exclusion. Over-filtering is the failure mode.
+    """
     reqs = ((job.get("requirements") or {}).get("licenses") or [])
     if not reqs:
         return GateResult("licensure", "pass")
     held = {str(c.get("name") or "").lower() for c in ctx.get("approved_certifications") or []}
-    missing = [r for r in reqs if r.lower() not in held]
-    if not missing:
-        return GateResult("licensure", "pass")
-    return GateResult("licensure", "unknown", reason="licensure_gap", detail=f"Job asks for {reqs}; you haven't approved a matching credential.")
+    # Partition requirements into legally-mandatory vs. ambiguous.
+    legal_missing: list[str] = []
+    ambiguous: list[str] = []
+    for r in reqs:
+        rstr = str(r or "").strip()
+        if not rstr:
+            continue
+        legal_label = _match_legal_license(rstr)
+        if legal_label is None:
+            ambiguous.append(rstr)
+            continue
+        # Legally-mandatory — does the user hold a name-matching credential?
+        if _user_holds_license(rstr, legal_label, held):
+            continue
+        legal_missing.append(legal_label)
+    if legal_missing:
+        first = legal_missing[0]
+        return GateResult(
+            "licensure", "fail",
+            reason=f"missing_legal_license:{first}",
+            detail=f"Job requires legally-mandatory {', '.join(sorted(set(legal_missing)))}; you haven't approved a matching credential.",
+        )
+    if ambiguous:
+        return GateResult(
+            "licensure", "pass",
+            note=f"Job lists credential(s) {ambiguous}; not statutorily mandatory — not a hard exclusion.",
+        )
+    return GateResult("licensure", "pass")
+
+
+# ---------- Legally-mandatory license catalog ----------
+# Match ONLY licenses/certifications that are statutorily required for the work
+# in the United States. Ambiguous items (PMP, AWS certs, Scrum Master, etc.) are
+# intentionally OUT — they never hard-exclude.
+_LEGAL_LICENSE_PATTERNS: list[tuple[str, str]] = [
+    (r"\bcdl\b|commercial\s+driver'?s?\s+licen[cs]e", "CDL"),
+    (r"\brn\b|registered\s+nurse", "RN"),
+    (r"\blpn\b|licensed\s+practical\s+nurse|\blvn\b", "LPN/LVN"),
+    (r"\bnp\b|nurse\s+practitioner", "NP"),
+    (r"\bcna\b|certified\s+nursing\s+assistant", "CNA"),
+    (r"\bmd\b|medical\s+doctor|physician\s+licen[cs]e", "MD"),
+    (r"\bdo\b\s*(?:licen[cs]e|physician)|doctor\s+of\s+osteopathic", "DO"),
+    (r"\bdds\b|\bdmd\b|dentist\s+licen[cs]e", "DDS/DMD"),
+    (r"physician\s+assistant|\bpa[-\s]?c\b", "PA"),
+    (r"\blcsw\b|licensed\s+clinical\s+social\s+worker", "LCSW"),
+    (r"\blmsw\b|licensed\s+master\s+social\s+worker", "LMSW"),
+    (r"\blmft\b|marriage\s+and\s+family\s+therapist", "LMFT"),
+    (r"\blpc\b|licensed\s+professional\s+counselor", "LPC"),
+    (r"\bemt\b|emergency\s+medical\s+technician|\bparamedic\b", "EMT/Paramedic"),
+    (r"\bpe\s*licen[cs]e|professional\s+engineer\s+licen[cs]e|\bp\.e\.\b", "PE"),
+    (r"\bcpa\b|certified\s+public\s+accountant", "CPA"),
+    (r"\bbar\s+admission|admitted\s+to\s+(?:the\s+)?bar|state\s+bar\s+licen[cs]e|attorney\s+licen[cs]e", "Bar admission"),
+    (r"real\s+estate\s+licen[cs]e", "Real estate license"),
+    (r"master\s+electrician|journeyman\s+electrician|electrician\s+licen[cs]e", "Electrician license"),
+    (r"master\s+plumber|journeyman\s+plumber|plumber\s+licen[cs]e", "Plumber license"),
+    (r"\bhvac\s+licen[cs]e|refrigeration\s+licen[cs]e", "HVAC license"),
+    (r"contractor'?s?\s+licen[cs]e", "Contractor license"),
+    (r"\bseries\s+(?:6|7|63|65|66|24|79)\b|finra\s+series", "FINRA series"),
+    (r"insurance\s+producer\s+licen[cs]e|life\s+and\s+health\s+licen[cs]e|property\s+and\s+casualty\s+licen[cs]e", "Insurance producer license"),
+    (r"\brph\b|pharmacist\s+licen[cs]e|licensed\s+pharmacist", "Pharmacist license"),
+    (r"pharmacy\s+technician\s+licen[cs]e|\bptcb\b", "Pharmacy tech license"),
+    (r"radiologic\s+technologist|\barrt\b\s*licen[cs]e", "Radiologic Technologist"),
+    (r"cosmetology\s+licen[cs]e|\bbarber\s+licen[cs]e|esthetician\s+licen[cs]e|nail\s+technician\s+licen[cs]e", "Cosmetology/Barber license"),
+    (r"childcare\s+licen[cs]e|child\s+care\s+licen[cs]e", "Childcare license"),
+    (r"\bteaching\s+licen[cs]e|teacher\s+certification\s+state|state\s+teaching\s+certificat", "State teaching license"),
+    (r"\bdea\b\s+registrat|dea\s+licen[cs]e", "DEA registration"),
+    (r"security\s+guard\s+licen[cs]e|armed\s+security\s+licen[cs]e|guard\s+card", "Security guard license"),
+]
+
+
+def _match_legal_license(req_str: str) -> str | None:
+    """Return the legal-license label if the requirement string statutorily
+    requires licensure; else None (ambiguous — treat as note, not gate)."""
+    hay = req_str.lower()
+    for pat, label in _LEGAL_LICENSE_PATTERNS:
+        if re.search(pat, hay):
+            return label
+    return None
+
+
+def _user_holds_license(req_str: str, legal_label: str, held: set[str]) -> bool:
+    """Does the candidate's approved certification set cover this legal license?"""
+    req_lower = req_str.lower()
+    # Direct substring match against approved cert names.
+    for h in held:
+        if not h:
+            continue
+        if h in req_lower or req_lower in h:
+            return True
+        # Try label token match (e.g. label="CDL", user cert name has "cdl")
+        for pat, label in _LEGAL_LICENSE_PATTERNS:
+            if label == legal_label and re.search(pat, h):
+                return True
+    return False
 
 
 def _gate_location(ctx: dict, job: dict) -> GateResult:
@@ -261,27 +377,52 @@ def _gate_location(ctx: dict, job: dict) -> GateResult:
 
 
 def _gate_experience_band(ctx: dict, job: dict) -> GateResult:
+    """Experience is note-only (Phase 3 Founder Brief).
+
+    Only work-authorization, legally-mandatory licensure, and geographic
+    impossibility may hard-exclude a job. Experience-band mismatch or unknown
+    surfaces as a visible NOTE so the candidate sees the posting's requirement,
+    but the job remains queueable.
+    """
     ymin = ((job.get("requirements") or {}).get("years_min"))
     if ymin is None:
         return GateResult("experience_band", "pass")
     yrs = _years_of_experience(ctx.get("approved_employment") or [])
     if yrs is None:
-        return GateResult("experience_band", "unknown", reason="experience_missing", detail="No explicit start/end dates in your approved employment claims.")
+        return GateResult(
+            "experience_band", "pass",
+            note=f"Job requests {ymin}+ yrs; no explicit dated employment claims yet — not a hard exclusion.",
+        )
     if yrs + 0.25 < ymin:
-        return GateResult("experience_band", "fail", reason="experience_below_band", detail=f"Job asks for {ymin}+ years; ~{yrs:.1f} inferred from your approved employment.")
+        return GateResult(
+            "experience_band", "pass",
+            note=f"Job requests {ymin}+ yrs; ~{yrs:.1f} inferred from your approved employment. Not a hard exclusion.",
+        )
     return GateResult("experience_band", "pass")
 
 
 def _gate_education(ctx: dict, job: dict) -> GateResult:
+    """Degree-blind (Phase 3 Founder Brief).
+
+    Education can NEVER hard-exclude a job. A mismatch or unknown surfaces as a
+    visible NOTE on the card so the candidate sees the posted requirement, but
+    the job remains queueable — over-filtering is the failure mode.
+    """
     req = ((job.get("requirements") or {}).get("degree_level"))
     if not req:
         return GateResult("education_requirement", "pass")
     have = _highest_degree(ctx.get("approved_education") or [])
     if not have:
-        return GateResult("education_requirement", "unknown", reason="education_unknown", detail=f"Job asks for {req}; no approved education claim yet.")
+        return GateResult(
+            "education_requirement", "pass",
+            note=f"Job requests {req}; no approved education claim yet — not a hard exclusion.",
+        )
     if DEGREE_ORDER.get(have, -1) >= DEGREE_ORDER.get(req.upper(), 0):
         return GateResult("education_requirement", "pass")
-    return GateResult("education_requirement", "fail", reason="education_below_requirement", detail=f"Job asks for {req}; your highest approved degree is {have}.")
+    return GateResult(
+        "education_requirement", "pass",
+        note=f"Job requests {req}; your highest approved degree is {have}. Degree is not a hard exclusion.",
+    )
 
 
 def _gate_salary(ctx: dict, job: dict) -> GateResult:
@@ -350,6 +491,7 @@ def evaluate(context: dict, job: dict) -> dict[str, Any]:
     any_unknown = any(r.status == "unknown" for r in results)
     fail_reasons = [r.reason for r in results if r.status == "fail" and r.reason]
     unknown_reasons = [r.reason for r in results if r.status == "unknown" and r.reason]
+    notes = [{"gate": r.name, "note": r.note} for r in results if r.note]
     return {
         "gates": [r.to_dict() for r in results],
         "pass_all": pass_all,
@@ -357,6 +499,7 @@ def evaluate(context: dict, job: dict) -> dict[str, Any]:
         "any_unknown": any_unknown,
         "fail_reasons": fail_reasons,
         "unknown_reasons": unknown_reasons,
+        "notes": notes,
     }
 
 

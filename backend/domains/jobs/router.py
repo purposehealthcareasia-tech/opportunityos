@@ -15,9 +15,11 @@ router = APIRouter(prefix="/api/v1/jobs", tags=["jobs"])
 
 def _shape_job_card(job: dict, score_row: dict | None) -> dict:
     from services.gate_engine import _is_stale
+    from services import velocity as vel_svc
     stale = _is_stale(job)
     effective_status = "stale" if stale and job.get("status") == "live" else job.get("status")
     disc = job.get("discovery") or {}
+    velocity = vel_svc.estimate(job)
     return {
         "id": job["id"],
         "canonical_key": job.get("canonical_key"),
@@ -50,6 +52,8 @@ def _shape_job_card(job: dict, score_row: dict | None) -> dict:
         # Phase 2 — two-lane feed + Phoenix distance
         "lane": job.get("lane"),
         "distance_from_phoenix_mi": job.get("distance_from_phoenix_mi"),
+        # Phase 3 — income velocity estimate (Lane B "soonest money")
+        "velocity": velocity,
     }
 
 
@@ -115,6 +119,7 @@ async def feed(user: dict = Depends(require_consent("discover_jobs")),
             passing.append({
                 **_shape_job_card(job, s),
                 "gates": gate["gates"],
+                "notes": gate.get("notes") or [],
                 "top_reasons": [rc for rc in s["reason_codes"] if rc["weight_applied"] > 0][:2],
                 "route": apps_svc.route_decision(job),
             })
@@ -127,6 +132,7 @@ async def feed(user: dict = Depends(require_consent("discover_jobs")),
                 "canonical_key": job.get("canonical_key"),
                 "fail_reasons": gate["fail_reasons"],
                 "unknown_reasons": gate["unknown_reasons"],
+                "notes": gate.get("notes") or [],
             })
             for reason in gate["fail_reasons"]:
                 excluded_by_reason[reason] = excluded_by_reason.get(reason, 0) + 1
@@ -135,8 +141,8 @@ async def feed(user: dict = Depends(require_consent("discover_jobs")),
     if scored_new_count:
         await um.increment_jobs_processed(user["id"], scored_new_count)
 
-    # Sort choice — Phase 2 introduces 'nearest' for Lane B users who
-    # care about proximity + recency; default remains best-fit score.
+    # Sort choice — Phase 2 introduced 'nearest' for Lane B users; Phase 3 adds
+    # 'velocity' (soonest expected weekly income). Default remains best-fit score.
     if sort == "nearest":
         def _sort_key(x):
             d = x.get("distance_from_phoenix_mi")
@@ -145,6 +151,14 @@ async def feed(user: dict = Depends(require_consent("discover_jobs")),
             posted = x.get("posted_at") or ""
             return (d, -len(posted))  # nearer first, more recent second
         passing.sort(key=_sort_key)
+    elif sort in ("velocity", "soonest_money"):
+        def _vel_key(x):
+            v = (x.get("velocity") or {}).get("velocity_score")
+            if not isinstance(v, (int, float)):
+                v = -1  # unknown velocity sinks to the end
+            posted = x.get("posted_at") or ""
+            return (-v, -len(posted))  # higher velocity first, more recent second
+        passing.sort(key=_vel_key)
     else:
         passing.sort(key=lambda x: (x.get("score") or 0), reverse=True)
     return {
@@ -191,6 +205,7 @@ async def job_detail(job_id: str, user: dict = Depends(require_consent("discover
         "requirements": job.get("requirements") or {},
         "gates": gate["gates"],
         "pass_all": gate["pass_all"],
+        "notes": gate.get("notes") or [],
         "reason_codes": (s or {}).get("reason_codes") or [],
         "have_gap": {"have": have, "gap": gap, "required": req_skills},
         "route": apps_svc.route_decision(job),
@@ -232,4 +247,13 @@ async def shortlist_job(job_id: str, user: dict = Depends(require_consent("disco
         app_row = await apps_svc.shortlist(user["id"], job)
     except apps_svc.DuplicateApplication:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail={"error": "already_shortlisted"})
+    except apps_svc.EmployerCapReached as e:
+        # Phase 3 — rolling 30-day per-employer safety cap.
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail={
+            "error": "employer_cap_reached",
+            "message": (f"You've reached the {e.cap_info['cap']}-per-{e.cap_info['window_days']}-day cap "
+                        f"for {e.cap_info.get('employer') or 'this employer'}. "
+                        "Focus on other employers first, or wait for the window to roll."),
+            **e.cap_info,
+        })
     return app_row

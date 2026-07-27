@@ -3,12 +3,13 @@ import { Link, useNavigate } from 'react-router-dom';
 import {
   Rss, ExternalLink, ShieldOff, AlertTriangle, Clock, MapPin, Building2,
   Send, X, ArrowRight, Ban, EyeOff, LinkIcon, TestTube2, HelpCircle,
+  Briefcase, Zap, Info, DollarSign,
 } from 'lucide-react';
 import { api, withIdempotency } from '../lib/api';
 import Card, { CardHeader } from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
-import { LoadingBlock, ErrorBlock, EmptyBlock, ScopeRequiredPrompt } from '../lib/scope';
+import { LoadingBlock, ErrorBlock, ScopeRequiredPrompt } from '../lib/scope';
 import { safeExternalHref } from '../lib/utils';
 
 const REASON_LABELS = {
@@ -38,6 +39,11 @@ const REASON_LABELS = {
 };
 
 function reasonLabel(code) {
+  if (!code) return code;
+  if (code.startsWith('missing_legal_license:')) {
+    const which = code.split(':')[1] || 'license';
+    return `Legally-required ${which} missing`;
+  }
   return REASON_LABELS[code] || code;
 }
 
@@ -122,6 +128,70 @@ function StatusChip({ status }) {
   };
   const cfg = map[status] || { label: status, cls: 'pill pill-neutral' };
   return <span className={cfg.cls}>{cfg.label}</span>;
+}
+
+// Phase 2/3 — Lane filter tabs. Career / Income Now / All.
+function LaneTabs({ value, onChange }) {
+  const tabs = [
+    { id: 'all', label: 'All lanes', icon: Rss },
+    { id: 'career', label: 'Career', icon: Briefcase, tooltip: 'Engineering / technical / knowledge work.' },
+    { id: 'income_now', label: 'Income Now', icon: Zap, tooltip: 'Hourly, warehouse, driver, retail — lower barrier, faster pay.' },
+  ];
+  return (
+    <div className="inline-flex rounded-lg border border-line dark:border-line-dark p-1 bg-white/60 dark:bg-neutral-900/60"
+         role="tablist" aria-label="Job lane filter" data-testid="feed-lane-tabs">
+      {tabs.map((t) => {
+        const Icon = t.icon;
+        const active = value === t.id;
+        return (
+          <button
+            key={t.id}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            onClick={() => onChange(t.id)}
+            title={t.tooltip}
+            data-testid={`feed-lane-tab-${t.id}`}
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+              active
+                ? 'bg-accent text-white'
+                : 'text-ink dark:text-ink-dark hover:bg-neutral-100 dark:hover:bg-neutral-800'
+            }`}
+          >
+            <Icon className="h-3.5 w-3.5" /> {t.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// Phase 3 — Sort selector (best-fit / nearest / soonest money).
+function SortSelector({ value, onChange, lane }) {
+  const opts = [
+    { id: 'best_fit', label: 'Best fit' },
+    { id: 'nearest', label: 'Nearest Phoenix' },
+    { id: 'velocity', label: 'Soonest money' },
+  ];
+  return (
+    <div className="inline-flex items-center gap-2 text-xs muted" data-testid="feed-sort-selector">
+      <span>Sort:</span>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        aria-label="Sort feed"
+        className="bg-transparent border border-line dark:border-line-dark rounded-md px-2 py-1 text-xs text-ink dark:text-ink-dark"
+        data-testid="feed-sort-select"
+      >
+        {opts.map((o) => (
+          <option key={o.id} value={o.id}>
+            {o.label}
+            {lane === 'income_now' && o.id === 'velocity' ? ' (best for Income Now)' : ''}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
 }
 
 function LinkImportBox({ onImported }) {
@@ -222,6 +292,105 @@ function LinkImportBox({ onImported }) {
   );
 }
 
+function LaneChip({ lane }) {
+  if (!lane) return null;
+  const cfg = lane === 'income_now'
+    ? { label: 'Income Now', cls: 'pill pill-accent', Icon: Zap }
+    : { label: 'Career', cls: 'pill pill-neutral', Icon: Briefcase };
+  const { Icon } = cfg;
+  return <span className={cfg.cls}><Icon className="h-3 w-3" /> {cfg.label}</span>;
+}
+
+function VelocityChip({ velocity }) {
+  if (!velocity?.weekly_est_usd) return null;
+  const w = Math.round(velocity.weekly_est_usd);
+  const hourly = velocity.hourly_rate_usd ? `$${velocity.hourly_rate_usd.toFixed(2)}/hr` : null;
+  return (
+    <span
+      className="pill pill-accent"
+      title={`Est. weekly income based on posted pay${hourly ? ` (${hourly})` : ''}. Not a guarantee.`}
+    >
+      <DollarSign className="h-3 w-3" /> ~${w.toLocaleString()}/wk
+    </span>
+  );
+}
+
+function DistanceChip({ mi }) {
+  if (typeof mi !== 'number') return null;
+  const label = mi < 1 ? 'in Phoenix' : `${Math.round(mi)}mi from Phoenix`;
+  return <span className="pill pill-neutral"><MapPin className="h-3 w-3" /> {label}</span>;
+}
+
+function NotesList({ notes }) {
+  if (!notes || notes.length === 0) return null;
+  return (
+    <div className="mt-2 rounded-md border border-amber-500/25 bg-amber-500/5 p-2.5 text-xs space-y-1"
+         data-testid="job-card-notes">
+      {notes.map((n, i) => (
+        <div key={i} className="flex items-start gap-1.5">
+          <Info className="h-3.5 w-3.5 mt-0.5 flex-shrink-0 text-amber-700 dark:text-amber-400" />
+          <span className="text-amber-800 dark:text-amber-300 leading-snug">{n.note}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// Phase 2/3 — Truthful empty state. Instead of "nothing passes", explain WHY
+// with real numbers so the candidate knows the feed isn't broken — their
+// filters are just narrow. Offers concrete CTAs.
+function TruthfulEmpty({ lane, totals, onSwitchLane, onGoPrefs }) {
+  const live = totals?.live_jobs || 0;
+  const excludedByReason = totals?.excluded_by_reason || {};
+  const topReasons = Object.entries(excludedByReason).sort((a, b) => b[1] - a[1]).slice(0, 3);
+  const laneLabel = lane === 'career' ? 'Career'
+                  : lane === 'income_now' ? 'Income Now'
+                  : 'this lane';
+  return (
+    <div className="card p-6" data-testid="feed-truthful-empty">
+      <div className="flex items-start gap-3">
+        <Info className="h-5 w-5 text-accent flex-shrink-0 mt-0.5" />
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-ink dark:text-ink-dark">
+            No jobs pass every gate you've set in {laneLabel}.
+          </p>
+          <p className="text-sm muted mt-1 leading-relaxed">
+            The feed isn't empty — <span className="font-mono">{live.toLocaleString()}</span> live job(s) are indexed{lane !== 'all' ? ' in this lane' : ''}, but your current filters exclude them all. The most common exclusions:
+          </p>
+          {topReasons.length > 0 && (
+            <ul className="mt-2 space-y-1 text-sm" data-testid="feed-empty-top-reasons">
+              {topReasons.map(([code, n]) => (
+                <li key={code} className="flex items-baseline gap-2">
+                  <span className="font-mono text-xs muted w-10 text-right">{n}</span>
+                  <span>{reasonLabel(code)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          <div className="mt-4 flex flex-wrap gap-2">
+            {lane !== 'income_now' && (
+              <Button size="sm" variant="secondary" onClick={() => onSwitchLane('income_now')} data-testid="feed-empty-try-income">
+                <Zap className="h-3.5 w-3.5" /> Try Income Now lane
+              </Button>
+            )}
+            {lane !== 'all' && (
+              <Button size="sm" variant="secondary" onClick={() => onSwitchLane('all')} data-testid="feed-empty-view-all">
+                <Rss className="h-3.5 w-3.5" /> View all lanes
+              </Button>
+            )}
+            <Button size="sm" variant="accent" onClick={onGoPrefs} data-testid="feed-empty-widen-prefs">
+              Widen my preferences <ArrowRight className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+          <p className="text-xs muted mt-3 leading-relaxed">
+            Tip: location and remote-only preferences are the most common cause. If you're open to remote roles or a wider commute radius, updating preferences usually unlocks 100s of live jobs.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function JobCard({ job, onShortlist, onHide, onExplain, busy }) {
   return (
     <div className="card p-5 space-y-3" data-testid={`job-card-${job.id}`}>
@@ -233,6 +402,7 @@ function JobCard({ job, onShortlist, onHide, onExplain, busy }) {
             </Link>
             {job.is_sample && <SampleBadge />}
             <StatusChip status={job.status} />
+            <LaneChip lane={job.lane} />
           </div>
           <div className="text-sm muted mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
             <span className="inline-flex items-center gap-1"><Building2 className="h-3 w-3" />{job.company_name}</span>
@@ -246,6 +416,8 @@ function JobCard({ job, onShortlist, onHide, onExplain, busy }) {
       <div className="flex flex-wrap items-center gap-2">
         <RouteChip route={job.route?.route} />
         <FreshnessChip ts={job.last_verified} />
+        <DistanceChip mi={job.distance_from_phoenix_mi} />
+        <VelocityChip velocity={job.velocity} />
         {job.taxonomy_family && <span className="pill pill-neutral">{job.taxonomy_family}</span>}
         {(job.top_reasons || []).slice(0, 3).map((r) => (
           <span key={r.factor} className={`pill ${r.direction === 'positive' ? 'pill-accent' : 'pill-neutral'}`}>
@@ -253,6 +425,8 @@ function JobCard({ job, onShortlist, onHide, onExplain, busy }) {
           </span>
         ))}
       </div>
+
+      <NotesList notes={job.notes} />
 
       <div className="flex items-center justify-between pt-1">
         <button type="button" onClick={() => onExplain(job)} className="text-xs muted underline" data-testid={`job-explain-btn-${job.id}`}>
@@ -445,12 +619,20 @@ export default function FeedPage() {
   const [explainJobId, setExplainJobId] = useState(null);
   const [imports, setImports] = useState([]);
   const [flash, setFlash] = useState(null);
+  const [lane, setLane] = useState('all');
+  const [sort, setSort] = useState('best_fit');
   const nav = useNavigate();
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (laneArg, sortArg) => {
+    const _lane = laneArg ?? lane;
+    const _sort = sortArg ?? sort;
     setState((s) => ({ ...s, loading: true, error: null, needsScope: false, passportBlocked: false }));
     try {
-      const { data } = await api.get('/api/v1/jobs/feed');
+      const qs = new URLSearchParams();
+      if (_lane && _lane !== 'all') qs.set('lane', _lane);
+      if (_sort && _sort !== 'best_fit') qs.set('sort', _sort);
+      const suffix = qs.toString() ? `?${qs.toString()}` : '';
+      const { data } = await api.get(`/api/v1/jobs/feed${suffix}`);
       setState({ loading: false, error: null, data, needsScope: false, passportBlocked: false });
     } catch (e) {
       const detail = e?.response?.data?.detail;
@@ -462,7 +644,7 @@ export default function FeedPage() {
         setState({ loading: false, error: 'Could not load your feed.', data: null, needsScope: false, passportBlocked: false });
       }
     }
-  }, []);
+  }, [lane, sort]);
 
   const loadImports = useCallback(async () => {
     try {
@@ -472,6 +654,22 @@ export default function FeedPage() {
   }, []);
 
   useEffect(() => { load(); loadImports(); }, [load, loadImports]);
+
+  const onLaneChange = (id) => {
+    setLane(id);
+    // Auto-suggest velocity sort when switching to Income Now for the first time.
+    if (id === 'income_now' && sort === 'best_fit') {
+      setSort('velocity');
+      load(id, 'velocity');
+    } else {
+      load(id, sort);
+    }
+  };
+
+  const onSortChange = (s) => {
+    setSort(s);
+    load(lane, s);
+  };
 
   const passing = useMemo(() => state.data?.passing || [], [state.data]);
   const excluded = useMemo(() => state.data?.excluded || [], [state.data]);
@@ -490,6 +688,7 @@ export default function FeedPage() {
     } catch (e) {
       const d = e?.response?.data?.detail;
       if (d?.error === 'already_shortlisted') setFlash({ kind: 'warn', msg: 'You already have an open application for this job.' });
+      else if (d?.error === 'employer_cap_reached') setFlash({ kind: 'warn', msg: d.message || `Rolling ${d.cap}-per-${d.window_days}-day cap reached for ${d.employer || 'this employer'}.` });
       else setFlash({ kind: 'err', msg: 'Could not shortlist.' });
     } finally { setBusy(null); }
   };
@@ -569,10 +768,16 @@ export default function FeedPage() {
           <div className="text-[11px] muted mt-1">Includes SAMPLE rows — badged, never counted in production cohorts.</div>
         </div>
         <div className="card p-4">
-          <div className="text-xs muted">Total live jobs seen</div>
-          <div className="text-2xl font-semibold mt-1">{(totals.passing || 0) + (totals.excluded || 0)}</div>
+          <div className="text-xs muted">Live jobs in this lane</div>
+          <div className="text-2xl font-semibold mt-1" data-testid="feed-totals-live-in-lane">{totals.live_jobs ?? ((totals.passing || 0) + (totals.excluded || 0))}</div>
           <div className="text-[11px] muted mt-1">Feed is fresh-only. Anything older than 14 days is auto-marked stale.</div>
         </div>
+      </div>
+
+      {/* Phase 2/3 — Lane filter + sort selector */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <LaneTabs value={lane} onChange={onLaneChange} />
+        <SortSelector value={sort} onChange={onSortChange} lane={lane} />
       </div>
 
       {state.loading && <LoadingBlock label="Scoring your feed…" />}
@@ -583,12 +788,18 @@ export default function FeedPage() {
           <section>
             <div className="flex items-baseline justify-between mb-3">
               <h2 className="text-lg font-semibold">Passing your gates ({passing.length})</h2>
-              <span className="text-xs muted">Sorted by score</span>
+              <span className="text-xs muted">
+                {sort === 'nearest' ? 'Sorted by proximity to Phoenix'
+                  : sort === 'velocity' ? 'Sorted by soonest expected weekly income'
+                  : 'Sorted by score'}
+              </span>
             </div>
             {passing.length === 0 ? (
-              <EmptyBlock
-                title="Nothing passes all your gates yet"
-                hint="Check the excluded list below — it explains why. Adjust eligibility or preferences to widen the pool honestly."
+              <TruthfulEmpty
+                lane={lane}
+                totals={totals}
+                onSwitchLane={onLaneChange}
+                onGoPrefs={() => nav('/preferences')}
               />
             ) : (
               <div className="grid md:grid-cols-2 gap-3">

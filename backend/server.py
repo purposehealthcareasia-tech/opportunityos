@@ -308,3 +308,13 @@ app.include_router(notifications_router)
 
 from domains.discovery.scheduler import router as discovery_router  # noqa: E402
 app.include_router(discovery_router)
+
+# Phase 3 — safeguards / actionable low-barrier surfaces
+from domains.credentials.router import router as credentials_router  # noqa: E402
+from domains.walkin import router as walkin_router  # noqa: E402
+from domains.persona import router as persona_router  # noqa: E402
+from domains.dashboard import router as dashboard_router  # noqa: E402
+app.include_router(credentials_router)
+app.include_router(walkin_router)
+app.include_router(persona_router)
+app.include_router(dashboard_router)
