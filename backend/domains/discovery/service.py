@@ -262,6 +262,19 @@ async def refresh_all(actor: str = "discovery-scheduler") -> dict:
 
     elapsed = (datetime.now(timezone.utc) - start).total_seconds()
 
+    # Phase 5.1 lifecycle sweep — after every successful refresh we run the
+    # staleness detector so `status="live"` continues to mean "present on
+    # the source board as of the last successful poll." Board fetches that
+    # failed OR returned empty were already recorded in per_company_report,
+    # so sweep_all is safe to call — its own safety rules skip any board
+    # whose fresh_id set was empty/ambiguous.
+    try:
+        from services import lifecycle_sweep as sweep
+        sweep_summary = await sweep.sweep_all(actor=f"post-refresh:{actor}")
+    except Exception as e:
+        log.warning("discovery.refresh_all: sweep failed %s", e)
+        sweep_summary = {"error": f"{type(e).__name__}:{str(e)[:80]}"}
+
     # Recount lane totals so the report answers the founder's questions.
     db = get_db()
     lane_a = await db.jobs.count_documents({"lane": LANE_A, "status": "live"})
@@ -285,6 +298,18 @@ async def refresh_all(actor: str = "discovery-scheduler") -> dict:
         "lane_totals": {"career": lane_a, "income_now": lane_b},
         "phoenix_radius_totals": {"within_25mi": within_25mi,
                                    "within_60mi": within_60mi},
+        # Phase 5.1 lifecycle sweep summary — every refresh now includes
+        # staleness detection results so the audit tells the full story
+        # of what was inserted, updated, AND closed on this pass.
+        "lifecycle_sweep": {
+            "id": sweep_summary.get("id"),
+            "boards_swept": sweep_summary.get("boards_swept"),
+            "boards_skipped_ambiguous": sweep_summary.get("boards_skipped_ambiguous"),
+            "boards_errored": sweep_summary.get("boards_errored"),
+            "closed_total": sweep_summary.get("closed_total"),
+            "stamped_total": sweep_summary.get("stamped_total"),
+            "error": sweep_summary.get("error"),
+        },
     }
     log.info("discovery.refresh_all: done %s", summary)
     await audit.write(actor, "discovery.refresh_all", "jobs:*", summary)

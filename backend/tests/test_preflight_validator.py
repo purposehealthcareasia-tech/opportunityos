@@ -331,3 +331,66 @@ async def test_preflight_manifest_hash_mismatch_blocks(scratch_db):
     )
     assert verdict.ok is False
     assert pf.REASON_MANIFEST_MISMATCH in verdict.reasons
+
+
+# --- 3. Sprint-channel block path (Founder Directive 2026-07-28 gap-close) --
+#
+# The tester exercised block on `email_dry_run` (identity_mismatch), but the
+# sprint channel passes `outbound_fields=None` and therefore cannot fail on
+# identity — its block path is the traceability gate on the resume manifest
+# itself. This test replays that gate end-to-end: seed a manifest line that
+# references a claim id NOT present in the user's approved-claims set, then
+# call preflight on the sprint channel and assert the block + review-lane
+# routing.
+
+
+@pytest.mark.asyncio
+async def test_preflight_sprint_channel_blocks_on_unapproved_claim_reference(scratch_db):
+    """Sprint block-path parity: a resume line whose `claim_ids` references
+    a claim id the user does NOT hold (or holds only in pending state) must
+    block the sprint /confirm route with `validator_blocked_mismatch`, and
+    `block_and_route_to_review` must move the application to state=review
+    with `review_reason=validator_blocked_mismatch`."""
+    from services import preflight_validator as pf
+
+    ctx = await _seed(scratch_db)
+    # Corrupt the manifest by rewriting the one line to point at a claim id
+    # that does NOT exist on this user (unknown UUID).
+    rogue_claim_id = str(uuid.uuid4())
+    await scratch_db.resume_versions.update_one(
+        {"user_id": ctx["user_id"], "base": True},
+        {"$set": {"render_manifest.lines": [
+            {"line_id": str(uuid.uuid4()),
+             "text": "Systems Engineer at Fixture Motors 2021-2022.",
+             "claim_ids": [rogue_claim_id],
+             "status": "accepted"},
+        ]}},
+    )
+
+    verdict = await pf.preflight_check(
+        user_id=ctx["user_id"], application_id=ctx["application_id"],
+        channel=pf.CHANNEL_SPRINT_FIXTURE,
+    )
+    assert verdict.ok is False, verdict.reasons
+    # Top-level code MUST be first, then line_validation_failed:{n}.
+    assert verdict.reasons[0] == pf.REASON_TOP_LEVEL
+    assert any(r.startswith("line_validation_failed") for r in verdict.reasons)
+    # Line stats show the rejection.
+    assert verdict.line_stats["rejected"] >= 1
+    assert verdict.line_stats["passed"] == 0
+
+    # And the review-lane routing side-effect must fire cleanly.
+    await pf.block_and_route_to_review(verdict, audit_actor=ctx["user_id"])
+    app = await scratch_db.applications.find_one(
+        {"id": ctx["application_id"]},
+        {"_id": 0, "state": 1, "review_reason": 1, "review_verdict_id": 1},
+    )
+    assert app["state"] == "review"
+    assert app["review_reason"] == pf.REASON_TOP_LEVEL
+    assert app["review_verdict_id"] == verdict.id
+
+    persisted = await scratch_db.preflight_verdicts.find_one(
+        {"id": verdict.id}, {"_id": 0})
+    assert persisted is not None
+    assert persisted["ok"] is False
+    assert persisted["channel"] == pf.CHANNEL_SPRINT_FIXTURE

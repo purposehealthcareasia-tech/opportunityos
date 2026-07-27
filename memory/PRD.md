@@ -5,6 +5,69 @@
 
 ---
 
+## 🚦 Phase 5.1 → 5.4 batch — SHIPPED (2026-07-28)
+
+### 5.0 Gap closure — sprint block-path functional test
+
+`tests/test_preflight_validator.py::test_preflight_sprint_channel_blocks_on_unapproved_claim_reference` — corrupts a base resume line to reference an unapproved claim id; asserts `verdict.ok=False`, `reasons[0]=validator_blocked_mismatch`, `line_validation_failed:{n}` present, `block_and_route_to_review` moves the application to `state=review` with the correct `review_verdict_id`, and the verdict is persisted to `preflight_verdicts`. Passing.
+
+### 5.1a Lifecycle sweep — truthfulness fix
+
+`backend/services/lifecycle_sweep.py`: for each catalog board, compares fresh source IDs to `status='live'` DB rows and transitions absent rows to `status='closed'` with `closed_detected_at`, `closed_reason='absent_from_source_feed'`, `closed_from_status='live'`, plus stamps `last_polled_at` on every survived live row. Skips ambiguous responses (empty board OR fetch exception) so a transient failure NEVER produces a false close. Persists per-run audit to `lifecycle_sweep_runs`. Integrated into `discovery/service.py::refresh_all` — every refresh now includes staleness detection, and the summary carries a `lifecycle_sweep` block.
+
+**First sweep result (2026-07-28):** 158 boards probed · 157 swept · 1 skipped ambiguous · 0 errored · **69 jobs closed live→stale** · 22,054 live rows stamped `last_polled_at` · 22,055 fresh_ids on sources · top closed: carvana 29, spacex 5, onemedical 4.
+
+**Feed surface:** `GET /api/v1/jobs/feed` now returns a `discovery` block with `{polled_at, sweep_id, boards_swept_last_pass, closed_last_pass}` — "live" on the feed = "present on source board as of last successful poll", and that timestamp is explicit.
+
+### 5.1b Apply-at-birth tiered polling — SHIPPED (behind env flag)
+
+`backend/services/apply_at_birth.py` + `backend/tools/apply_at_birth_report.py`.
+
+* Velocity classifier: `HOT (>=5 postings inserted in last 24 h)`, `WARM (>=1 in last 7 d)`, `COLD (else)`.
+* Tier intervals: HOT=20 min, WARM=2 h, COLD=6 h (env-tunable via `APPLY_AT_BIRTH_{HOT,WARM,COLD}_INTERVAL_S`).
+* Delta detection composes `lifecycle_sweep.sweep_one` — one fetch per poll, no double-poll.
+* `next_due_at` per (source_ats, employer_token) stored in `apply_at_birth_state`; per-tick audit in `apply_at_birth_ticks`.
+* **Median posting→queue metric** filters honestly — only counts rows whose `posted_at` AND `first_seen` are both within the window (not the initial ingest sweep-up).
+* Kept BEHIND an env flag; scheduler auto-wiring intentionally deferred per rail "no new automation without approval". Report from current state: `apply-at-birth · tiers hot=147 warm=10 cold=1 · median_posting_to_queue_minutes_last_24h=234.5` (mostly-hot classification reflects today's initial 158-tuple ingest — tiers normalise over the following weeks).
+
+### 5.1c Pre-flight simulate endpoint
+
+`POST /api/v1/preflight/simulate` (`backend/domains/preflight/`). Read-only dry-fire of `preflight_check` — same auth (session cookie + CSRF) and consent gate (`submit_applications`) as the real dispatch, but NO persist / NO state change / NO receipt-outbox writes. Verified live: block path returns `ok=false` + full verdict (no side-effect audit rows written); pass path returns `ok=true` with clean verdict; unauth call returns HTTP 403 CSRF (auth-gated as designed).
+
+### 5.2 Shared form-map cache — SHIPPED
+
+`backend/services/form_map_cache.py`.
+
+* Key: `(ats, form_fingerprint)`; fingerprint = sha256 of sorted `(name, type, required)` tuples — deterministic across field reordering.
+* Value: `{selector_map, fill_confidence, verified_at, verified_by_count, verified_by_sources, status}`.
+* One verified fill promotes the map for ALL users; `demote(ats, fingerprint, reason)` zeroes confidence and marks `status=demoted` (never deletes — full audit via `demote_events`).
+* **Structure only**: selector_map is sanitized so callers can NEVER smuggle user data — only `{selector, role, confidence}` are stored (test locks it in).
+* **Bootstrap from sanctioned dry-run only** (rail): `bootstrap_from_dryrun_json(path)` reads the authoritative dry-run JSON, records URL-fingerprint entries with `structure_captured=False` for the 20 real GH/Lever forms already verified. Field-level fingerprints will require an explicitly-authorized future harness pass. Bootstrap complete: **20 form-maps recorded**, all `verified` status.
+
+### 5.3 Outcome autopilot — SHIPPED
+
+`backend/services/outcome_autopilot.py`.
+
+* Per-app ledger: `application_outcomes` collection, kinds `viewed / response / interview / rejection / silence`, `days_to_response` derived from `submitted_at`.
+* `compute_group_stats(user_id, group_by='employer' | 'resume_version_id')` → per-group counts + response_rate + median days-to-response.
+* `reallocate_daily_budget(user_id)` → weekly reallocation weights employers by response rate; **every allocation carries a displayable `reason` string** so the UI renders "why fewer apps to X" honestly. Zero-signal fallback → equal weighting (never zero-out an employer without cause).
+* `kill_list_candidates(user_id, silence_threshold, silence_days)` → identifies silent employers without auto-adding to the kill list; `add_to_kill_list` is idempotent; `restore_from_kill_list` is reversible with its own audit event.
+
+### 5.4 Self-healing — SHIPPED
+
+`backend/services/self_healing.py`.
+
+* `threshold_check(form_map, threshold=CONFIDENCE_THRESHOLD)` — env-tunable via `SELF_HEALING_CONFIDENCE_THRESHOLD` (default `0.7`).
+* `downgrade_map_to_assisted(ats, fingerprint, reason)` — wraps `form_map_cache.demote` and audits with `EVENT_MAP_DEMOTED_LOW_CONFIDENCE` (or `_FINGERPRINT_DRIFT` when reason contains "drift").
+* `route_application_to_assisted(application_id, user_id, reason)` — sets `applications.state=assisted` + `assisted_reason`; `assisted_lane_reason(application_id)` powers the UI "Why is this in assisted lane?".
+* `log_silent_failure` + `log_wrong_submission` — silent failure and wrong submission are FORBIDDEN; these helpers exist so the audit row is what makes any near-miss not-silent.
+
+### Regression suite
+
+`test_preflight_validator.py` (15) · `test_receipt_compound_index_regression.py` (5) · `test_consent_scope_enum_guard.py` (3) · `test_apply_at_birth.py` (6) · `test_form_map_cache.py` (8) · `test_outcome_autopilot.py` (5) · `test_self_healing.py` (7) · `test_phase3_safeguards.py` (34) · `test_phase4_and_unlock.py` (22) · `test_jd_parser.py` (9). **82 tests passing across focused Phase 3 / 4 / 5.0 / 5.1 / 5.2 / 5.3 / 5.4.**
+
+---
+
 ## 🚦 Phase 5.0 — Pre-flight validator dispatch chokepoint — SHIPPED (2026-07-28)
 
 **Rule (Founder Directive 2026-07-28):** "Before ANY outbound submission (email route now; real form/API later), machine-diff every outbound field and every resume line against the approved Passport claim it traces to. Untraceable line or mismatch → BLOCK and route to review lane with reason `validator_blocked_mismatch`. Validator verdict stored on the receipt. Zero unvalidated submissions by construction — enforced at the dispatch chokepoint so no code path can bypass it."

@@ -174,6 +174,7 @@ async def sweep_all(*, actor: str = "lifecycle-sweep",
 
     per_board = await asyncio.gather(*[_bound(b) for b in boards])
     summary = {
+        "id": f"lifecycle-sweep-{int(now.timestamp())}",
         "started_at": now.isoformat(),
         "finished_at": datetime.now(timezone.utc).isoformat(),
         "actor": actor,

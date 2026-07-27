@@ -323,10 +323,12 @@ app.include_router(dashboard_router)
 from domains.bulk_prep import router as bulk_prep_router  # noqa: E402
 from domains.submit_sprint import router as submit_sprint_router  # noqa: E402
 from domains.email_route import router as email_route_router  # noqa: E402
+from domains.preflight import router as preflight_router  # noqa: E402
 from domains.employer_intake import router as employer_intake_router  # noqa: E402
 from domains.employer_intake import admin_router as employer_intake_admin_router  # noqa: E402
 app.include_router(bulk_prep_router)
 app.include_router(submit_sprint_router)
 app.include_router(email_route_router)
+app.include_router(preflight_router)
 app.include_router(employer_intake_router)
 app.include_router(employer_intake_admin_router)
