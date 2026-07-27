@@ -161,6 +161,18 @@ async def feed(user: dict = Depends(require_consent("discover_jobs")),
         passing.sort(key=_vel_key)
     else:
         passing.sort(key=lambda x: (x.get("score") or 0), reverse=True)
+    # Phase 5.1 — surface the last successful lifecycle-sweep timestamp so
+    # the UI can honestly render "last polled X mins ago". `live` on the
+    # feed now means "present on the source board as of the last successful
+    # poll" — a stale/closed row is filtered by list_live()'s status='live'
+    # query, but the founder rule also requires the poll timestamp be
+    # explicit in the response.
+    last_sweep = await get_db().lifecycle_sweep_runs.find_one(
+        {}, {"_id": 0, "id": 1, "finished_at": 1, "closed_total": 1,
+              "boards_swept": 1},
+        sort=[("finished_at", -1)],
+    )
+
     return {
         "weights_version": WEIGHTS_VERSION,
         "lane": lane or "all",
@@ -175,6 +187,12 @@ async def feed(user: dict = Depends(require_consent("discover_jobs")),
             "hidden": hidden_count,
             "excluded_by_reason": excluded_by_reason,
             "unknown_by_reason": unknown_by_reason,
+        },
+        "discovery": {
+            "polled_at": (last_sweep or {}).get("finished_at"),
+            "sweep_id": (last_sweep or {}).get("id"),
+            "boards_swept_last_pass": (last_sweep or {}).get("boards_swept"),
+            "closed_last_pass": (last_sweep or {}).get("closed_total"),
         },
     }
 
