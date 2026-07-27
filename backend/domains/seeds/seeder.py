@@ -356,6 +356,8 @@ async def _rebase_fixture_user() -> str:
         # Phase 5 collections
         "authorization_scopes", "outcomes", "interviews",
         "manual_queue_items", "submission_receipts", "subscriptions",
+        # Phase 3 (Founder Brief) — walk-ins + personas must reset with the fixture
+        "walkins", "personas",
     ]
     for coll in to_wipe:
         await db[coll].delete_many({"user_id": user_id})

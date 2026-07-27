@@ -5,6 +5,46 @@
 
 ---
 
+## 🚦 Phase 3 (Founder Brief · Real-Job Discovery lane) — SHIPPED (2026-07-27)
+
+**Active branch:** `feat/real-job-discovery`.
+**Latest checkpoint (Phase 3 batch):** `dfb83a6b` (+ two hot-fix commits below).
+**Backend regression this phase:** **51/51** — 23 `test_gate_engine.py` + 11 `test_phase3_safeguards.py` + 14 `test_phase3_integration_live.py` + 3 `test_iter20_walkin_and_chips.py`. See `/app/test_reports/iteration_20.json` (`retest_needed=false`).
+
+### What shipped
+
+1. **Degree-blind eligibility.** `services/gate_engine.py` — only three gate families may hard-exclude a job: work authorization (`work_auth` · `itar` · `sponsorship` · `stem_opt_viability`), legally-mandatory `licensure`, and geographic impossibility (`location_onsite`). `education_requirement` and `experience_band` now emit `status="pass"` with a visible NOTE for any mismatch. `evaluate()` returns a `notes` list; `/api/v1/jobs/feed` and `/api/v1/jobs/{id}` propagate it so the UI can render "Job requests PhD; your highest approved degree is MS. Degree is not a hard exclusion." on the card.
+2. **Precise licensure hard-fail.** `_LEGAL_LICENSE_PATTERNS` covers 27 statutory credentials (CDL, RN, LPN, LVN, NP, CNA, MD, DO, DDS/DMD, PA, LCSW/LMSW/LMFT/LPC, EMT/Paramedic, PE, CPA, Bar admission, Real Estate, Electrician/Plumber/HVAC/Contractor, FINRA Series, Insurance Producer, Pharmacist, Pharmacy Tech, Radiologic Tech, Cosmetology/Barber, Childcare, State Teaching, DEA registration, Security Guard). Missing legally-mandatory license → `status="fail"`, `reason=missing_legal_license:<label>`. Ambiguous credentials (PMP, AWS certs, OSHA-30, etc.) → `status="pass"` + note. Over-filtering is the failure mode.
+3. **Rolling 30-day employer cap.** `services/employer_cap.py` — 3 open applications per employer per 30-day window. Enforced in `applications/service.py::shortlist` → `EmployerCapReached`; router translates to HTTP 429 with `detail.error="employer_cap_reached"`, cap, window, and human-readable message. Frontend `Feed.jsx` surfaces the flash.
+4. **Income velocity estimator + Lane B sort.** `services/velocity.py` — deterministic (no LLM) hourly-rate parse from JD/comp, salary→hourly fallback, part-time detection, staleness decay. `/jobs/feed?sort=velocity` (alias `soonest_money`) sorts passing rows by `velocity_score` DESC. Every job card carries a fully-shaped `velocity{hourly_rate_usd, hours_per_week, weekly_est_usd, posted_days_ago, velocity_score}`.
+5. **Supply-Reality dashboard.** `GET /api/v1/dashboard/supply-reality` — `supply{live_jobs, live_by_lane{career, income_now}, new_today, within_25/60mi_of_phoenix}`, `budget{plan, daily_submit_cap, submitted_today, budget_remaining_today}`, `employer_cap{cap=3, window_days=30, top_employers_last_30d[]}`, `backlog{open_applications}`.
+6. **Credential-to-Income catalog.** `domains/credentials` — 9 seed credentials (CDL Class A, CNA, EMT-B, Phlebotomy, Certified MA, Forklift OSHA, AZ Food Handler Card, AZ Fingerprint Clearance, AZ Security Guard). Each carries typical_hourly range, time_to_credential range, approx_cost_usd range, `mandatory` bool, and links to the authoritative AZ / national body. `GET /api/v1/credentials/catalog` + `GET /api/v1/credentials/{id}`.
+7. **Walk-in Route Log.** `domains/walkin` — append-only ledger of in-person applications; each walk-in auto-provisions a companion `applications` row (route=`walkin`, synthetic `job_id=walkin:<uuid>` to avoid unique-index collision). `POST /api/v1/walkins` + `GET /api/v1/walkins/mine`. 5-per-hour rate limit.
+8. **Persona variants.** `domains/persona` — user-owned labeled slices of approved claims for downstream Phase 4 resume tailoring. `POST/GET/PATCH /api/v1/personas`. Only APPROVED, non-sealed claim IDs may be pinned (400 `claim_ids_not_approved_or_missing` otherwise). Append-only versioning (v+1 with `superseded_by`).
+9. **Frontend Lane UI + truthful empty state.** `Feed.jsx` — `LaneTabs` (All/Career/Income Now), `SortSelector` (Best fit / Nearest Phoenix / Soonest money), auto-suggests `sort=velocity` when Income Now is picked, `VelocityChip`/`LaneChip`/`DistanceChip` with data-testids, notes list on every card, `TruthfulEmpty` state that shows top exclusion reasons + `Widen my preferences` CTA instead of a bare empty screen.
+
+### Fixes on top of the checkpoint (2026-07-27)
+
+- **CRITICAL** — `POST /api/v1/walkins` was 500-ing on the 2nd walkin per user because the companion applications row's `job_id:null` collided with the `uniq_open_app_per_user_job` unique index. Fixed by synthesizing `job_id=f"walkin:{uuid.uuid4()}"` per walkin.
+- **MEDIUM** — Added `data-testid` on `VelocityChip` / `LaneChip` / `DistanceChip` so automation can assert chip presence.
+- **LOW** — SampleCo seed now stamps `lane="career"` and `distance_from_phoenix_mi` so the chips render for the deterministic fixture user; `_rebase_fixture_user` `to_wipe` list now includes `walkins` and `personas`.
+
+### Rails (unchanged)
+
+- Preview-only. **No merge, no push, no publish, no deploy, no production DB writes, no `.env` edits, no real employer submissions.**
+- `feat/lynk-premium-autopilot` remains deferred and MUST NOT be merged into discovery.
+- USAJOBS adapter is CONFIG-REQUIRED. Founder-only registration at https://developer.usajobs.gov; env vars `USAJOBS_API_KEY`, `USAJOBS_USER_AGENT_EMAIL`.
+
+---
+
+## 🚦 Phase 2 (Real-Job Discovery lane) — SHIPPED (2026-07-27)
+
+**Discovery corpus:** 19,725 real live postings from Greenhouse/Lever/Ashby public APIs across 114+ verified employers (Greenhouse 16,204 · Ashby 3,032 · Lever 489). Lane B = 2,953 (Income Now). Within 25 mi Phoenix = 244 (68 Lane B). Six-hour scheduler + manual refresh (`POST /api/v1/discovery/refresh`) + per-run audit trail in `discovery_runs`. USAJOBS remains CONFIG-REQUIRED.
+
+**Skipped sources (documented, no compliant public JSON):** NEOGOV / governmentjobs.com portals (Phoenix/Tempe/Mesa/Scottsdale/Chandler/Maricopa/AZ State), AZ K-12 vendor portals (Frontline/PowerSchool/TalentEd), ASU Workday cxs.
+
+---
+
 ## 🚀 Deployment-Readiness — FINAL PASS (2026-02-21)
 
 **Label: `DEPLOY_READY_WITH_EXTERNAL_BLOCKERS`.**
