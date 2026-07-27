@@ -119,6 +119,29 @@ GREENHOUSE_BOARDS: list[tuple[str, str]] = [
     ("Mercury", "mercury"),     # 57 jobs at verification
     ("Pinterest", "pinterest"), # 198 jobs at verification
     ("Vercel", "vercel"),       # 79 jobs at verification
+    # === Phase 4 · 122→150+ expansion (2026-07-28) — each verified via
+    # boards-api.greenhouse.io returning 200 + jobs > 0.
+    ("Coursera", "coursera"),                # 16 jobs
+    ("Duolingo", "duolingo"),                # 59 jobs
+    ("Klaviyo", "klaviyo"),                  # 151 jobs
+    ("MasterClass", "masterclass"),          # 2 jobs
+    ("PagerDuty", "pagerduty"),              # 18 jobs
+    ("Squarespace", "squarespace"),          # 17 jobs
+    ("Twitch", "twitch"),                    # 66 jobs
+    ("Vannevar Labs", "vannevarlabs"),       # 35 jobs
+    ("Google DeepMind", "deepmind"),         # 10 jobs
+    ("Neros Technologies", "nerostechnologies"),  # 63 jobs
+    ("Samsara", "samsara"),                  # 328 jobs
+    ("Scale AI", "scaleai"),                 # 206 jobs
+    ("Shift5", "shift5"),                    # 9 jobs
+    ("Ursa Major", "ursamajor"),             # 60 jobs
+    ("Alethea", "alethea"),                  # 1 jobs
+    ("Cresta", "cresta"),                    # 99 jobs
+    ("Descript", "descript"),                # 10 jobs
+    ("Intercom", "intercom"),                # 128 jobs
+    ("Netlify", "netlify"),                  # 4 jobs
+    ("Rubrik", "rubrik"),                    # 104 jobs
+    ("Tulip", "tulip"),                      # 64 jobs
 ]
 
 LEVER_BOARDS: list[tuple[str, str]] = [
@@ -127,6 +150,11 @@ LEVER_BOARDS: list[tuple[str, str]] = [
     # === Phase 4 backlog expansion (2026-07-27) — verified via
     # api.lever.co/v0/postings returning 200 + array > 0.
     ("Wealthfront", "wealthfront"),  # 17 jobs at verification
+    # === Phase 4 · 122→150+ expansion (2026-07-28) — each verified via
+    # api.lever.co/v0/postings returning 200 + array > 0.
+    ("Latch", "latch"),              # 2 jobs
+    ("Waabi", "waabi"),              # 57 jobs
+    ("Everbridge", "everbridge"),    # 11 jobs
 ]
 
 ASHBY_BOARDS: list[tuple[str, str]] = [
@@ -178,6 +206,20 @@ ASHBY_BOARDS: list[tuple[str, str]] = [
     # api.ashbyhq.com/posting-api/job-board returning 200 + jobs > 0.
     ("Cohere", "cohere"),  # 138 jobs at verification
     ("Sierra", "sierra"),  # 168 jobs at verification
+    # === Phase 4 · 122→150+ expansion (2026-07-28) — each verified via
+    # api.ashbyhq.com/posting-api/job-board returning 200 + jobs > 0.
+    ("LlamaIndex", "llamaindex"),     # 15 jobs
+    ("Railway", "railway"),            # 8 jobs
+    ("Vellum", "vellum"),              # 1 jobs
+    ("Distyl AI", "distyl"),           # 27 jobs
+    ("Ollama", "ollama"),              # 7 jobs
+    ("Photoroom", "photoroom"),        # 15 jobs
+    ("Pika Labs", "pika"),             # 10 jobs
+    ("Chroma AI", "trychroma"),        # 1 jobs
+    ("Elicit", "elicit"),              # 11 jobs
+    ("Kestra", "kestra"),              # 14 jobs
+    ("Runpod", "runpod"),              # 22 jobs
+    ("WorkOS", "workos"),              # 24 jobs
 ]
 
 # Verified-external but preview-egress unreachable at build time.

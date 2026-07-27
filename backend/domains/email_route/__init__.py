@@ -36,6 +36,7 @@ from core.deps import require_consent
 from core.db import get_db
 from core.time_utils import utc_now
 from domains.audit import service as audit
+from services import preflight_validator as preflight
 
 
 router = APIRouter(prefix="/api/v1/email-route", tags=["email_route"])
@@ -97,6 +98,42 @@ async def dispatch(req: EmailDispatchRequest,
 
     await _throttle_check(user["id"], req.destination.lower())
 
+    # =========================================================
+    # PRE-FLIGHT VALIDATOR (Founder Directive · Phase 5.0)
+    # ---------------------------------------------------------
+    # NO code path below this line writes any outbound / receipt
+    # state until the pre-flight validator returns ok=True. Every
+    # outbound field and every resume line is machine-diffed
+    # against the approved Passport claim it traces to; a
+    # mismatch or untraceable line blocks and routes to the
+    # review lane with reason `validator_blocked_mismatch`.
+    # =========================================================
+    verdict = await preflight.preflight_check(
+        user_id=user["id"],
+        application_id=req.application_id,
+        channel=preflight.CHANNEL_EMAIL_DRY_RUN,
+        outbound_fields={
+            "destination": req.destination,
+            "subject": req.subject,
+            "body": req.body,
+        },
+    )
+    if not verdict.ok:
+        await preflight.block_and_route_to_review(verdict, audit_actor=user["id"])
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"error": preflight.REASON_TOP_LEVEL,
+                    "verdict": verdict.compact(),
+                    "reasons": verdict.reasons,
+                    "message": "Dispatch blocked by pre-flight validator. "
+                                "Application moved to review lane; see the "
+                                "verdict for the specific untraceable / "
+                                "mismatched item."},
+        )
+    # Persist the passing verdict too (audit trail — every dispatch has
+    # a stored verdict, not just blocks).
+    await preflight.persist_verdict(verdict)
+
     now = utc_now()
     outbox = {
         "id": str(uuid.uuid4()),
@@ -152,6 +189,11 @@ async def dispatch(req: EmailDispatchRequest,
         "outbox_id": outbox["id"],
         "destination": req.destination.lower(),
         "created_at": now,
+        # Pre-flight verdict is embedded so the receipt itself is proof
+        # that the dispatch cleared the chokepoint (Founder Directive
+        # Phase 5.0). `ok=True` by construction here — an `ok=False`
+        # verdict would have raised HTTP 422 above.
+        "validator_verdict": verdict.compact(),
     }
     await db.submission_receipts.insert_one(receipt)
 

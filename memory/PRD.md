@@ -5,6 +5,65 @@
 
 ---
 
+## 🚦 Phase 5.0 — Pre-flight validator dispatch chokepoint — SHIPPED (2026-07-28)
+
+**Rule (Founder Directive 2026-07-28):** "Before ANY outbound submission (email route now; real form/API later), machine-diff every outbound field and every resume line against the approved Passport claim it traces to. Untraceable line or mismatch → BLOCK and route to review lane with reason `validator_blocked_mismatch`. Validator verdict stored on the receipt. Zero unvalidated submissions by construction — enforced at the dispatch chokepoint so no code path can bypass it."
+
+**Implementation:** `backend/services/preflight_validator.py`.
+
+* **Composes** the existing line-level firewall (`services/validator.py`, which enforces claim traceability + number/year grounding + sealed-value leak scanning) and adds dispatch-surface checks: identity coherence, outbound-text grounding, sealed leak in outbound text, approved-claims-not-empty, materials manifest integrity.
+* **Stable reason codes** (never rename without adjusting FE copy):
+  * `validator_blocked_mismatch` — top-level, prepended on every block
+  * `no_approved_claims` · `no_materials` · `manifest_mismatch`
+  * `line_validation_failed:{n}` · `identity_mismatch`
+  * `number_not_in_claims:{n}` · `date_not_in_claims:{y}`
+  * `sensitive_leak:{claim_type}`
+* **Channels:** `sprint_fixture`, `email_dry_run`, `email_live` (unused), `form_live` (unused; reserved for Phase 5 form autopilot).
+* **On block:**
+  1. Persist full verdict to `preflight_verdicts` (audit trail — every dispatch has a stored verdict, pass or block).
+  2. Move application to `state="review"` with `review_reason="validator_blocked_mismatch"` and `review_verdict_id=<verdict id>`.
+  3. Audit-log `preflight.blocked`.
+  4. Return HTTP 422 with `{error, verdict.compact(), reasons, message}`.
+* **On pass:** persist verdict + embed `verdict.compact()` under `submission_receipts.validator_verdict` — the receipt itself is proof the dispatch cleared the chokepoint.
+
+**Chokepoint integration:**
+* `backend/domains/submit_sprint/__init__.py::confirm_slot` — pre-flight runs BEFORE writing `submission_receipts` row.
+* `backend/domains/email_route/__init__.py::dispatch` — pre-flight runs BEFORE writing `email_outbox` + `submission_receipts` rows.
+* Static invariant tests (`test_preflight_validator.py::test_every_dispatch_chokepoint_calls_preflight_before_receipt` + `_blocks_on_unwilling_verdict` + `_embeds_verdict_on_receipt`) prevent future code paths from bypassing the validator.
+
+**Live E2E replay against preview (2026-07-28):**
+* Sprint confirm on shortlisted fixture app → **HTTP 200** (line-level validation passed against base resume manifest w/ 3 lines, 1 approved-claim reference each).
+* Email-route dispatch with body signed `-- Fixture TestUser` when Passport identity is `Test Candidate FIXTURE` → **HTTP 422** `identity_mismatch`; app moved to `review` with `review_reason=validator_blocked_mismatch`; verdict persisted.
+* Email-route dispatch with body signed `Sincerely, Test Candidate FIXTURE` → **HTTP 201** `duplicate=false`; verdict embedded on receipt.
+
+**Regression suite:** `backend/tests/test_preflight_validator.py` — **14 passed**. Focused Phase 3/4/5 suite total: **41 passed**.
+
+## 🚦 Catalog expansion 122 → 158 verified tuples — SHIPPED (2026-07-28)
+
+`backend/domains/discovery/catalog.py` now carries **158 verified board tuples**: GH 96 + Lever 6 + Ashby 56. Every added tuple was probed live by `backend/tools/catalog_expand.py` and only kept when `boards-api.greenhouse.io` / `api.lever.co/v0/postings` / `api.ashbyhq.com/posting-api/job-board` returned **HTTP 200 with `n_jobs > 0`**. Never guessed; every failed candidate is dropped honestly and never appended.
+
+**Scheduler ingest after expansion:** kept 157 (1 GH candidate returned 0 postings at ingest despite verifying earlier — honestly dropped); **22,053 live discovery postings** (GH 18,010 + Lever 565 + Ashby 3,478); **157 distinct employers**; lane: career 18,923 / income_now 3,211; Phoenix radius: 25 mi 262 / 60 mi 271.
+
+## 🛰️ 200-URL route census (post-expansion) — RUN (2026-07-28)
+
+`route_census_runs.id = census-1785193176`: **157 employers · 99.91 s · concurrency=8 · strict per-host `asyncio.Lock`**. Classification: `ashby 56 · gh-noCap 56 · portal-other 38 · lever-cap 6 · timeout 1`.
+
+**Diff vs baseline** (`route_census_diffs.id = census-diff-1785193379`): every previously-classified employer kept its classification (`flipped=0, http_changed=0, retry_climb=0`). All 36 newly-added tuples landed cleanly: `ashby +12 · gh-noCap +14 · lever-cap +3 · portal-other +7`. Zero new-host degradations, zero existing-host drift.
+
+## 🛠️ Census-diff ops tool — SHIPPED (2026-07-28) — P2
+
+`backend/tools/route_census_diff.py` — read-only ops tool. Compares the two most recent `route_census_runs` docs and reports `class_shifts`, `flipped`, `http_changed`, `retry_climb`, `new_hosts`, `dropped_hosts`. Persists a single diff row per invocation to `route_census_diffs`. Never re-probes employer origins — pure derivation from already-persisted state.
+
+## 📦 Discovery-evidence release-decision packet
+
+`/app/docs/DISCOVERY-EVIDENCE.md` — every claim → artifact traceability index. Includes: branch + HEAD; live counts; both census passes with diff; 20/20 dry-run authoritative pass; email-route dry-run status; config-required items (USAJOBS, live SMTP); what remains unverified.
+
+## 📊 Job-count reconciliation (2026-07-28)
+
+`jobs=20,458→22,069 · all status='live' (no other lifecycle state exists) = GH 18,010 + Ashby 3,478 + Lever 565 + seed 16` across **157 distinct employers**. Founder's `4,994/19,655/3,512` figures diverged because they were three time-lagged snapshots of the same single-lifecycle pool: `4,994` = partial mid-scheduler snapshot; `19,655` = stale earlier PRD claim (~19,725) before today's 9 idempotent refresh passes + 158-tuple catalog expansion; `3,512` ≈ lane=income_now filter (now 3,211). No expiry/purge/supersession sweep exists.
+
+---
+
 ## 🚦 Phase 4 · P0 fix — `submission_receipts` compound-index collision — VERIFIED (2026-07-28)
 
 **Root cause (repro'd twice by independent tester):** the `submit_sprint` and `email_route` receipt writers inserted directly with `company_id=null` and `req_ref=null`. MongoDB's compound unique index `uniq_receipt_per_user_company_req = (user_id, company_id, req_ref)` treats nulls as equal, so a sprint receipt at `(user, null, null)` blocked the first email-route dispatch's receipt insert with `pymongo.errors.DuplicateKeyError E11000`. The outbox row still persisted, so the second call returned 201 with `duplicate=true`, masking the regression as normal dedup.

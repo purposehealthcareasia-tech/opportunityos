@@ -25,78 +25,100 @@ USER_AGENT = ("OpportunityOS-CatalogVerify/1.0 "
               "(contact: support@opportunityos.dev)")
 
 # Candidate additions — publicly-documented Greenhouse / Lever / Ashby boards
-# for well-known employers not yet in our catalog. These are candidate tokens
-# only; we verify each below before recommending inclusion.
+# for well-known engineering employers not yet in our catalog. These are
+# CANDIDATE tokens only; each is probed live below and DROPPED honestly if
+# the endpoint returns non-200 or zero postings. No token is added on a
+# guess — verification is the only path.
+#
+# NOT IN CATALOG YET (2026-07-28 audit before this pass ran):
+#   GH_BOARDS = 75, LEVER_BOARDS = 3, ASHBY_BOARDS = 44 → 122 total.
 GH_CANDIDATES = [
-    ("Airbnb", "airbnb"),
-    ("Anthropic", "anthropic"),
-    ("Stripe", "stripe"),
-    ("Notion", "notion"),
-    ("Figma", "figma"),
-    ("Coinbase", "coinbase"),
-    ("Robinhood", "robinhood"),
-    ("Palantir", "palantirtechnologies"),
-    ("DoorDash", "doordash"),
-    ("Instacart", "instacart"),
-    ("Rippling", "rippling"),
-    ("Ramp", "ramp"),
-    ("Brex", "brex"),
-    ("Mercury", "mercury"),
-    ("Vercel", "vercel"),
-    ("Retool", "retool"),
-    ("Chime", "chime"),
-    ("Gusto", "gusto"),
-    ("Dropbox", "dropbox"),
-    ("Reddit", "reddit"),
-    ("Pinterest", "pinterest"),
-    ("Cloudflare", "cloudflareinc"),
-    ("Snowflake", "snowflakecomputing"),
-    ("HashiCorp", "hashicorp"),
-    ("Zapier", "zapier"),
-    ("Loom", "loom"),
-    ("Discord", "discord"),
-    ("Rivian", "rivian"),
-    ("Cruise", "cruise"),
-    ("Aurora", "aurora"),
-    ("Zoox", "zoox"),
-    ("Nuro", "nuro"),
-    ("Motional", "motional"),
-    ("Bolt", "bolt"),
-    ("Turo", "turo"),
-    ("Convoy", "convoyinc"),
-    ("Faire", "faire"),
-    ("Discord", "discord"),
+    # Round 3 (2026-07-28) — final push to 150+. Focused on companies I have
+    # strong prior evidence for their board existence (public URLs seen).
+    ("Alethea", "alethea"),
+    ("Anrok Careers", "anrok"),         # main list has anrok on ashby
+    ("Character.AI", "characterai"),
+    ("Cohere Careers", "cohere"),        # main list has cohere on ashby
+    ("Cresta", "cresta"),
+    ("Descript", "descript"),
+    ("Docker", "docker"),
+    ("Envoy", "envoy"),
+    ("Etsy", "etsy"),
+    ("Formic", "formicrobots"),
+    ("Foundation", "foundation"),
+    ("Ghost Autonomy", "ghostlocomotion"),
+    ("Hex", "hex"),
+    ("Intercom", "intercom"),
+    ("Ironclad", "ironclad"),
+    ("Jasper", "jasper"),
+    ("Loft Orbital", "loftorbital"),      # already in Lever main list; check GH form
+    ("Mux", "mux"),
+    ("Netlify", "netlify"),
+    ("Notion", "notion"),                  # main list has notion on ashby — verify GH form
+    ("Persona", "persona"),
+    ("Reforge", "reforge"),
+    ("Robocorp", "robocorp"),
+    ("Rockwell Automation", "rockwellautomation"),
+    ("Rubrik", "rubrik"),
+    ("Segment", "segment"),
+    ("Slite", "slite"),
+    ("Snyk", "snyk"),
+    ("Sonder", "sonder"),
+    ("Tessera Therapeutics", "tesseratx"),
+    ("Tulip", "tulip"),
+    ("Unity", "unity3d"),
+    ("Vimeo", "vimeo"),
+    ("Whimsical", "whimsical"),
+    ("YouGov", "yougov"),
 ]
 
 LEVER_CANDIDATES = [
-    ("Netflix", "netflix"),
-    ("Palo Alto Networks", "paloaltonetworks"),
-    ("Yelp", "yelp"),
-    ("KeepTruckin", "keeptruckin"),
-    ("Cerebras", "cerebras"),
-    ("Attentive", "attentive"),
-    ("Grammarly", "grammarly"),
-    ("SentinelOne", "sentinelone"),
-    ("Wealthfront", "wealthfront"),
-    ("Rocket Money", "rocketmoney"),
+    ("Alan", "alan"),
+    ("Boulevard", "boulevard"),
+    ("Deel", "deel"),
+    ("Everbridge", "everbridge"),
+    ("Postman", "postman"),
+    ("Sisu", "sisu"),
+    ("Slack", "slack"),
+    ("Snyk", "snyk"),
+    ("Stord", "stord"),
+    ("Vercel Careers", "vercel"),
+    ("Vimeo", "vimeo"),
+    ("Whatnot", "whatnot"),
+    ("Zapier Careers", "zapier"),
 ]
 
 ASHBY_CANDIDATES = [
-    ("Perplexity", "perplexity"),
-    ("Cursor", "cursor"),
-    ("Anysphere", "anysphere"),
-    ("Together AI", "togetherai"),
-    ("Cohere", "cohere"),
-    ("Runway", "runwayml"),
-    ("Character AI", "characterai"),
-    ("Mistral AI", "mistral"),
-    ("Groq", "groq"),
-    ("Modal", "modal"),
-    ("Poolside", "poolsideai"),
-    ("Sierra", "sierra"),
-    ("Genesis Therapeutics", "genesistherapeutics"),
-    ("Braintrust", "braintrust"),
-    ("Vellum", "vellumai"),
+    ("Adept AI", "adeptai"),
+    ("Airplane", "airplane"),
+    ("Anthropic Public", "anthropic"),   # main list has anthropic on greenhouse
+    ("Beam", "beam"),
+    ("Buildkite", "buildkite"),
+    ("Character AI Full", "character-ai"),
+    ("Chroma AI", "trychroma"),
+    ("Delve AI", "delve"),
+    ("Dust", "dust-tt"),
+    ("Elicit", "elicit"),
+    ("Featureform", "featureform"),
+    ("Fixie", "fixie"),
+    ("Fivetran", "fivetran"),
+    ("Highlight", "highlight"),
+    ("Kestra", "kestra"),
+    ("Modal Labs", "modal-labs"),        # main list has "modal"
+    ("Motion", "motion"),
+    ("Neon Serverless", "neon"),          # main list has neon
+    ("Notion Labs Full", "notionhq"),
+    ("Osmos", "osmos"),
+    ("Parabola", "parabola"),
+    ("Rocket Money", "rocketmoney"),
+    ("Runpod", "runpod"),
+    ("Statsig", "statsig"),
+    ("Together", "together"),
+    ("Union", "unionai"),
+    ("Waymark", "waymark"),
+    ("WorkOS", "workos"),
+    ("XBOW", "xbow"),
+    ("Zed Full", "zed-industries"),      # main list has zed
 ]
 
 

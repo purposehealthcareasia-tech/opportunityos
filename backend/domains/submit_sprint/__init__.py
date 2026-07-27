@@ -28,6 +28,7 @@ from core.deps import require_consent
 from core.db import get_db
 from core.time_utils import utc_now
 from domains.audit import service as audit
+from services import preflight_validator as preflight
 
 
 router = APIRouter(prefix="/api/v1/sprint", tags=["submit_sprint"])
@@ -146,6 +147,33 @@ async def confirm_slot(sprint_id: str, req: ConfirmRequest,
         raise HTTPException(status_code=409, detail={"error": "confirm_token_expired"})
 
     now = utc_now()
+    # =========================================================
+    # PRE-FLIGHT VALIDATOR (Founder Directive · Phase 5.0)
+    # ---------------------------------------------------------
+    # Sprint is fixture-only, but the validator still runs — no
+    # receipt is written unless every resume line traces to an
+    # approved Passport claim. A blocked verdict moves the
+    # application to review lane with reason
+    # `validator_blocked_mismatch`.
+    # =========================================================
+    verdict = await preflight.preflight_check(
+        user_id=user["id"],
+        application_id=target["application_id"],
+        channel=preflight.CHANNEL_SPRINT_FIXTURE,
+        outbound_fields=None,  # sprint has no outbound fields
+    )
+    if not verdict.ok:
+        await preflight.block_and_route_to_review(verdict, audit_actor=user["id"])
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"error": preflight.REASON_TOP_LEVEL,
+                    "verdict": verdict.compact(),
+                    "reasons": verdict.reasons,
+                    "message": "Sprint confirm blocked by pre-flight "
+                                "validator. Application moved to review lane."},
+        )
+    await preflight.persist_verdict(verdict)
+
     # Write a fixture-sprint receipt. Application STATE is NOT flipped to
     # 'submitted' — we're a fixture harness, not a real submitter.
     #
@@ -187,6 +215,10 @@ async def confirm_slot(sprint_id: str, req: ConfirmRequest,
         "slot_id": req.slot_id,
         "sent_to_smtp": False,
         "created_at": now,
+        # Pre-flight verdict embedded on the receipt (Founder Directive
+        # Phase 5.0). `ok=True` by construction — a blocked verdict
+        # would have raised HTTP 422 above and no receipt is written.
+        "validator_verdict": verdict.compact(),
     }
     await db.submission_receipts.insert_one(receipt)
 
