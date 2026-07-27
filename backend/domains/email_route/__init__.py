@@ -117,10 +117,36 @@ async def dispatch(req: EmailDispatchRequest,
     # Receipt — records the dispatch attempt but does NOT flip application
     # state to submitted in preview (that happens only when the real route
     # is enabled behind an explicit env change).
+    #
+    # We populate `company_id` and `req_ref` with deterministic values so
+    # the compound unique index `(user_id, company_id, req_ref)` on
+    # `submission_receipts` cannot collide with a prior sprint receipt or
+    # a prior email-route dispatch by the same user. Empirically-verified
+    # 2026-07-28: writing null for either field triggers pymongo
+    # DuplicateKeyError E11000 because MongoDB treats nulls as equal in
+    # a compound unique index.
+    _js = (app_row.get("job_snapshot") or {})
+    _company_id = (
+        app_row.get("company_id")
+        or _js.get("company_id")
+        or ((_js.get("canonical_key") or "").split("::")[0] or None)
+        # Deterministic sentinel — unique per outbox row so no two email
+        # receipts can ever share (user, company_id, req_ref).
+        or f"email-route:{outbox['id']}"
+    )
+    _job_id = app_row.get("job_id") or req.application_id
     receipt = {
         "id": str(uuid.uuid4()),
         "user_id": user["id"],
         "application_id": req.application_id,
+        "job_id": _job_id,
+        "company_id": _company_id,
+        # Unique per outbox row ⇒ no compound-index collision.
+        "req_ref": f"email-route:outbox:{outbox['id']}",
+        "materials_manifest_hash": f"email_dry_run:{dedup}",
+        "submit_channel": "email_dry_run",
+        "supersedes": None,
+        "ts": now,
         "route": "email",
         "kind": "email_dry_run",
         "outbox_id": outbox["id"],

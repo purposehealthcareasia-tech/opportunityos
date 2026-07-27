@@ -5,6 +5,42 @@
 
 ---
 
+## 🚦 Phase 4 · P0 fix — `submission_receipts` compound-index collision — VERIFIED (2026-07-28)
+
+**Root cause (repro'd twice by independent tester):** the `submit_sprint` and `email_route` receipt writers inserted directly with `company_id=null` and `req_ref=null`. MongoDB's compound unique index `uniq_receipt_per_user_company_req = (user_id, company_id, req_ref)` treats nulls as equal, so a sprint receipt at `(user, null, null)` blocked the first email-route dispatch's receipt insert with `pymongo.errors.DuplicateKeyError E11000`. The outbox row still persisted, so the second call returned 201 with `duplicate=true`, masking the regression as normal dedup.
+
+**Fix (`backend/domains/submit_sprint/__init__.py` + `backend/domains/email_route/__init__.py`):** every receipt writer now populates deterministic non-null values:
+
+| Route             | `company_id`                                              | `req_ref`                                    |
+|-------------------|-----------------------------------------------------------|----------------------------------------------|
+| sprint_fixture    | `application.company_id` → `job_snapshot.company_id` → `canonical_key.split("::")[0]` → `sampleco.demo` | `sprint:slot:{slot_id}`                       |
+| email_dry_run     | same waterfall → deterministic sentinel `email-route:{outbox_id}` | `email-route:outbox:{outbox_id}`             |
+
+The Phase 5 real-submit path (`applications/service.py::submit`) already went through `receipts_svc.insert()`, which hard-fails on any falsy required field — those receipts were never null. That helper stays as the invariant floor.
+
+**Live E2E replay against preview backend (2026-07-28):**
+* `POST /api/v1/sprint/{sprint_id}/confirm` → 200 receipt id `fe84d623-…`.
+* `POST /api/v1/email-route/dispatch` first call → **201** `duplicate=false` receipt id `c6455fe3-…` (previously 500).
+* `POST /api/v1/email-route/dispatch` second call (same tuple) → 201 `duplicate=true` (real idempotent dedup, not masked collision).
+
+**Regression suite:** `backend/tests/test_receipt_compound_index_regression.py` — 5 passed. Covers the static invariant (no receipt insert may omit `company_id`/`req_ref` or set them to `None`), the service-level falsy-input guard, and three concrete replays (sprint→email-route on same app, two sprint slots same company, two email-route dispatches same app different destinations).
+
+---
+
+## 🛰️ 200-URL route census — RUN (2026-07-28)
+
+`python3 backend/tools/route_census.py --limit 200 --concurrency 8`, persisted to `route_census` + `route_census_runs`.
+
+**Corrected classification split (persisted audit `route_census_runs.id = census-1785191820`):**
+
+* `ashby` **44**, `gh-noCap` **42**, `portal-other` **31**, `lever-cap` **3**, `timeout` **1** — **121 distinct employers**, 36 distinct hosts, 72.72 s at concurrency=8.
+
+**Honesty note:** the `--limit 200` request was honored but the sampler caps at the current discovery corpus size — `_sample_from_db` groups by `company_name` before sampling, and the corpus currently has exactly **121 distinct employers with `origin_url`**. So this pass covers **100 % of live discovery employers**, not 200. Expanding to 200 would require either (a) growing the discovery corpus past 121 distinct employers, or (b) explicit founder authorization to allow multiple URLs per employer in the census sampler (which would over-represent large employers).
+
+**Per-host serialization was hardened before the run.** Previously the "1 s between hits" was measured from request START time, which at `concurrency=8` allowed parallel hits to the same host when a request took >1 s. Now the tool holds a per-host `asyncio.Lock` for the entire request lifecycle and stamps `host_last_hit` on request FINISH, so no employer origin ever sees more than one in-flight probe. Different hosts still run in parallel up to the concurrency semaphore.
+
+---
+
 ## 🚦 Phase 4 · Item 4 — 20-form fill-and-abort dry-run — VERIFIED (2026-07-28)
 
 **Branch:** `feat/real-job-discovery`. Preview-only. No merge, no deploy, no `.env` change.

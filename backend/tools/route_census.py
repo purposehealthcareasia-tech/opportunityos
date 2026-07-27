@@ -78,8 +78,17 @@ def _classify(host: str, status: Optional[int]) -> str:
 
 async def _probe_one(client: httpx.AsyncClient, url: str, url_row: dict,
                      host_last_hit: dict[str, float],
-                     lock: asyncio.Lock) -> dict:
-    """Probe one URL with polite pacing + up to 3 retries on 429/5xx/timeout."""
+                     host_locks: dict[str, asyncio.Lock]) -> dict:
+    """Probe one URL with STRICT per-host serialization + up to 3 retries on
+    429 / 5xx / timeout.
+
+    Strict per-host lock: at most ONE in-flight request per employer host
+    at any time, and the next request to that host does not start until
+    ≥1 second has elapsed since the previous request FINISHED (not
+    started). This is safer than the old "1s since last start" scheme when
+    concurrency ≥ 2 — with concurrency=8, the old scheme could hit the
+    same host twice in parallel if the first request took longer than 1s.
+    """
     parsed = urlparse(url)
     host = parsed.netloc
     result = {
@@ -96,52 +105,79 @@ async def _probe_one(client: httpx.AsyncClient, url: str, url_row: dict,
         "retry_count": 0,
         "transient_failures": 0,
     }
+    # One lock per host — created on first use. `dict.setdefault` is not
+    # atomic in async, but the map is only mutated from within the
+    # single-threaded event loop so a plain check-then-set is safe.
+    if host not in host_locks:
+        host_locks[host] = asyncio.Lock()
+    host_lock = host_locks[host]
+
     for attempt in range(3):
-        # Rate-limit per host: at least 1s between hits.
-        async with lock:
+        # Serialize same-host requests. Nothing else can hit this host
+        # while we hold the lock. Different hosts run in parallel up to
+        # the global semaphore.
+        async with host_lock:
+            # Respect a minimum 1s gap from the previous request TO THIS
+            # HOST regardless of how long that request took.
             now = time.monotonic()
-            wait_needed = 1.0 - (now - host_last_hit.get(host, 0))
+            gap = now - host_last_hit.get(host, 0.0)
+            wait_needed = 1.0 - gap
             if wait_needed > 0:
                 await asyncio.sleep(wait_needed + random.uniform(0.05, 0.35))
-            host_last_hit[host] = time.monotonic()
 
-        try:
-            r = await client.get(url, follow_redirects=True, timeout=15.0)
-            result["http_status"] = r.status_code
-            result["http_ok"] = r.is_success
-            result["response_bytes"] = len(r.content)
-            if r.status_code in (429, 500, 502, 503, 504):
+            try:
+                r = await client.get(url, follow_redirects=True, timeout=15.0)
+                result["http_status"] = r.status_code
+                result["http_ok"] = r.is_success
+                result["response_bytes"] = len(r.content)
+                # Stamp FINISH time so the next request to this host waits
+                # from finish, not from start.
+                host_last_hit[host] = time.monotonic()
+                if r.status_code in (429, 500, 502, 503, 504):
+                    result["transient_failures"] += 1
+                    if attempt < 2:
+                        result["retry_count"] += 1
+                        backoff = (2, 5, 12)[attempt] + random.uniform(0, 1.5)
+                        # Release the host lock during backoff so a *different*
+                        # coroutine could theoretically talk to a different
+                        # host — but we release the lock naturally via the
+                        # `async with` boundary when we exit the try block.
+                        # Backoff outside the lock:
+                        pass
+                    else:
+                        result["classification"] = _classify(host, r.status_code)
+                        result["last_probed"] = datetime.now(timezone.utc)
+                        return result
+                else:
+                    # Non-retryable outcome (2xx/3xx/4xx-other) — classify + return.
+                    result["classification"] = _classify(host, r.status_code)
+                    result["last_probed"] = datetime.now(timezone.utc)
+                    return result
+            except httpx.ConnectError:
+                result["classification"] = "dns-error"
                 result["transient_failures"] += 1
-                if attempt < 2:
-                    result["retry_count"] += 1
-                    backoff = (2, 5, 12)[attempt] + random.uniform(0, 1.5)
-                    await asyncio.sleep(backoff)
-                    continue
-            # Non-retryable outcome (2xx/3xx/4xx-other) — classify + return.
-            result["classification"] = _classify(host, r.status_code)
-            result["last_probed"] = datetime.now(timezone.utc)
-            return result
-        except httpx.ConnectError:
-            result["classification"] = "dns-error"
-            result["transient_failures"] += 1
-            return result
-        except (httpx.TimeoutException, httpx.ReadTimeout):
-            result["transient_failures"] += 1
-            if attempt < 2:
+                host_last_hit[host] = time.monotonic()
+                return result
+            except (httpx.TimeoutException, httpx.ReadTimeout):
+                result["transient_failures"] += 1
+                host_last_hit[host] = time.monotonic()
+                if attempt >= 2:
+                    result["classification"] = "timeout"
+                    result["last_probed"] = datetime.now(timezone.utc)
+                    return result
                 result["retry_count"] += 1
-                await asyncio.sleep((2, 5, 12)[attempt] + random.uniform(0, 1.5))
-                continue
-            result["classification"] = "timeout"
-            result["last_probed"] = datetime.now(timezone.utc)
-            return result
-        except Exception:
-            result["transient_failures"] += 1
-            if attempt < 2:
+                # Fall through to backoff outside the lock.
+            except Exception:
+                result["transient_failures"] += 1
+                host_last_hit[host] = time.monotonic()
+                if attempt >= 2:
+                    return result
                 result["retry_count"] += 1
-                await asyncio.sleep((2, 5, 12)[attempt] + random.uniform(0, 1.5))
-                continue
-            return result
-    # Exhausted retries
+                # Fall through to backoff outside the lock.
+        # Backoff without holding the host lock so other hosts stay
+        # unaffected. We reach here only on retryable failures / timeouts.
+        await asyncio.sleep((2, 5, 12)[attempt] + random.uniform(0, 1.5))
+    # Exhausted retries.
     result["classification"] = "portal-other"
     return result
 
@@ -175,7 +211,7 @@ async def main() -> None:
     print(f"Sampled {len(sample)} distinct-employer URLs; probing...", flush=True)
 
     host_last_hit: dict[str, float] = defaultdict(float)
-    lock = asyncio.Lock()
+    host_locks: dict[str, asyncio.Lock] = {}
     sem = asyncio.Semaphore(args.concurrency)
 
     async with httpx.AsyncClient(
@@ -186,7 +222,7 @@ async def main() -> None:
         async def _bound(url_row):
             async with sem:
                 return await _probe_one(client, url_row["url"], url_row,
-                                          host_last_hit, lock)
+                                          host_last_hit, host_locks)
         results = await asyncio.gather(*(_bound(r) for r in sample))
 
     # Persist and summarize.

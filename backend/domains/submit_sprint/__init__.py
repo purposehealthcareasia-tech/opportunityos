@@ -148,10 +148,39 @@ async def confirm_slot(sprint_id: str, req: ConfirmRequest,
     now = utc_now()
     # Write a fixture-sprint receipt. Application STATE is NOT flipped to
     # 'submitted' — we're a fixture harness, not a real submitter.
+    #
+    # We populate `company_id` and `req_ref` with deterministic values so
+    # the compound unique index `(user_id, company_id, req_ref)` on
+    # `submission_receipts` cannot collide across sprint slots, and cannot
+    # collide with an email-route dispatch for the same user. Empirically-
+    # verified 2026-07-28 (independent tester): writing null for either
+    # field triggers pymongo DuplicateKeyError E11000 on the second row
+    # because MongoDB treats nulls as equal in a compound unique index.
+    _snap = (await db.applications.find_one(
+        {"id": target["application_id"], "user_id": user["id"]},
+        {"_id": 0, "job_snapshot": 1, "company_id": 1, "job_id": 1},
+    )) or {}
+    _js = _snap.get("job_snapshot") or {}
+    _company_id = (
+        _snap.get("company_id")
+        or _js.get("company_id")
+        or ((_js.get("canonical_key") or "").split("::")[0] or None)
+        or "sampleco.demo"
+    )
+    _job_id = _snap.get("job_id") or target["application_id"]
     receipt = {
         "id": str(uuid.uuid4()),
         "user_id": user["id"],
         "application_id": target["application_id"],
+        "job_id": _job_id,
+        "company_id": _company_id,
+        # Unique per slot ⇒ no compound-index collision even if the same
+        # user runs multiple sprints against the same fixture company.
+        "req_ref": f"sprint:slot:{req.slot_id}",
+        "materials_manifest_hash": f"sprint_fixture:{req.slot_id}",
+        "submit_channel": "sprint_fixture",
+        "supersedes": None,
+        "ts": now,
         "route": "sprint_fixture",
         "kind": "fixture_sprint",
         "sprint_id": sprint_id,
