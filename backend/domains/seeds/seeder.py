@@ -142,6 +142,10 @@ async def _upsert_sample_jobs() -> int:
                     "status": "live",
                     "also_seen": [],
                     "is_sample": True,
+                    # Phase 3 — SampleCo demos are Lane A (engineering). Also stamp
+                    # distance so /feed?within_mi= filters can hit them.
+                    "lane": "career",
+                    "distance_from_phoenix_mi": 0.0 if "Phoenix" in (j.get("geo") or "") else None,
                 },
                 "$setOnInsert": {"id": str(uuid.uuid4()), "canonical_key": canonical_key},
             },

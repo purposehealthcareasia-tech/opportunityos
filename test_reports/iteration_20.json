@@ -1,0 +1,49 @@
+{
+  "summary": "Iteration 20 — Focused re-verification of the two fixes flagged in iteration 19. (1) POST /api/v1/walkins duplicate-key 500 — FIXED. 5 walkins for the fixture user with DIFFERENT employers all return 201, 6th returns 429 with detail.error='walkin_rate_limited'. GET /walkins/mine lists all 5 newest-first. GET /applications shows 5 companion rows with route='walkin' and job_id starting with 'walkin:' (all distinct). (2) Frontend chip data-testids — FIXED. On /feed for the fixture user we count job-card-velocity-chip=9, job-card-lane-chip=9 (all 'Career' — SampleCo lane seed applied), job-card-distance-chip=6 (Phoenix-based). All Phase-3 unit + live integration suites still pass: tests/test_gate_engine.py (23) + tests/test_phase3_safeguards.py (11) + tests/test_phase3_integration_live.py (14) = 48/48. New tests/test_iter20_walkin_and_chips.py (3) = 3/3. Total 51/51 backend PASS.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "POST /api/internal/fixture/rebase",
+        "issue": "The rebase to_wipe list in backend/domains/seeds/seeder.py::_rebase_fixture_user (line 351-359) does NOT include 'walkins' or 'personas'. As a result, walk-ins created by earlier test runs persist across backend restarts and count against the 5/hr rate-limit, causing later CI runs (including the review-request 5→201/6th→429 scenario) to spuriously receive 429 on the FIRST call. Also the rebase response 'note' field lies about wiping applications+consent_records but doesn't mention walkins/personas. Recommend adding 'walkins' and 'personas' to the to_wipe list so the rebase truly returns the fixture user to a clean baseline. Iteration 20 works around this by direct MongoDB delete_many on walkins in the test module fixture."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter20_walkin_and_chips.py",
+    "/app/backend/tests/test_phase3_integration_live.py",
+    "/app/backend/tests/test_gate_engine.py",
+    "/app/backend/tests/test_phase3_safeguards.py",
+    "/app/test_reports/pytest/iter20_walkin_regression.xml",
+    "/app/test_reports/pytest/iter20_phase3_live.xml",
+    "/app/test_reports/iter20_feed_chips.png"
+  ],
+  "action_items": [
+    "OPTIONAL/MINOR: Add 'walkins' and 'personas' to the to_wipe list in backend/domains/seeds/seeder.py::_rebase_fixture_user so /api/internal/fixture/rebase truly resets the fixture user's walk-in history. Without this, downstream test agents will keep tripping the 5/hr rate limiter unless they wipe the walkins collection directly (as iteration 20 does)."
+  ],
+  "critical_code_review_comments": [
+    "backend/domains/walkin/__init__.py:81 — synthetic job_id=f'walkin:{uuid4()}' correctly disambiguates the companion applications row against the uniq_open_app_per_user_job unique index. Verified: 5 distinct walkins all persist with distinct job_ids; no more DuplicateKeyError. Clean fix.",
+    "backend/domains/seeds/seeder.py — SampleCo seed now stamps lane='career' and distance_from_phoenix_mi (0.0 for Phoenix jobs, None otherwise). All 9 passing SampleCo cards on the fixture feed render with a lane chip and 6 of them (Phoenix, AZ) render a distance chip. Contract met.",
+    "frontend/src/pages/Feed.jsx — data-testid attributes 'job-card-velocity-chip', 'job-card-lane-chip', 'job-card-distance-chip' present on the correct <span> nodes (lines 301, 312, 322). Verified live in the preview.",
+    "backend/domains/seeds/seeder.py::_rebase_fixture_user to_wipe list — missing 'walkins' and 'personas' collections. Test infra debt: causes false-positive 429 on cold reruns.",
+    "backend/domains/walkin/__init__.py::_rate_limit uses a DB count on the walkins collection; there is no per-test bypass, and because walkins are not wiped by fixture rebase, long-lived preview environments accumulate walk-ins for the fixture user and eventually block automated tests permanently. Consider either wiping walkins on rebase (preferred) or introducing a service-token override."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter20_walkin_and_chips.py (new — 3 focused regression tests)"
+  ],
+  "success_rate": {
+    "backend": "100% (51/51): 23 gate_engine + 11 phase3_safeguards + 14 phase3_integration_live + 3 iter20_walkin regression",
+    "frontend": "100%: chip data-testid contract met on live /feed (velocity=9, lane=9, distance=6)"
+  },
+  "test_credentials": "fixture-ead@opportunityos.dev / Fixture!Test1 (Bearer JWT via CI_TEST_ISSUER_ENABLED=true). Internal service token read from /app/backend/.env for rebase.",
+  "seed_data_creation": "Only ephemeral TEST_-prefixed walkins (deleted by iter20 test module setup) and one TEST persona (untouched by rebase — see minor issue above).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Both iteration-19 blockers are fully resolved. If you re-run the walk-in regression, the test module now wipes walkins via direct MongoDB access before the run — no need to bounce the backend. If main agent extends the rebase to_wipe list (recommended), iter20's inline mongo wipe becomes unnecessary and can be simplified back to just the rebase call.",
+  "rca of the issue": "N/A — iteration 20 is a green re-verification run. The one residual observation is test-infra debt in the rebase whitelist, not a product bug."
+}

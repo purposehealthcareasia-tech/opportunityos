@@ -72,13 +72,17 @@ async def create_walkin(req: WalkInCreate,
                                                          "field": "walked_in_at"})
 
     # If no application_id was provided, create a lightweight companion row so
-    # the funnel / tracker see this walk-in.
+    # the funnel / tracker see this walk-in. Each walk-in gets a synthetic
+    # job_id (`walkin:<uuid>`) so we don't collide with the unique index
+    # `uniq_open_app_per_user_job` on (user_id, job_id) — null values would
+    # be considered equal and any second walk-in would 500.
     application_id = req.application_id
     if not application_id:
+        synthetic_job_id = f"walkin:{uuid.uuid4()}"
         app_doc = {
             "id": str(uuid.uuid4()),
             "user_id": user["id"],
-            "job_id": None,
+            "job_id": synthetic_job_id,
             "company_id": None,
             "job_snapshot": {"company_name": req.employer, "title": None,
                               "canonical_key": None, "is_sample": False,

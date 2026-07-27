@@ -298,7 +298,7 @@ function LaneChip({ lane }) {
     ? { label: 'Income Now', cls: 'pill pill-accent', Icon: Zap }
     : { label: 'Career', cls: 'pill pill-neutral', Icon: Briefcase };
   const { Icon } = cfg;
-  return <span className={cfg.cls}><Icon className="h-3 w-3" /> {cfg.label}</span>;
+  return <span className={cfg.cls} data-testid="job-card-lane-chip"><Icon className="h-3 w-3" /> {cfg.label}</span>;
 }
 
 function VelocityChip({ velocity }) {
@@ -309,6 +309,7 @@ function VelocityChip({ velocity }) {
     <span
       className="pill pill-accent"
       title={`Est. weekly income based on posted pay${hourly ? ` (${hourly})` : ''}. Not a guarantee.`}
+      data-testid="job-card-velocity-chip"
     >
       <DollarSign className="h-3 w-3" /> ~${w.toLocaleString()}/wk
     </span>
@@ -318,7 +319,7 @@ function VelocityChip({ velocity }) {
 function DistanceChip({ mi }) {
   if (typeof mi !== 'number') return null;
   const label = mi < 1 ? 'in Phoenix' : `${Math.round(mi)}mi from Phoenix`;
-  return <span className="pill pill-neutral"><MapPin className="h-3 w-3" /> {label}</span>;
+  return <span className="pill pill-neutral" data-testid="job-card-distance-chip"><MapPin className="h-3 w-3" /> {label}</span>;
 }
 
 function NotesList({ notes }) {
