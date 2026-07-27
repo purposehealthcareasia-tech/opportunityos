@@ -1,0 +1,70 @@
+{
+  "summary": "Iteration 19 — Phase 3 Founder Brief (degree-blind eligibility + precise licensure + 30d employer cap + velocity/lanes + credentials catalog + walk-ins + personas + supply-reality). Backend unit suites tests/test_gate_engine.py (23) + tests/test_phase3_safeguards.py (11) = 34/34 PASS in 0.19s. New live-preview integration file tests/test_phase3_integration_live.py = 13/14 PASS. The one failure surfaced a REAL BACKEND BUG in POST /api/v1/walkins (see backend_issues.critical below). Frontend: /feed page renders LaneTabs, SortSelector with the 3 required options, auto-suggests velocity sort when Income Now clicked, and shows the truthful empty state with the correct top-reasons + widen-prefs CTA. All P0 acceptance criteria met except (a) walkin duplicate-key crash and (b) missing data-testid on velocity/lane/distance chips.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "POST /api/v1/walkins",
+        "issue": "Second (and every subsequent) walk-in for the same user returns HTTP 500 due to MongoDB DuplicateKeyError. Root cause: /app/backend/domains/walkin/__init__.py line 78-96 creates a companion applications row with job_id: None; the applications collection has a unique index uniq_open_app_per_user_job on (user_id, job_id) and Mongo treats missing/null job_id as a single key, so the 2nd insert collides. Reproduction: log in as fixture-ead@, POST /api/v1/walkins twice with distinct employers → first returns 200, second returns 500 with pymongo.errors.DuplicateKeyError 'dup key: { user_id: ..., job_id: null }'. Impact: (1) 429 walkin_rate_limited path is unreachable — server crashes on the 2nd request before rate limiter can trip; (2) any real user logging more than one walk-in per lifetime is blocked. Mitigation: change the index to partial ({unique:true, partialFilterExpression:{job_id:{$type:'string'}}}) so null job_id rows are excluded, OR generate a per-walkin synthetic job_id string like 'walkin:<uuid>' when inserting the companion application row (line 81 in walkin/__init__.py). Recommend the partial-index approach so it doesn't leak into other producers of job_id-less applications.",
+        "priority": "CRITICAL"
+      }
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "JobCard velocity/lane/distance chips",
+        "issue": "The three chips required by the review request are rendered visually (e.g. '~$2,500/wk' badge for velocity.weekly_est_usd=2500) but carry NO data-testid attributes, so automated tests cannot assert their presence. Recommend adding data-testid='job-card-velocity-chip', 'job-card-lane-chip', 'job-card-distance-chip' on the corresponding <Badge/> nodes in frontend/src/pages/Feed.jsx JobCard component.",
+        "selector": "[data-testid=job-card-velocity-chip] etc. (missing)",
+        "priority": "MEDIUM"
+      },
+      {
+        "component": "TruthfulEmpty",
+        "issue": "feed-empty-try-income is documented in the review request as a button on the empty state; on Income Now lane the button is (correctly) absent because the user is already in Income Now. Behavior matches spec ('if not already in it'), noting for completeness — not a bug.",
+        "selector": "[data-testid=feed-empty-try-income]",
+        "priority": "LOW/INFO"
+      },
+      {
+        "component": "JobCard notes list (data-testid=job-card-notes)",
+        "issue": "Could not verify in-situ: the fixture user's approved education (MS ME) + employment (~5.5 yrs) exceeds SampleCo requirements so every passing card returns notes=[] from the API. Backend gate-engine correctly emits notes (verified in unit tests test_only_three_hard_gate_families_can_fail + test_evaluate_returns_notes_list). To confirm frontend NotesList rendering, either add a SampleCo seed with a legitimately queueable degree-mismatch or lower fixture education to BS temporarily. Non-blocking — data-driven, not a UI bug.",
+        "selector": "[data-testid=job-card-notes]",
+        "priority": "LOW"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_gate_engine.py",
+    "/app/backend/tests/test_phase3_safeguards.py",
+    "/app/backend/tests/test_phase3_integration_live.py",
+    "/app/test_reports/pytest/iter19_phase3_live.xml"
+  ],
+  "action_items": [
+    "FIX (CRITICAL): POST /api/v1/walkins 500 on 2nd+ walk-in per user — DuplicateKeyError on applications.uniq_open_app_per_user_job because companion app row has job_id:null. Switch the unique index to a partialFilterExpression (job_id is string) OR give the companion row a synthetic job_id like f'walkin:{uuid4()}'. Blocks Phase-3 walk-in acceptance and hides the 429 walkin_rate_limited response.",
+    "FIX (MEDIUM): Add data-testid attributes to the velocity/lane/distance chips in JobCard (frontend/src/pages/Feed.jsx). Suggested: job-card-velocity-chip, job-card-lane-chip, job-card-distance-chip. Enables automated verification of the Phase-3 chip contract.",
+    "SEED (LOW): Add at least one SampleCo seed job with a Phase-3-notes-triggering requirement (e.g. requirements.licenses=['PMP'] or requirements.degree_level='PhD') so end-to-end verification of the job-card-notes render path can be automated against the fixture user."
+  ],
+  "critical_code_review_comments": [
+    "backend/domains/walkin/__init__.py:81 — inserting job_id:None into applications when a walk-in has no linked posting collides with the pre-existing unique index uniq_open_app_per_user_job. This is the single blocker for the walk-in feature. Fix at index level (partialFilterExpression) not at the walkin level, otherwise other producers of null-job_id application rows will keep hitting the same trap.",
+    "backend/services/employer_cap.py — check_cap()/enforce path works correctly end-to-end: shortlist SampleCo #1..#3 return 200/201, shortlist #4 returns 429 with detail.error='employer_cap_reached', detail.cap=3, detail.window_days=30. Rock-solid. Confirmed against live preview.",
+    "backend/services/gate_engine.py — Phase-3 degree-blind invariants hold in production: /api/v1/jobs/feed totals.excluded_by_reason contains NO education_below_requirement or experience_below_band keys, and totals.unknown_by_reason contains NO education_unknown or experience_missing keys. Notes list is properly propagated on the /api/v1/jobs/{id} detail endpoint.",
+    "backend/services/velocity.py + jobs/router.py sort=velocity — verified passing rows are sorted DESC by velocity_score and every card carries a fully-shaped velocity{hourly_rate_usd,hours_per_week,weekly_est_usd,posted_days_ago,velocity_score} object.",
+    "backend/domains/credentials/router.py — /catalog returns 9+ rows with the required shape; /credentials/does-not-exist returns 404. /credentials/cdl-class-a returns the CDL row. Clean.",
+    "backend/domains/persona/__init__.py:114 — the PATCH schema uses field name `label` (not `name`) and Create body requires `intent` in {career, income_now, hybrid}. The review-request template used {name, role_family} which the endpoint rejects with 422; suggest the review-request contract be reconciled with the code (or add non-breaking aliases). Non-blocking — the endpoint itself works correctly.",
+    "backend/domains/dashboard/__init__.py — /supply-reality returns supply{live_jobs, live_by_lane{career,income_now}, new_today, within_25mi_of_phoenix, within_60mi_of_phoenix}, budget{plan, plan_label, daily_submit_cap, submitted_today, budget_remaining_today}, employer_cap{cap:3, window_days:30, top_employers_last_30d[]}, backlog{open_applications}. Full contract match."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase3_integration_live.py (new — 14 tests)"
+  ],
+  "success_rate": {
+    "backend": "97% (47/48): 34/34 unit + 13/14 live integration. The 1 failure is a real backend bug (walkin 500).",
+    "frontend": "90%: LaneTabs, SortSelector, Income-Now → velocity auto-suggest, TruthfulEmpty + widen-prefs all verified. Missing data-testids on velocity/lane/distance chips prevents chip-level automation."
+  },
+  "test_credentials": "fixture-ead@opportunityos.dev / Fixture!Test1 (from /app/memory/test_credentials.md). Cookie+CSRF for browser; Bearer JWT (CI_TEST_ISSUER_ENABLED=true) used for pytest. Fixture rebased via POST /api/internal/fixture/rebase with X-Service-Token before each pytest module run.",
+  "seed_data_creation": "Only ephemeral TEST_-prefixed rows (walkins + personas + shortlists). Fixture rebase wipes them on next backend startup.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Full Phase-3 backend contract is otherwise GREEN. When main agent fixes the walkins duplicate-key bug, re-run only `pytest tests/test_phase3_integration_live.py::TestWalkins -v` — that will validate both the create-multiple-walkins path and the 429 walkin_rate_limited response (rate limit is 5/hr per /app/backend/domains/walkin/__init__.py:_rate_limit). Frontend chip data-testid additions can be verified with a 5-line playwright snippet querying `[data-testid$=\"-velocity-chip\"]` counts. Do NOT re-run the shortlist cap test on a warm DB without first calling POST /api/internal/fixture/rebase — the fixture user's 3 SampleCo shortlists from this run will still count against the 30-day window otherwise.",
+  "rca of the issue": "POST /api/v1/walkins 500 RCA — code path: router.create_walkin() → when application_id is not provided it builds a companion applications doc with job_id:None (walkin/__init__.py:81) and calls db.applications.insert_one(app_doc). Mongo unique index uniq_open_app_per_user_job on (user_id, job_id) treats absent/null job_id values as equal, so the second walk-in per user violates the uniqueness constraint and pymongo raises DuplicateKeyError → FastAPI translates to HTTP 500. Reproduced deterministically 6 times in a row (all 500). Fix options in order of preference: (1) drop and recreate the index with partialFilterExpression:{job_id:{$type:'string'}} so null-job_id rows are exempt from uniqueness; (2) synthesize job_id=f'walkin:{uuid.uuid4()}' in the companion app_doc so each walk-in has a unique key; (3) skip the companion applications insert entirely for walk-ins and let the walkins collection stand alone. Option (1) is safest because it preserves the invariant for real posting-linked applications while allowing walk-ins."
+}
