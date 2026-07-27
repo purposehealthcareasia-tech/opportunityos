@@ -1,0 +1,279 @@
+{
+  "started_at": "2026-07-27T22:03:57.947550+00:00",
+  "finished_at": "2026-07-27T22:06:21.581679+00:00",
+  "elapsed_s": 143.634129,
+  "targets": 20,
+  "filled_and_aborted": 3,
+  "fields_correct": 3,
+  "skipped_captcha": 17,
+  "failed": 0,
+  "non_get_attempts_total": 70,
+  "non_get_attempts_to_employer_origins": 3,
+  "non_get_attempts_to_employer_origins_sample": [
+    {
+      "method": "POST",
+      "url": "https://jobs.lever.co/cdn-cgi/challenge-platform/h/g/jsd/oneshot/b0da9f4911ba/0.8839685552412943:1785186034:UaQFdJYG0BfaT3MMwG-IjKBaBiTiWhGwhwK8zKQ0NTI/a21ef1b7b89d620b",
+      "host": "jobs.lever.co",
+      "resource_type": "xhr"
+    },
+    {
+      "method": "POST",
+      "url": "https://jobs.lever.co/cdn-cgi/challenge-platform/h/g/jsd/oneshot/b0da9f4911ba/0.8839685552412943:1785186034:UaQFdJYG0BfaT3MMwG-IjKBaBiTiWhGwhwK8zKQ0NTI/a21ef1cac934620b",
+      "host": "jobs.lever.co",
+      "resource_type": "xhr"
+    },
+    {
+      "method": "POST",
+      "url": "https://jobs.lever.co/cdn-cgi/challenge-platform/h/g/jsd/oneshot/b0da9f4911ba/0.8839685552412943:1785186034:UaQFdJYG0BfaT3MMwG-IjKBaBiTiWhGwhwK8zKQ0NTI/a21ef29a38ca620b",
+      "host": "jobs.lever.co",
+      "resource_type": "xhr"
+    }
+  ],
+  "employer_hosts_visited": [
+    "boards.greenhouse.io",
+    "job-boards.greenhouse.io",
+    "jobs.lever.co"
+  ],
+  "results": [
+    {
+      "index": 0,
+      "url": "https://job-boards.greenhouse.io/ionq/jobs/6005910004",
+      "state": "skipped_captcha",
+      "captcha_provider": "iframe-challenge",
+      "http_status": 200,
+      "fields_found": 0,
+      "fields_filled": 0,
+      "fields_filled_correctly": false,
+      "screenshot": "/app/docs/dryrun-screenshots/dryrun_00_captcha.png",
+      "error": null
+    },
+    {
+      "index": 1,
+      "url": "https://job-boards.greenhouse.io/whisperaero/jobs/5323857008",
+      "state": "skipped_captcha",
+      "captcha_provider": "iframe-challenge",
+      "http_status": 200,
+      "fields_found": 0,
+      "fields_filled": 0,
+      "fields_filled_correctly": false,
+      "screenshot": "/app/docs/dryrun-screenshots/dryrun_01_captcha.png",
+      "error": null
+    },
+    {
+      "index": 2,
+      "url": "https://boards.greenhouse.io/lightmatter/jobs/4838692008?gh_jid=4838692008",
+      "state": "skipped_captcha",
+      "captcha_provider": "iframe-challenge",
+      "http_status": 200,
+      "fields_found": 0,
+      "fields_filled": 0,
+      "fields_filled_correctly": false,
+      "screenshot": "/app/docs/dryrun-screenshots/dryrun_02_captcha.png",
+      "error": null
+    },
+    {
+      "index": 3,
+      "url": "https://boards.greenhouse.io/robinhood/jobs/6669758?t=gh_src=&gh_jid=6669758",
+      "state": "skipped_captcha",
+      "captcha_provider": "iframe-challenge",
+      "http_status": 200,
+      "fields_found": 0,
+      "fields_filled": 0,
+      "fields_filled_correctly": false,
+      "screenshot": "/app/docs/dryrun-screenshots/dryrun_03_captcha.png",
+      "error": null
+    },
+    {
+      "index": 4,
+      "url": "https://boards.greenhouse.io/relativity/jobs/8639195002?gh_jid=8639195002",
+      "state": "skipped_captcha",
+      "captcha_provider": "iframe-challenge",
+      "http_status": 200,
+      "fields_found": 0,
+      "fields_filled": 0,
+      "fields_filled_correctly": false,
+      "screenshot": "/app/docs/dryrun-screenshots/dryrun_04_captcha.png",
+      "error": null
+    },
+    {
+      "index": 5,
+      "url": "https://boards.greenhouse.io/faire/jobs/8601430002?gh_jid=8601430002",
+      "state": "skipped_captcha",
+      "captcha_provider": "iframe-challenge",
+      "http_status": 200,
+      "fields_found": 0,
+      "fields_filled": 0,
+      "fields_filled_correctly": false,
+      "screenshot": "/app/docs/dryrun-screenshots/dryrun_05_captcha.png",
+      "error": null
+    },
+    {
+      "index": 6,
+      "url": "https://job-boards.greenhouse.io/tenstorrent/jobs/5055233007",
+      "state": "skipped_captcha",
+      "captcha_provider": "iframe-challenge",
+      "http_status": 200,
+      "fields_found": 0,
+      "fields_filled": 0,
+      "fields_filled_correctly": false,
+      "screenshot": "/app/docs/dryrun-screenshots/dryrun_06_captcha.png",
+      "error": null
+    },
+    {
+      "index": 7,
+      "url": "https://job-boards.greenhouse.io/momentus/jobs/6004816004",
+      "state": "skipped_captcha",
+      "captcha_provider": "iframe-challenge",
+      "http_status": 200,
+      "fields_found": 0,
+      "fields_filled": 0,
+      "fields_filled_correctly": false,
+      "screenshot": "/app/docs/dryrun-screenshots/dryrun_07_captcha.png",
+      "error": null
+    },
+    {
+      "index": 8,
+      "url": "https://job-boards.greenhouse.io/kodiak/jobs/4327498009",
+      "state": "skipped_captcha",
+      "captcha_provider": "iframe-challenge",
+      "http_status": 200,
+      "fields_found": 0,
+      "fields_filled": 0,
+      "fields_filled_correctly": false,
+      "screenshot": "/app/docs/dryrun-screenshots/dryrun_08_captcha.png",
+      "error": null
+    },
+    {
+      "index": 9,
+      "url": "https://job-boards.greenhouse.io/discord/jobs/8433948002",
+      "state": "skipped_captcha",
+      "captcha_provider": "iframe-challenge",
+      "http_status": 200,
+      "fields_found": 0,
+      "fields_filled": 0,
+      "fields_filled_correctly": false,
+      "screenshot": "/app/docs/dryrun-screenshots/dryrun_09_captcha.png",
+      "error": null
+    },
+    {
+      "index": 10,
+      "url": "https://boards.greenhouse.io/spacex/jobs/8643277002?gh_jid=8643277002",
+      "state": "skipped_captcha",
+      "captcha_provider": "iframe-challenge",
+      "http_status": 200,
+      "fields_found": 0,
+      "fields_filled": 0,
+      "fields_filled_correctly": false,
+      "screenshot": "/app/docs/dryrun-screenshots/dryrun_10_captcha.png",
+      "error": null
+    },
+    {
+      "index": 11,
+      "url": "https://boards.greenhouse.io/vast/jobs/4694238006?gh_jid=4694238006",
+      "state": "skipped_captcha",
+      "captcha_provider": "iframe-challenge",
+      "http_status": 200,
+      "fields_found": 0,
+      "fields_filled": 0,
+      "fields_filled_correctly": false,
+      "screenshot": "/app/docs/dryrun-screenshots/dryrun_11_captcha.png",
+      "error": null
+    },
+    {
+      "index": 12,
+      "url": "https://boards.greenhouse.io/redwoodmaterials/jobs/5894704004?gh_jid=5894704004",
+      "state": "skipped_captcha",
+      "captcha_provider": "iframe-challenge",
+      "http_status": 200,
+      "fields_found": 0,
+      "fields_filled": 0,
+      "fields_filled_correctly": false,
+      "screenshot": "/app/docs/dryrun-screenshots/dryrun_12_captcha.png",
+      "error": null
+    },
+    {
+      "index": 13,
+      "url": "https://job-boards.greenhouse.io/betterhelp/jobs/4234786009",
+      "state": "skipped_captcha",
+      "captcha_provider": "iframe-challenge",
+      "http_status": 200,
+      "fields_found": 0,
+      "fields_filled": 0,
+      "fields_filled_correctly": false,
+      "screenshot": "/app/docs/dryrun-screenshots/dryrun_13_captcha.png",
+      "error": null
+    },
+    {
+      "index": 14,
+      "url": "https://job-boards.greenhouse.io/lucidmotors/jobs/5151086007",
+      "state": "skipped_captcha",
+      "captcha_provider": "iframe-challenge",
+      "http_status": 200,
+      "fields_found": 0,
+      "fields_filled": 0,
+      "fields_filled_correctly": false,
+      "screenshot": "/app/docs/dryrun-screenshots/dryrun_14_captcha.png",
+      "error": null
+    },
+    {
+      "index": 15,
+      "url": "https://boards.greenhouse.io/figma/jobs/5364702004?gh_jid=5364702004",
+      "state": "skipped_captcha",
+      "captcha_provider": "iframe-challenge",
+      "http_status": 200,
+      "fields_found": 0,
+      "fields_filled": 0,
+      "fields_filled_correctly": false,
+      "screenshot": "/app/docs/dryrun-screenshots/dryrun_15_captcha.png",
+      "error": null
+    },
+    {
+      "index": 16,
+      "url": "https://job-boards.greenhouse.io/rocketlab/jobs/7763159003",
+      "state": "skipped_captcha",
+      "captcha_provider": "iframe-challenge",
+      "http_status": 200,
+      "fields_found": 0,
+      "fields_filled": 0,
+      "fields_filled_correctly": false,
+      "screenshot": "/app/docs/dryrun-screenshots/dryrun_16_captcha.png",
+      "error": null
+    },
+    {
+      "index": 17,
+      "url": "https://jobs.lever.co/wealthfront/78d6f6d5-1f08-4d5d-87be-c4250567bfb5/apply",
+      "state": "filled_and_aborted",
+      "captcha_provider": null,
+      "http_status": 200,
+      "fields_found": 12,
+      "fields_filled": 5,
+      "fields_filled_correctly": true,
+      "screenshot": "/app/docs/dryrun-screenshots/dryrun_17.png",
+      "error": null
+    },
+    {
+      "index": 18,
+      "url": "https://jobs.lever.co/shieldai/41468aca-c1c2-4a7b-aec8-f499e64b6d1e/apply",
+      "state": "filled_and_aborted",
+      "captcha_provider": null,
+      "http_status": 200,
+      "fields_found": 22,
+      "fields_filled": 5,
+      "fields_filled_correctly": true,
+      "screenshot": "/app/docs/dryrun-screenshots/dryrun_18.png",
+      "error": null
+    },
+    {
+      "index": 19,
+      "url": "https://jobs.lever.co/loftorbital/0d2134a5-e7da-4787-a1fa-4bd4d6d92685/apply",
+      "state": "filled_and_aborted",
+      "captcha_provider": null,
+      "http_status": 200,
+      "fields_found": 16,
+      "fields_filled": 5,
+      "fields_filled_correctly": true,
+      "screenshot": "/app/docs/dryrun-screenshots/dryrun_19.png",
+      "error": null
+    }
+  ]
+}

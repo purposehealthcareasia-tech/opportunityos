@@ -5,6 +5,78 @@
 
 ---
 
+## 🚦 Phase 4 · Item 4 — 20-form fill-and-abort dry-run — VERIFIED (2026-07-28)
+
+**Branch:** `feat/real-job-discovery`. Preview-only. No merge, no deploy, no `.env` change.
+
+**Evidence file:** `/app/docs/PHASE4-DRYRUN-EVIDENCE.md` (final authoritative pass at `2026-07-27T22:08:37`).
+**Machine-readable audit:** `/app/docs/dryrun-screenshots/dryrun_1785185317.json`.
+**Screenshots:** `/app/docs/dryrun-screenshots/dryrun_00.png` … `dryrun_19.png`.
+
+### Final pass numbers (20 real GH + Lever URLs)
+* Targets: **20** — 17 Greenhouse (`boards.greenhouse.io`, `job-boards.greenhouse.io`) + 3 Lever (`jobs.lever.co`).
+* Filled + aborted: **20 / 20**.
+* Fields-correct (email + name filled from fixture identity): **20 / 20**.
+* Skipped-CAPTCHA: **0**.
+* Failed: **0**.
+* Non-GET attempts to employer origins that reached the wire: **0** (3 Cloudflare bot-detection telemetry XHRs were attempted by page JS and all 3 were `route.abort()`-ed by the harness BEFORE leaving the browser; none targeted `/apply`, `/submit`, `/candidates`, or any form-submission path).
+
+### Harness fixes shipped this pass (2026-07-28)
+1. `_load_urls` now strips inline ` #` comments — the candidate file has ` # Employer — Title` after each URL, which previously produced malformed URLs (HTTP 404).
+2. `_detect_captcha` now checks the challenge iframe's computed style + bounding box, and only classifies an iframe as CAPTCHA-blocking when it's an actual challenge widget (`bframe`, `challenge.html`, `challenges/turnstile`) or covers ≥320×320 px. The tiny 256×60 reCAPTCHA / hCaptcha **badge** that Greenhouse ships on every protected form is intentionally excluded — it does not block field autofill and is only enforced at submit time (which we never do).
+3. Submit-button neutralization tightened to strict `input[type=submit]` / `button[type=submit]` / exact "Submit", "Submit application", "Send application" text. Generic `<button>Apply</button>` / `<a>Apply</a>` reveal buttons are preserved so the form section can actually appear.
+4. Added a "reveal Apply" click step for Greenhouse `boards.greenhouse.io` pages that hide the application form behind a top Apply CTA.
+5. Added a triple-layered submit guard: element neutralization + `form.submit()` monkey-patch + `submit` event `preventDefault/stopPropagation` — plus the context-wide route `_guard` that aborts every non-GET request at the wire. Defense in depth.
+6. Every non-GET the browser attempts is now recorded with `{method, url, host, resource_type}` so we can prove zero form-submission requests reached any employer origin.
+
+### Fixture identity used (test data only)
+- Name: `Fixture TestUser`
+- Email: `fixture-dryrun@opportunityos.dev`
+- Phone: `+1-555-0100`
+- LinkedIn: `https://www.linkedin.com/in/fixture-testuser`
+
+## 🚦 Phase 4 · Item 3 (blocker fix) — `submit_applications` consent scope — VERIFIED (2026-07-28)
+
+**Consent scope registered as first-class in `backend/core/policy.py` +
+`backend/domains/consent/models.py`.**
+
+- Fixture-user seed grants `submit_applications`.
+- `GET /api/v1/consents/scopes` returns the scope in the enumerable list.
+- Enum-coverage test: `backend/tests/test_consent_scope_enum_guard.py` (3 passed).
+
+### Email-route E2E — VERIFIED (2026-07-28)
+
+Curl against preview URL with fixture cookies + CSRF:
+
+```
+POST /api/v1/email-route/dispatch   → 201
+  id=4d89357d-…86  state=dry_run  sent_to_smtp=false  provider=local_sink
+  duplicate=false  receipt_id=21e4a747-…f6
+
+POST /api/v1/email-route/dispatch   → 201  (same {user, app, dest})
+  id=4d89357d-…86  (identical)  duplicate=true   ← dedup by sha256(user_id::app_id::dest)
+
+GET  /api/v1/email-route/outbox     → row persisted, state=dry_run
+```
+
+### Low-supply credential-unlock prompt (Feed) — VERIFIED (2026-07-28)
+
+- Fixture user has **9 passing** jobs (below the `LOW_SUPPLY_THRESHOLD = 15`).
+- Prompt rendered at `data-testid=feed-low-supply-credential-unlocks`
+  BELOW the passing cards, NOT duplicating `TruthfulEmpty`.
+- Confirmed truthful copy: live count ("Only 9 job(s) pass your gates …"),
+  live-source disclaimer, and 3 credential rows: `+6 jobs` CCMA (12–32 wks · $1,500–$5,000),
+  `+4 jobs` Phlebotomy Tech (6–16 wks · $600–$2,500), `+2 jobs` CDL Class A
+  (3–8 wks · $3,000–$7,000). Each row surfaces the catalog's official
+  verification URL (NHA / ASCP / AZ MVD).
+- Screenshot: `/app/docs/dryrun-screenshots/feed_low_supply.png`.
+
+## 🧾 Bulk-prepare cost — one-line honesty answer (2026-07-28)
+
+**The fixture path is NOT non-LLM by design.** `bulk_prepare` → `apps_svc.prepare_application` runs the same two-attempt Claude Sonnet 4.5 pipeline for every application regardless of whether the underlying job is a SampleCo fixture or a real Greenhouse/Lever/Ashby row. A prepare that shows `$0.00 / 0 tokens` means BOTH LLM attempts failed validation and the deterministic `template_fallback_lines` builder produced the resume (recorded as `model=template:v0.1, tokens_in=0, tokens_out=0, cost_usd_est=0.0`). Priced Claude path: `$0.003/1K input + $0.015/1K output` (source table `_PRICE_TABLE_PER_1K` in `services/llm.py`, tagged `anthropic:public_2026-02`) — for a typical prepare (~4K tokens in / ~800 tokens out) that's ≈ **$0.024 per successful attempt**.
+
+---
+
 ## 🚦 Phase 3 (Founder Brief · Real-Job Discovery lane) — SHIPPED (2026-07-27)
 
 **Active branch:** `feat/real-job-discovery`.
