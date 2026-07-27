@@ -27,6 +27,7 @@ from domains.discovery.catalog import (
 from domains.discovery.classify import (
     classify_lane, distance_from_phoenix_mi, LANE_A, LANE_B,
 )
+from services import jd_parser
 
 
 log = logging.getLogger("oppos.discovery")
@@ -71,6 +72,10 @@ def _to_jobs_doc(row: dict, existing: Optional[dict]) -> dict:
         description=row.get("jd_text"),
     )
     distance_mi = distance_from_phoenix_mi(row.get("location") or "")
+    # Phase 3 follow-up — conservative JD parse for degree + years_min so real
+    # ATS jobs surface a truthful note when they explicitly require a level
+    # the candidate doesn't hold. Never fabricates — unparseable → None.
+    parsed = jd_parser.parse_requirements(row.get("jd_text") or "")
     doc = {
         "id": (existing or {}).get("id") or _new_uuid(),
         "canonical_key": _canonical_key(row["source_ats"], row["external_id"]),
@@ -86,8 +91,10 @@ def _to_jobs_doc(row: dict, existing: Optional[dict]) -> dict:
         "apply_method": "external",
         "eligibility_requirements": {"requires_us_person": False,
                                       "offers_sponsorship": None},
-        "requirements": {"skills_required": [], "degree_level": None,
-                          "years_min": None, "licenses": []},
+        "requirements": {"skills_required": [],
+                          "degree_level": parsed["degree_level"],
+                          "years_min": parsed["years_min"],
+                          "licenses": []},
         "first_seen": first_seen,
         "last_verified": now,
         "status": "live",

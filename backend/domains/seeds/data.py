@@ -160,6 +160,16 @@ SAMPLE_JOBS: list[dict] = [
      "geo": "Phoenix, AZ", "comp": "$125k-$160k", "apply_method": "ats-greenhouse",
      "eligibility": {"requires_us_person": False, "offers_sponsorship": True},
      "jd": "Own cross-subsystem requirements for a new BEV. Coordinate propulsion, HV distribution, and thermal targets."},
+    # 16 — Phase 3 note-branch coverage: PhD REQUIRED + 8+ yrs REQUIRED. Fixture
+    # user has MS + ~1yr, so both notes must fire on this job — the job stays
+    # PASSING with two visible NOTES.
+    {"title": "Principal Vehicle Autonomy Researcher", "family": "research",
+     "geo": "Phoenix, AZ", "comp": "$180k-$240k", "apply_method": "internal",
+     "eligibility": {"requires_us_person": False, "offers_sponsorship": True},
+     "jd": ("Own the research direction for a new vehicle-autonomy platform. "
+            "Requirements: PhD in Robotics, EE, or a related field is required. "
+            "Minimum 8 years of experience in autonomous systems, perception, or planning is required. "
+            "You will publish, mentor senior engineers, and partner with the CTO on multi-year roadmaps.")},
 ]
 
 # ---------------------------------------------------------------------------

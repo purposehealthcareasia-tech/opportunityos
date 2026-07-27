@@ -63,6 +63,10 @@ async def _upsert_sample_jobs() -> int:
         "Fab Equipment Engineer":                {"skills_required": ["equipment", "yield", "mtbf"],               "degree_level": "BS", "years_min": 3},
         "SIL Software Engineer":                 {"skills_required": ["python", "sil", "adas"],                    "degree_level": "BS", "years_min": 3},
         "EV Systems Engineer":                   {"skills_required": ["ev systems", "hv distribution", "thermal"], "degree_level": "BS", "years_min": 3},
+        # Phase 3 note-branch coverage — real ATS jobs also parse now but this
+        # fixture guarantees the "posting asks for X" note path is exercised
+        # every run.
+        "Principal Vehicle Autonomy Researcher": {"skills_required": ["autonomy", "perception", "planning"],       "degree_level": "PHD", "years_min": 8},
     }
 
     for idx, j in enumerate(seed_data.SAMPLE_JOBS, start=1):
@@ -465,19 +469,31 @@ async def _rebase_fixture_user() -> str:
 async def _cleanup_non_sample_test_jobs() -> int:
     """Founder Fix — remove ingest-created test pollution from prior runs.
 
-    Rule: keep `is_sample=True` seeded jobs and keep user-imported `status='derived'` jobs.
-    Anything else (test ingests via /api/internal/jobs/bulk during CI runs) is scrubbed on
-    startup so the coverage-preview and feed acceptance numbers stay deterministic.
+    Rule: keep `is_sample=True` seeded jobs, keep user-imported `status='derived'`
+    jobs, AND keep every discovery-ingested job (`source` starts with `discovery.`).
+    Anything else (test ingests via /api/internal/jobs/bulk during CI runs) is
+    scrubbed on startup so the coverage-preview and feed acceptance numbers stay
+    deterministic.
+
+    Fix 2026-07-27 (Phase 3 tester finding #2): earlier logic wiped the ~19,700
+    real Greenhouse/Lever/Ashby jobs on every backend restart, forcing the
+    scheduler to re-ingest them ~90s later. Feed appeared empty during that
+    gap. `source: discovery.*` now bypasses the purge.
     """
     db = get_db()
     res = await db.jobs.delete_many({
         "$and": [
             {"$or": [{"is_sample": {"$exists": False}}, {"is_sample": False}]},
             {"$or": [{"status": {"$ne": "derived"}}, {"imported_by": {"$exists": False}}]},
+            # NEVER purge discovery-ingested jobs.
+            {"$or": [
+                {"source": {"$exists": False}},
+                {"source": {"$not": {"$regex": "^discovery\\."}}},
+            ]},
         ]
     })
     if res.deleted_count:
-        log.info("Purged %d non-sample non-derived test jobs", res.deleted_count)
+        log.info("Purged %d non-sample non-derived non-discovery test jobs", res.deleted_count)
     return res.deleted_count
 
 
