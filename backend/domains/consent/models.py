@@ -8,6 +8,7 @@ ScopeName = Literal[
     "generate_materials",
     "track_applications",
     "email_me",
+    "submit_applications",
 ]
 
 

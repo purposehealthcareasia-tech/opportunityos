@@ -36,6 +36,15 @@ CONSENT_SCOPES = [
         "label": "Email me updates",
         "description": "Send me periodic email updates about relevant opportunities and changes to my Passport.",
     },
+    {
+        # Phase 4 (Founder Brief · Item 3/5) — first-class batch-authorization
+        # scope for real submit / email-route dispatch. Grantable + revocable.
+        # Required for: /api/v1/sprint/*, /api/v1/email-route/*.
+        "scope": "submit_applications",
+        "required": False,
+        "label": "Submit applications on my behalf (dry-run in preview)",
+        "description": "Authorize OpportunityOS to submit applications you explicitly approve. In preview this is DRY-RUN only — nothing is sent to a real employer without a separate per-application confirmation. Revocable at any time.",
+    },
 ]
 
 SCOPE_KEYS = {s["scope"] for s in CONSENT_SCOPES}
