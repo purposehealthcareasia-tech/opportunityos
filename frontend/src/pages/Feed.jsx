@@ -340,7 +340,31 @@ function NotesList({ notes }) {
 // Phase 2/3 — Truthful empty state. Instead of "nothing passes", explain WHY
 // with real numbers so the candidate knows the feed isn't broken — their
 // filters are just narrow. Offers concrete CTAs.
+// Phase 3 improvement (2026-07-27): also renders top-3 CREDENTIAL UNLOCKS —
+// a real live-query "N jobs unlock if you get X" prompt sourced from the
+// Credential-to-Income catalog. FACT RULES: unlock count = real backend
+// query; time/cost are catalog ranges; each row surfaces the catalog's
+// official `suggested_next[]` URL so the candidate can verify.
 function TruthfulEmpty({ lane, totals, onSwitchLane, onGoPrefs }) {
+  const [unlocks, setUnlocks] = useState({ loading: true, rows: [] });
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const params = new URLSearchParams();
+        if (lane === 'income_now') { params.set('lane', 'income_now'); params.set('within_mi', '60'); }
+        else if (lane === 'career') { params.set('lane', 'career'); }
+        else { params.set('lane', 'income_now'); params.set('within_mi', '60'); }
+        params.set('top_k', '3');
+        const { data } = await api.get(`/api/v1/credentials/unlock-candidates?${params.toString()}`);
+        if (!cancelled) setUnlocks({ loading: false, rows: data.candidates || [] });
+      } catch (e) {
+        if (!cancelled) setUnlocks({ loading: false, rows: [] });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [lane]);
+
   const live = totals?.live_jobs || 0;
   const excludedByReason = totals?.excluded_by_reason || {};
   const topReasons = Object.entries(excludedByReason).sort((a, b) => b[1] - a[1]).slice(0, 3);
@@ -348,7 +372,7 @@ function TruthfulEmpty({ lane, totals, onSwitchLane, onGoPrefs }) {
                   : lane === 'income_now' ? 'Income Now'
                   : 'this lane';
   return (
-    <div className="card p-6" data-testid="feed-truthful-empty">
+    <div className="card p-6 space-y-5" data-testid="feed-truthful-empty">
       <div className="flex items-start gap-3">
         <Info className="h-5 w-5 text-accent flex-shrink-0 mt-0.5" />
         <div className="min-w-0 flex-1">
@@ -388,7 +412,59 @@ function TruthfulEmpty({ lane, totals, onSwitchLane, onGoPrefs }) {
           </p>
         </div>
       </div>
+
+      {unlocks.rows.length > 0 && (
+        <div className="border-t border-line dark:border-line-dark pt-4" data-testid="feed-empty-credential-unlocks">
+          <p className="text-sm font-semibold text-ink dark:text-ink-dark">
+            Or — unlock more Income Now jobs with a short credential:
+          </p>
+          <p className="text-xs muted mt-1">
+            Real live counts of jobs mentioning each credential within 60 miles of Phoenix. Time and cost ranges come from the linked official source.
+          </p>
+          <ul className="mt-3 space-y-3" data-testid="feed-empty-unlock-list">
+            {unlocks.rows.map((row) => (
+              <CredentialUnlockCard key={row.credential.id} row={row} />
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
+  );
+}
+
+function CredentialUnlockCard({ row }) {
+  const c = row.credential;
+  const wl = c.time_to_credential.weeks_low;
+  const wh = c.time_to_credential.weeks_high;
+  const cl = c.approx_cost_usd.low;
+  const ch = c.approx_cost_usd.high;
+  const suggested = (c.suggested_next && c.suggested_next[0]) || null;
+  return (
+    <li className="rounded-md border border-line dark:border-line-dark p-3" data-testid={`credential-unlock-${c.id}`}>
+      <div className="flex items-baseline gap-2 flex-wrap">
+        <span className="font-mono text-sm text-accent" data-testid={`credential-unlock-count-${c.id}`}>
+          +{row.live_unlock_count} jobs
+        </span>
+        <span className="text-sm font-semibold text-ink dark:text-ink-dark">{c.label}</span>
+        {c.mandatory && <span className="pill pill-neutral text-[10px]">statutory</span>}
+      </div>
+      <div className="text-xs muted mt-1">
+        Typical time: <span className="text-ink dark:text-ink-dark font-mono">{wl}–{wh} wks</span>
+        {' · '}Typical cost: <span className="text-ink dark:text-ink-dark font-mono">${cl.toLocaleString()}–${ch.toLocaleString()}</span>
+      </div>
+      {row.sample_titles && row.sample_titles.length > 0 && (
+        <div className="text-xs muted mt-1 truncate">
+          e.g. {row.sample_titles.slice(0, 2).join(' · ')}
+        </div>
+      )}
+      {suggested && (
+        <a href={suggested.url} target="_blank" rel="noopener noreferrer"
+           className="inline-flex items-center gap-1 text-xs text-accent hover:underline mt-2"
+           data-testid={`credential-unlock-link-${c.id}`}>
+          Verify at {suggested.label} <ExternalLink className="h-3 w-3" />
+        </a>
+      )}
+    </li>
   );
 }
 

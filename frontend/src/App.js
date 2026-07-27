@@ -19,6 +19,8 @@ import Analytics from './pages/Analytics';
 import Billing from './pages/Billing';
 import Privacy from './pages/Privacy';
 import PrivacyPolicy from './pages/PrivacyPolicy';
+import EmployerIntake from './pages/EmployerIntake';
+import SubmitSprint from './pages/SubmitSprint';
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
 import RoleRoute from './components/RoleRoute';
@@ -31,6 +33,7 @@ export default function App() {
       <Route path="/signup" element={<Signup />} />
       <Route path="/auth/callback" element={<GoogleCallback />} />
       <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+      <Route path="/employers" element={<EmployerIntake />} />
 
       <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
         <Route path="/passport" element={<Passport />} />
@@ -46,6 +49,7 @@ export default function App() {
         <Route path="/billing" element={<Billing />} />
         <Route path="/privacy" element={<Privacy />} />
         <Route path="/settings" element={<Settings />} />
+        <Route path="/submit-sprint" element={<SubmitSprint />} />
         <Route
           path="/admin"
           element={<RoleRoute roles={["admin", "support"]}><Admin /></RoleRoute>}

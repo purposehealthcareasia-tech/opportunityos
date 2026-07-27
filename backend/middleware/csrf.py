@@ -43,6 +43,9 @@ _BYPASS_PATHS = {
     # `/otp/attach` REQUIRES an authenticated session so CSRF stays on.
     "/api/v1/auth/otp/start",
     "/api/v1/auth/otp/verify",
+    # Phase 4 · Item 6 — Employer intake is a PUBLIC unauthenticated lead
+    # capture form. It's rate-limited by IP + honeypot; no session exists.
+    "/api/v1/employer-intake",
     # Legacy — some CI probes still POST /api/v1/consents while establishing a
     # signup flow; new signup path already covers this via the signup endpoint,
     # but keep the login/signup exempt only. Everything else state-changing MUST
