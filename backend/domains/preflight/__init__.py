@@ -19,6 +19,13 @@ If `channel` requires `submit_applications` consent (email_dry_run,
 email_live, form_live) we gate on that scope. `sprint_fixture` also
 gates on `submit_applications` since the founder rule is that submit
 scope covers all outbound-adjacent flows.
+
+Auth-failure status codes (verified live against preview 2026-07-28):
+  * Missing session cookie + missing X-CSRF-Token         → 401 authentication_required
+  * Session cookie present but CSRF header missing/wrong  → 403 csrf_check_failed
+Both are correct behaviour; the earlier draft brief that said "unauth = 403"
+should be read as "auth-layer rejects with 401 OR 403 depending on which
+layer trips first".
 """
 from __future__ import annotations
 

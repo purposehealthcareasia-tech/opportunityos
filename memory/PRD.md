@@ -5,6 +5,55 @@
 
 ---
 
+## 🚦 Phase 5 P2 close-out — SHIPPED (2026-07-28)
+
+### Tester verdict (relayed 2026-07-28)
+Phase 5.1–5.4 independent tester pass: **2 PASS · 2 EVIDENCE-INCOMPLETE · 0 FAIL**. Backend freeze **LIFTED**.
+
+* **Test 1 lifecycle truthfulness** — PASS. Sweep metadata surfaced on `GET /api/v1/jobs/feed` (`discovery.{polled_at, sweep_id, boards_swept_last_pass, closed_last_pass}`). 75 closed jobs each carry `closed_detected_at`. Zero closed leak into live feed. 22,055 of 22,071 live rows stamped `last_polled_at`; the 16 unstamped rows are seed fixtures (not source-board rows).
+* **Test 2 preflight simulate** — PASS. Auth + `submit_applications`-consent gated. Identity mismatch flagged with named `body_signature` finding. Zero writes to `preflight_verdicts`, `submission_receipts`, `email_outbox`. Application state untouched. **Unauth semantics correction (agent-side docs alignment 2026-07-28):** unauth returns **401** if the session cookie is missing and **403 csrf_check_failed** if the cookie is present but CSRF header is missing/mismatched. Both are correct; the earlier "unauth = 403" phrasing in the brief is now interpreted as "auth-layer rejects with 401 OR 403 depending on which layer trips first". Docstring at `backend/domains/preflight/__init__.py` amended to match.
+
+### Tester close-out — done agent-side (2026-07-28)
+
+**Test 3 · Form-map cache hygiene** — **PASS**. Collection: `form_maps` (not `form_map_cache`). Live inspection: **20 docs** (17 greenhouse + 3 lever) matches the sanctioned 20/20 dry-run pass. Every doc: `status=verified`, `structure_captured=false`, `fill_confidence=0.7`, `selector_map=[]`. PII scan across all 20 docs (fixture-user tokens `fixture-dryrun`, `opportunityos.dev`, `Fixture TestUser`, `555-0100`, plus `linkedin.com/in/fixture` etc., + forbidden keys `value/values/user_input/answer/answers/resume_text/name/email/phone/linkedin/filled_value/user_data/resume` inside selector_map entries, + regex sweep for any raw `local@domain.tld` in doc fields) → **null (clean)**.
+
+**Test 4 · Outcome + self-healing** — **PASS**.
+* `application_outcomes` — 1 fresh row inserted for the fixture app: `kind=response`, `days_to_response=3.0` computed by `compute_group_stats()` from a stamped `submitted_at`.
+* `budget_reallocations` — 1 fresh row; allocations entry: `group=<employer_id>, weight=1.0, submitted=1, response_rate=1.0, reason="response_rate=100.00% on 1 apps · median_days_to_response=3.0"`. Zero rows have empty `reason`.
+* `self_healing_events` — 1 fresh `map_demoted_low_confidence` row with `context={ats: greenhouse, fingerprint: url:f3110a4b1be7a34dfd757a5c, reason: "evidence: forced downgrade for tester close-out", previous_confidence: 0.7}`.
+* `applications` — fixture app moved to `state=assisted` with `assisted_reason="evidence: forced assist for tester close-out"` and `assisted_at` timestamped. `services.self_healing.assisted_lane_reason(app_id)` returns the UI-ready dict verbatim.
+
+### Additive backend surface (post-freeze)
+
+Three read/mutate endpoints added on the existing `outcomes_router` (`backend/domains/outcomes/service.py`) — zero impact on sprint / email-route / validator / discovery paths.
+
+| Method | Path                                              | Consent gate         | Behaviour                                                                                                   |
+|--------|---------------------------------------------------|----------------------|-------------------------------------------------------------------------------------------------------------|
+| GET    | `/api/v1/outcomes/kill-list`                      | `track_applications` | Returns `{active, recently_restored}` — active never null-elided; restored capped at last 10.               |
+| POST   | `/api/v1/outcomes/kill-list/{employer}/restore`   | `track_applications` | Stamps `restored_at + restored_reason='user_restore'` on the existing row (append-only). 404 if not active. |
+| GET    | `/api/v1/outcomes/reallocation/latest`            | `track_applications` | Returns the newest `budget_reallocations` row VERBATIM. No recompute (static invariant test locked).        |
+
+Regression: `backend/tests/test_outcomes_endpoints.py` — **7 passed** (5 handler asserts + 1 static invariant that read endpoint never invokes `reallocate_daily_budget` and never writes `budget_reallocations` + 1 404 assertion). Focused Phase-5 suite total after this batch: **56 passed** (`test_outcomes_endpoints.py 7 + test_outcome_autopilot.py 5 + test_self_healing.py 7 + test_form_map_cache.py 8 + test_apply_at_birth.py 6 + test_preflight_validator.py 15 + test_receipt_compound_index_regression.py 5 + test_consent_scope_enum_guard.py 3`).
+
+### P2 frontend surfaces
+
+1. **Simulate inline feedback** — `frontend/src/pages/SubmitSprint.jsx`. Per-slot `Preview verdict` button dry-fires `POST /api/v1/preflight/simulate` with `{application_id, channel:'sprint_fixture', outbound_fields:null}`. Renders `Simulate: WILL PASS` (accent) or `Simulate: WILL BLOCK` (red) with the full `verdict.reasons[]` list, monospace, indented. Read-only contract respected: the sprint's local state is NOT promoted; the server writes nothing.
+2. **Assisted-lane reason chip** — `frontend/src/pages/Applications.jsx`. Renders only when `app.state === 'assisted'`. Chip toggles a detail div that surfaces `app.assisted_reason` (verbatim) and `app.assisted_at`. `data-testid`s: `app-assisted-lane-chip-<id>`, `app-assisted-lane-detail-<id>`, `app-assisted-lane-reason-<id>`.
+3. **Kill-list restore CTA + latest reallocation** — new `frontend/src/pages/Outcomes.jsx`, route `/outcomes`, sidebar link between Tracker and Analytics. Two panels:
+   * `ReallocationPanel` — reads `/api/v1/outcomes/reallocation/latest`, renders each allocation with `weight`, `submitted`, `response_rate`, and the stored `reason` string verbatim inside a bordered explanation box.
+   * `KillListPanel` — reads `/api/v1/outcomes/kill-list`; per-row `Restore` button hits `POST /api/v1/outcomes/kill-list/{employer}/restore`. On success the row moves into the `Recently restored` trail below, and a success flash banner appears.
+   * Consent-blocked (403 `consent_required`) surfaces a friendly "grant `track_applications` under Settings" panel (`outcomes-consent-block`).
+
+**Tester result on the three UI flows (`/app/test_reports/iteration_21.json`, 2026-07-28):** **100% (3/3 flows).** Simulate round-trip ~0.09s. Restore round-trip ~0.10s. Zero UI bugs / integration issues. One cosmetic note: reallocation group renders as its raw internal identifier (fixture data is `company_id` UUIDs) — mitigated with a small `formatGroupLabel()` helper that shortens UUIDs and picks the employer segment from `employer::role` canonical keys; the full string stays in the `title` tooltip and remains audit-truthful.
+
+### Still parked (unchanged)
+* Apply-at-birth scheduler wiring — founder-gated.
+* New sanctioned field-structure capture dry-run — founder-gated.
+* Employer-intake automation counts — permanently parked unless founder reverses.
+* Workday tenant-path support — deferred until after merge decision.
+
+---
+
 ## 🚦 Phase 5.1 → 5.4 batch — SHIPPED (2026-07-28)
 
 ### 5.0 Gap closure — sprint block-path functional test

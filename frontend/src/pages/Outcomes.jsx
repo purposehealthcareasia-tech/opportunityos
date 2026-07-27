@@ -13,6 +13,24 @@ import {
 import { api } from '../lib/api';
 
 /**
+ * Small readability helper — reallocation `group` may be an employer id
+ * (UUID) or a `company::role` canonical key. We show:
+ *   - canonical key → the employer segment (`acme::eng-role` → `acme`)
+ *   - UUID          → shortened form (`e3a90842…f7`)
+ *   - anything else → unchanged
+ * The full string stays in the tooltip so the audit-truthful value is
+ * always one hover away.
+ */
+function formatGroupLabel(group) {
+  if (!group) return 'unknown';
+  if (group.includes('::')) return group.split('::')[0];
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(group)) {
+    return `${group.slice(0, 8)}…${group.slice(-2)}`;
+  }
+  return group;
+}
+
+/**
  * Outcomes surface — Phase 5.3.
  *
  * Two panels sitting side-by-side on wide screens:
@@ -211,7 +229,13 @@ function ReallocationPanel({ reallocation, message }) {
               data-testid={`reallocation-row-${a.group}`}
             >
               <div className="flex items-center justify-between gap-2 text-sm">
-                <span className="font-mono truncate" title={a.group}>{a.group}</span>
+                <span
+                  className="font-mono truncate"
+                  title={a.group}
+                  data-testid={`reallocation-group-${a.group}`}
+                >
+                  {formatGroupLabel(a.group)}
+                </span>
                 <span
                   className="pill pill-accent text-xs flex-shrink-0"
                   data-testid={`reallocation-weight-${a.group}`}
