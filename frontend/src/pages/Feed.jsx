@@ -337,16 +337,16 @@ function NotesList({ notes }) {
   );
 }
 
-// Phase 2/3 — Truthful empty state. Instead of "nothing passes", explain WHY
-// with real numbers so the candidate knows the feed isn't broken — their
-// filters are just narrow. Offers concrete CTAs.
-// Phase 3 improvement (2026-07-27): also renders top-3 CREDENTIAL UNLOCKS —
-// a real live-query "N jobs unlock if you get X" prompt sourced from the
-// Credential-to-Income catalog. FACT RULES: unlock count = real backend
-// query; time/cost are catalog ranges; each row surfaces the catalog's
-// official `suggested_next[]` URL so the candidate can verify.
-function TruthfulEmpty({ lane, totals, onSwitchLane, onGoPrefs }) {
-  const [unlocks, setUnlocks] = useState({ loading: true, rows: [] });
+// Phase 3 improvement (2026-07-27): CREDENTIAL UNLOCK PROMPT renders both on:
+//   * ZERO-supply (TruthfulEmpty when passing.length === 0), and
+//   * LOW-supply (LowSupplyCredentialUnlock when 0 < passing.length < 15).
+// FACT RULES: unlock count = real backend query; time/cost are catalog
+// ranges; each row surfaces the catalog's official `suggested_next[]` URL
+// so the candidate can verify. Same live-query rails as the empty state.
+const LOW_SUPPLY_THRESHOLD = 15;
+
+function useUnlockCandidates(lane) {
+  const [state, setState] = useState({ loading: true, rows: [] });
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -357,13 +357,38 @@ function TruthfulEmpty({ lane, totals, onSwitchLane, onGoPrefs }) {
         else { params.set('lane', 'income_now'); params.set('within_mi', '60'); }
         params.set('top_k', '3');
         const { data } = await api.get(`/api/v1/credentials/unlock-candidates?${params.toString()}`);
-        if (!cancelled) setUnlocks({ loading: false, rows: data.candidates || [] });
+        if (!cancelled) setState({ loading: false, rows: data.candidates || [] });
       } catch (e) {
-        if (!cancelled) setUnlocks({ loading: false, rows: [] });
+        if (!cancelled) setState({ loading: false, rows: [] });
       }
     })();
     return () => { cancelled = true; };
   }, [lane]);
+  return state;
+}
+
+function LowSupplyCredentialUnlock({ lane, passingCount }) {
+  const unlocks = useUnlockCandidates(lane);
+  if (unlocks.rows.length === 0) return null;
+  return (
+    <div className="card p-5" data-testid="feed-low-supply-credential-unlocks">
+      <p className="text-sm font-semibold text-ink dark:text-ink-dark">
+        Only {passingCount} job(s) pass your gates right now — a short credential could unlock many more:
+      </p>
+      <p className="text-xs muted mt-1">
+        Real live counts of jobs mentioning each credential within 60 miles of Phoenix. Time and cost ranges come from the linked official source.
+      </p>
+      <ul className="mt-3 space-y-3" data-testid="feed-low-supply-unlock-list">
+        {unlocks.rows.map((row) => (
+          <CredentialUnlockCard key={row.credential.id} row={row} />
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function TruthfulEmpty({ lane, totals, onSwitchLane, onGoPrefs }) {
+  const unlocks = useUnlockCandidates(lane);
 
   const live = totals?.live_jobs || 0;
   const excludedByReason = totals?.excluded_by_reason || {};
@@ -432,8 +457,7 @@ function TruthfulEmpty({ lane, totals, onSwitchLane, onGoPrefs }) {
   );
 }
 
-function CredentialUnlockCard({ row }) {
-  const c = row.credential;
+function CredentialUnlockCard({ row }) {  const c = row.credential;
   const wl = c.time_to_credential.weeks_low;
   const wh = c.time_to_credential.weeks_high;
   const cl = c.approx_cost_usd.low;
@@ -879,18 +903,25 @@ export default function FeedPage() {
                 onGoPrefs={() => nav('/preferences')}
               />
             ) : (
-              <div className="grid md:grid-cols-2 gap-3">
-                {passing.map((j) => (
-                  <JobCard
-                    key={j.id}
-                    job={j}
-                    busy={busy === j.id}
-                    onShortlist={shortlist}
-                    onHide={hide}
-                    onExplain={(job) => setExplainJobId(job.id)}
-                  />
-                ))}
-              </div>
+              <>
+                <div className="grid md:grid-cols-2 gap-3">
+                  {passing.map((j) => (
+                    <JobCard
+                      key={j.id}
+                      job={j}
+                      busy={busy === j.id}
+                      onShortlist={shortlist}
+                      onHide={hide}
+                      onExplain={(job) => setExplainJobId(job.id)}
+                    />
+                  ))}
+                </div>
+                {passing.length < LOW_SUPPLY_THRESHOLD && (
+                  <div className="mt-4">
+                    <LowSupplyCredentialUnlock lane={lane} passingCount={passing.length} />
+                  </div>
+                )}
+              </>
             )}
           </section>
 

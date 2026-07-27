@@ -1,0 +1,23 @@
+# Phase 4 Item 4 — 20-form fill-and-abort candidate list
+# Generated 2026-07-27 from live discovery corpus. Target 17 GH + 3 Lever = 20.
+# Format: <URL>  # <employer> - <title>
+https://job-boards.greenhouse.io/ionq/jobs/6005910004  # IonQ - Chief Architect - Optical Communication Terminals
+https://job-boards.greenhouse.io/whisperaero/jobs/5323857008  # Whisper Aero - Business Development Manager, Defense
+https://boards.greenhouse.io/lightmatter/jobs/4838692008?gh_jid=4838692008  # Lightmatter - Analog IC Design Engineer, AMS
+https://boards.greenhouse.io/robinhood/jobs/6669758?t=gh_src=&gh_jid=6669758  # Robinhood - Android Engineer, Government Products
+https://boards.greenhouse.io/relativity/jobs/8639195002?gh_jid=8639195002  # Relativity Space - Accounting Generalist
+https://boards.greenhouse.io/faire/jobs/8601430002?gh_jid=8601430002  # Faire - Account Executive
+https://job-boards.greenhouse.io/tenstorrent/jobs/5055233007  # Tenstorrent - Acceleration Kernel Developer Lead
+https://job-boards.greenhouse.io/momentus/jobs/6004816004  # Momentus - Additive Manufacturing Product Manager
+https://job-boards.greenhouse.io/kodiak/jobs/4327498009  # Kodiak Robotics - Accounting Manager
+https://job-boards.greenhouse.io/discord/jobs/8433948002  # Discord - Account Executive - Tech
+https://boards.greenhouse.io/spacex/jobs/8643277002?gh_jid=8643277002  # SpaceX - Accountant
+https://boards.greenhouse.io/vast/jobs/4694238006?gh_jid=4694238006  # Vast Space - 2026 Fall Internship - Manufacturing
+https://boards.greenhouse.io/redwoodmaterials/jobs/5894704004?gh_jid=5894704004  # Redwood Materials - Abuse Test Engineer, Energy Storage
+https://job-boards.greenhouse.io/betterhelp/jobs/4234786009  # BetterHelp - Clinical Psychologist- Remote
+https://job-boards.greenhouse.io/lucidmotors/jobs/5151086007  # Lucid Motors - Assembly Team Lead
+https://boards.greenhouse.io/figma/jobs/5364702004?gh_jid=5364702004  # Figma - Account Executive, Emerging Enterprise (Berlin, Germany)
+https://job-boards.greenhouse.io/rocketlab/jobs/7763159003  # Rocket Lab - Accounts Payables Specialist
+https://jobs.lever.co/wealthfront/78d6f6d5-1f08-4d5d-87be-c4250567bfb5/apply  # Wealthfront - Android Engineer
+https://jobs.lever.co/shieldai/41468aca-c1c2-4a7b-aec8-f499e64b6d1e/apply  # Shield AI - Aerostructures Design Engineer II (R4953)
+https://jobs.lever.co/loftorbital/0d2134a5-e7da-4787-a1fa-4bd4d6d92685/apply  # Loft Orbital - Attitude Guidance & Performance Engineer
