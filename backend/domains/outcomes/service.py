@@ -331,3 +331,105 @@ def forward_address_for(user_id: str) -> dict:
 @router.get("/tracker/forward-address")
 async def read_forward_address(user: dict = Depends(get_current_user)):
     return forward_address_for(user["id"])
+
+
+
+# ---------------------------------------------------------------------- #
+# Phase 5.3 — outcome autopilot surface
+# Kill-list (read + reversible restore) and latest-reallocation READ.
+#
+# Rails:
+#   * Additive endpoints; no impact on any Phase 5.0/5.1/5.2/5.4 dispatch path.
+#   * Read-only endpoints do NOT recompute; they return stored artifacts verbatim.
+#   * The restore endpoint calls the already-shipped
+#     `outcome_autopilot.restore_from_kill_list()` service — no recompute,
+#     no allocation change, and every restore is audited.
+# ---------------------------------------------------------------------- #
+
+from services import outcome_autopilot as _outcome_autopilot  # noqa: E402
+
+
+@router.get("/outcomes/kill-list")
+async def list_kill_list(user: dict = Depends(require_consent("track_applications"))):
+    """List employers currently on the user's kill-list plus reversibility
+    metadata. Returns rows in oldest-first order (restore CTA sorts client-side).
+
+    Consent gate: `track_applications` — the kill-list is a per-user
+    outcome-derived artifact, same scope as the tracker itself.
+    """
+    db = get_db()
+    active_cur = db.kill_list.find(
+        {"user_id": user["id"], "restored_at": None},
+        {"_id": 0},
+    ).sort("created_at", 1)
+    active = [d async for d in active_cur]
+    # Also include recently-restored so the UI can show "Restored just now."
+    restored_cur = db.kill_list.find(
+        {"user_id": user["id"], "restored_at": {"$ne": None}},
+        {"_id": 0},
+    ).sort("restored_at", -1).limit(10)
+    restored = [d async for d in restored_cur]
+    return {
+        "active": active,
+        "recently_restored": restored,
+        "note": ("Kill-list rows are reversible. Restore clears the "
+                  "suppression and is fully audited."),
+    }
+
+
+@router.post("/outcomes/kill-list/{employer}/restore")
+async def restore_kill_list_employer(
+    employer: str,
+    user: dict = Depends(require_consent("track_applications")),
+):
+    """Reverse a kill-list suppression for one employer.
+
+    Returns 404 if no active row exists (nothing to restore). Otherwise
+    stamps `restored_at` + `restored_reason='user_restore'` on the
+    existing row (append-only-style: original row is never deleted) and
+    writes an audit event.
+    """
+    if not employer or len(employer) > 200:
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "invalid_employer", "employer": employer},
+        )
+    restored = await _outcome_autopilot.restore_from_kill_list(
+        user["id"], employer, restored_reason="user_restore",
+    )
+    if not restored:
+        raise HTTPException(
+            status_code=404,
+            detail={"error": "kill_list_row_not_found", "employer": employer},
+        )
+    await audit.write(
+        user["id"], "outcomes.kill_list.restored",
+        f"employer:{employer}",
+        {"kill_list_id": restored.get("id"),
+         "restored_reason": restored.get("restored_reason")},
+    )
+    return {"restored": restored, "message": "Kill-list restore complete."}
+
+
+@router.get("/outcomes/reallocation/latest")
+async def read_latest_reallocation(
+    user: dict = Depends(require_consent("track_applications")),
+):
+    """Read the most recent stored `budget_reallocations` row for the user.
+
+    STRICTLY READ-ONLY — does not recompute allocations. The stored
+    `reason` strings are surfaced verbatim so the UI can render the
+    explainable "why fewer apps to X" copy the founder mandated.
+    """
+    db = get_db()
+    latest = await db.budget_reallocations.find_one(
+        {"user_id": user["id"]},
+        {"_id": 0},
+        sort=[("computed_at", -1)],
+    )
+    if not latest:
+        return {"reallocation": None,
+                "message": "No reallocation has been computed yet."}
+    return {"reallocation": latest,
+             "message": ("Read-only view of the stored allocation "
+                          "artifact; reasons are as-recorded.")}

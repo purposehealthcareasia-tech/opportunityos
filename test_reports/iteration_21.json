@@ -1,0 +1,29 @@
+{
+  "summary": "Phase 5.1–5.4 frontend-only verification of three P2 surfaces on the deployed preview URL. All three flows PASS end-to-end. (T1) /submit-sprint — sprint-start opens the queue, sprint-slot-simulate-0 toggles 'Preview verdict' → 'Simulating…' → back to 'Preview verdict'; sprint-slot-simulate-result-0 rendered with status 'Simulate: WILL PASS' in ~0.09s (fixture app is a clean SampleCo shortlist, so WILL PASS is the expected verdict; BLOCK branch reasons rendering was verified by code review at Frontend/SubmitSprint.jsx:281-287, only the runtime verdict differs). Reload of /submit-sprint showed sprint state cleared (in-memory) and no side-effect leak into /applications (assisted-lane app count remained 1, the forced-assist row only). (T2) /applications — assisted-lane row visible with pill 'Assisted lane' (data-testid=app-state-assisted, count=1), chip data-testid=app-assisted-lane-chip-ce891f80-c016-4172-873e-23002b0fb8e0 expands the detail div with reason='evidence: forced assist for tester close-out' and 'Since:' timestamp; second click collapses (detail node removed from DOM). (T3) /outcomes — outcomes-page loads, reallocation-panel renders with 1 group at 100.0% weight and reallocation-reason-<group>='response_rate=100.00% on 1 apps · median_days_to_response=3.0' verbatim. killlist-panel renders, killlist-restored-noresponse-corp already visible from prior run, seeded testco-alpha active row shown under killlist-row-testco-alpha; click killlist-restore-testco-alpha → briefly rendered 'Restoring…' state, outcomes-flash success banner appeared in 0.10s round-trip, active row cleared, testco-alpha row moved to Recently restored with (user_restore) tag. No console errors on any of the three pages beyond a benign 401→401 sequence during initial /login boot (auth/me pre-login) and expected React Router v7 future-flag warnings.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/outcomes", "issues": ["Cosmetic only: reallocation group is displayed as a raw UUID (e3a90842-…). Consider surfacing a human-readable group label (company/role_family) if available in the audit artifact — the reason string itself is fine."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/test_reports/i21_outcomes.png (screenshot: post-restore outcomes surface with flash + moved rows)"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "frontend/src/pages/SubmitSprint.jsx:88-116 — simulateSlot() correctly stores per-slot verdict in local state (`simulates[slot_id]`); result panel keys off `sim.ok` and renders reasons + status testids with the correct suffix index. Read-only contract respected (no setSprint / no local state promotion).",
+    "frontend/src/pages/Applications.jsx — AssistedLaneReason gates on app.state==='assisted' (line 73); chip toggles a boolean and detail div uses conditional render so second toggle removes the DOM node (verified via count==0 assertion). Semantically clean.",
+    "frontend/src/pages/Outcomes.jsx:45-72 — Parallel Promise.all for both endpoints, 403 consent_required handled dedicated code path (data-testid=outcomes-consent-block), generic error path (data-testid=outcomes-error) with Retry. Restore CTA calls load() again after success so the active→restored transition uses the server as source of truth (no optimistic drift). Good.",
+    "frontend/src/pages/Outcomes.jsx:207-235 — reallocation group is rendered as its raw internal identifier (looks like a UUID for the fixture data); consider mapping to a display label in a follow-up. Not blocking."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "not tested (per request)", "frontend": "100% (3/3 flows)"},
+  "test_credentials": "fixture-ead@opportunityos.dev / Fixture!Test1 (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "Direct-Mongo/service seeding (test-agent side, one-time, for evidence): (a) services.applications.shortlist for 3 SampleCo jobs on the fixture user to populate the sprint queue after backend rebase wiped applications; (b) services.self_healing.route_application_to_assisted on the first shortlisted app (id ce891f80-c016-4172-873e-23002b0fb8e0) with reason 'evidence: forced assist for tester close-out'; (c) services.outcome_autopilot.add_to_kill_list for employer='testco-alpha'. All three are ephemeral fixture-user data that the next backend restart / rebase will clear. No production data touched.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "All three surfaces are green. If you re-run after a backend restart, the fixture applications/assisted-lane/kill-list state will have been re-baselined — reseed via the 3 helpers listed under 'seed_data_creation'. The simulate verdict for a freshly-shortlisted fixture SampleCo app is 'WILL PASS'; to exercise the WILL BLOCK reasons rendering, seed an application whose passport claims are stripped or whose eligibility flags mismatch, then re-run T1. Round-trip timings on this preview: simulate ~0.09s, restore ~0.10s — both feel instantaneous.",
+  "rca of the issue": "N/A — no defects observed."
+}

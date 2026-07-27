@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Send, ArrowRight, TestTube2, Clock } from 'lucide-react';
+import { Send, ArrowRight, TestTube2, Clock, LifeBuoy, ChevronDown, ChevronUp } from 'lucide-react';
 import { api, withIdempotency } from '../lib/api';
 import Button from '../components/ui/Button';
 import { LoadingBlock, ErrorBlock, EmptyBlock } from '../lib/scope';
@@ -20,6 +20,7 @@ const STATE_LABEL = {
   response: 'Employer responded',
   interview: 'Interview',
   offer: 'Offer',
+  assisted: 'Assisted lane',
   closed: 'Closed',
 };
 
@@ -56,9 +57,48 @@ function StatePill({ state }) {
     response: 'pill pill-accent',
     interview: 'pill pill-accent',
     offer: 'pill pill-accent',
+    assisted: 'pill border-sky-500/40 text-sky-700 dark:text-sky-400',
     closed: 'pill border-neutral-400/40 muted',
   };
   return <span className={map[state] || 'pill pill-neutral'} data-testid={`app-state-${state}`}>{STATE_LABEL[state] || state}</span>;
+}
+
+/**
+ * Assisted-lane reason chip — Phase 5.4.
+ * Renders only when `app.state === 'assisted'`. Chip is a toggle button
+ * that expands to show the named reason + assisted_at timestamp.
+ */
+function AssistedLaneReason({ app }) {
+  const [open, setOpen] = useState(false);
+  if (app.state !== 'assisted') return null;
+  const reason = app.assisted_reason || 'no reason recorded';
+  const at = app.assisted_at ? new Date(app.assisted_at).toLocaleString() : null;
+  return (
+    <div className="mt-2" data-testid={`app-assisted-lane-${app.id}`}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="inline-flex items-center gap-1.5 pill border-sky-500/40 text-sky-700 dark:text-sky-400 text-xs hover:bg-sky-500/10"
+        data-testid={`app-assisted-lane-chip-${app.id}`}
+      >
+        <LifeBuoy className="h-3 w-3" />
+        Why assisted lane?
+        {open ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+      </button>
+      {open && (
+        <div
+          className="mt-2 rounded-md border border-sky-500/30 bg-sky-500/5 text-sky-900 dark:text-sky-100 px-3 py-2 text-xs leading-relaxed max-w-2xl"
+          data-testid={`app-assisted-lane-detail-${app.id}`}
+        >
+          <div><span className="font-medium">Reason:</span> <span data-testid={`app-assisted-lane-reason-${app.id}`}>{reason}</span></div>
+          {at && <div className="mt-1"><span className="font-medium">Since:</span> <span className="font-mono">{at}</span></div>}
+          <div className="mt-1 muted italic">
+            The fill map for this employer form dropped below the confidence threshold, so this application was moved to the assisted lane. No submission is sent while it is here.
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function TimelinePreview({ state }) {
@@ -207,6 +247,7 @@ export default function ApplicationsPage() {
                     <span>·</span>
                     <span className="inline-flex items-center gap-1"><Clock className="h-3 w-3" />{new Date(a.created_at).toLocaleString()}</span>
                   </div>
+                  <AssistedLaneReason app={a} />
                   <TimelinePreview state={a.state} />
                 </div>
                 <div className="flex-shrink-0 flex flex-col items-end gap-2">

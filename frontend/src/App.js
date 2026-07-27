@@ -16,6 +16,7 @@ import ApplicationPrep from './pages/ApplicationPrep';
 import Approvals from './pages/Approvals';
 import Tracker from './pages/Tracker';
 import Analytics from './pages/Analytics';
+import Outcomes from './pages/Outcomes';
 import Billing from './pages/Billing';
 import Privacy from './pages/Privacy';
 import PrivacyPolicy from './pages/PrivacyPolicy';
@@ -45,6 +46,7 @@ export default function App() {
         <Route path="/applications/:applicationId/prep" element={<ApplicationPrep />} />
         <Route path="/approvals" element={<Approvals />} />
         <Route path="/tracker" element={<Tracker />} />
+        <Route path="/outcomes" element={<Outcomes />} />
         <Route path="/analytics" element={<Analytics />} />
         <Route path="/billing" element={<Billing />} />
         <Route path="/privacy" element={<Privacy />} />
