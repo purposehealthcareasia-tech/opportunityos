@@ -112,11 +112,21 @@ GREENHOUSE_BOARDS: list[tuple[str, str]] = [
     ("BetterHelp", "betterhelp"),
     ("Talkspace", "talkspace"),
     ("SoFi", "sofi"),
+    # === Phase 4 backlog expansion (2026-07-27) — each verified via
+    # boards-api.greenhouse.io returning 200 + jobs > 0 by
+    # backend/tools/catalog_expand.py.
+    ("Faire", "faire"),         # 66 jobs at verification
+    ("Mercury", "mercury"),     # 57 jobs at verification
+    ("Pinterest", "pinterest"), # 198 jobs at verification
+    ("Vercel", "vercel"),       # 79 jobs at verification
 ]
 
 LEVER_BOARDS: list[tuple[str, str]] = [
     ("Shield AI", "shieldai"),
     ("Loft Orbital", "loftorbital"),
+    # === Phase 4 backlog expansion (2026-07-27) — verified via
+    # api.lever.co/v0/postings returning 200 + array > 0.
+    ("Wealthfront", "wealthfront"),  # 17 jobs at verification
 ]
 
 ASHBY_BOARDS: list[tuple[str, str]] = [
@@ -164,6 +174,10 @@ ASHBY_BOARDS: list[tuple[str, str]] = [
     ("Instructure", "instructure"),
     # Lane-B friendly
     ("Handshake Corp", "handshake"),
+    # === Phase 4 backlog expansion (2026-07-27) — verified via
+    # api.ashbyhq.com/posting-api/job-board returning 200 + jobs > 0.
+    ("Cohere", "cohere"),  # 138 jobs at verification
+    ("Sierra", "sierra"),  # 168 jobs at verification
 ]
 
 # Verified-external but preview-egress unreachable at build time.
