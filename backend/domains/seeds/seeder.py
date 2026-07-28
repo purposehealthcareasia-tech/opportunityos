@@ -362,6 +362,9 @@ async def _rebase_fixture_user() -> str:
         "manual_queue_items", "submission_receipts", "subscriptions",
         # Phase 3 (Founder Brief) — walk-ins + personas must reset with the fixture
         "walkins", "personas",
+        # Phase 5.3/5.4 — outcome autopilot + self-healing per-user collections
+        "application_outcomes", "budget_reallocations", "kill_list",
+        "self_healing_events", "preflight_verdicts",
     ]
     for coll in to_wipe:
         await db[coll].delete_many({"user_id": user_id})
@@ -453,6 +456,16 @@ async def _rebase_fixture_user() -> str:
     # Founder brief: fixture-ead@ = plus; everyone else defaults to free.
     from domains.subscriptions import service as subs_svc
     await subs_svc.set_plan(user_id, "plus", actor="system:fixture")
+    # -----------------------------------------------------------------
+    # Phase 5.3 / 5.4 UI-visibility seeds (Founder Directive 2026-07-28)
+    # -----------------------------------------------------------------
+    # Two fixture rows so the assisted-lane chip and the kill-list restore
+    # CTA are visually verifiable on every future acceptance pass. Both
+    # rows are clearly marked as fixture/SAMPLE data — never real
+    # employers, never real submissions, and separate from the 9-passing
+    # / 6-excluded gate geometry (feed reads jobs, not applications).
+    await _seed_fixture_assisted_lane_row(user_id, now)
+    await _seed_fixture_active_kill_list_row(user_id, now)
     # Audit row.
     await db.audit_logs.insert_one({
         "id": str(uuid.uuid4()),
@@ -464,6 +477,108 @@ async def _rebase_fixture_user() -> str:
     })
     log.info("FIXTURE user re-baselined: %s (%s)", email, user_id)
     return user_id
+
+
+# --------------------------------------------------------------------- #
+# Phase 5.3 / 5.4 fixture UI-visibility seeds (Founder Directive)
+# --------------------------------------------------------------------- #
+# On EVERY backend restart these seed one demonstration row so the
+# assisted-lane chip and the kill-list restore CTA render on the
+# fixture user's account. Both rows are:
+#   * clearly tagged as fixture/SAMPLE data,
+#   * derived from SampleCo seed jobs (never a real employer),
+#   * cleaned up by `to_wipe` on the next rebase (idempotent),
+#   * separate from the 9-passing / 6-excluded feed geometry (feed
+#     reads `jobs`, not `applications`).
+# --------------------------------------------------------------------- #
+
+_FIXTURE_ASSISTED_REASON = (
+    "FIXTURE seed · form-map fill confidence dropped below threshold "
+    "(low_confidence · sample) — sanctioned demo row so the assisted-lane "
+    "chip is visible in preview."
+)
+_FIXTURE_KILL_LIST_EMPLOYER = "sampleco-demo-ghosts"
+_FIXTURE_KILL_LIST_REASON = (
+    "FIXTURE seed · 5 silence outcomes and zero viewed/response/interview "
+    "signals in the last 21 days · sanctioned demo row so the restore CTA "
+    "is exercisable in preview."
+)
+
+
+async def _seed_fixture_assisted_lane_row(user_id: str, now) -> str | None:
+    """Create one applications row pinned to a SampleCo seed job and put
+    it in `state=assisted` with a named `assisted_reason`. Uses a real
+    SampleCo `is_sample=True` job so the app row's `job_snapshot.is_sample`
+    is truthful and the UI badges it clearly."""
+    db = get_db()
+    sample_job = await db.jobs.find_one(
+        {"is_sample": True}, {"_id": 0}, sort=[("_id", 1)],
+    )
+    if not sample_job:
+        log.info("FIXTURE assisted-lane seed skipped: no SampleCo job found")
+        return None
+    from domains.applications.service import route_decision
+    r = route_decision(sample_job)
+    app_id = str(uuid.uuid4())
+    doc = {
+        "id": app_id,
+        "user_id": user_id,
+        "job_id": sample_job["id"],
+        "company_id": sample_job.get("company_id"),
+        "job_snapshot": {
+            "title": sample_job.get("title"),
+            "company_name": sample_job.get("company_name"),
+            "canonical_key": sample_job.get("canonical_key"),
+            "is_sample": True,
+        },
+        "state": "assisted",
+        "assisted_reason": _FIXTURE_ASSISTED_REASON,
+        "assisted_at": now,
+        "route": r["route"],
+        "route_rationale": r["rationale"],
+        "materials": {},
+        "authorization_id": None,
+        "minutes_to_prepare": None,
+        "fields_corrected": None,
+        "created_at": now,
+        "updated_at": now,
+    }
+    try:
+        await db.applications.insert_one(doc)
+    except Exception:
+        # Do not break startup on any race — the seed is best-effort UI aid.
+        log.warning("FIXTURE assisted-lane seed insert failed", exc_info=True)
+        return None
+    # Mirror the audit trail that self_healing.route_application_to_assisted
+    # would have written, so the audit view is consistent.
+    await db.self_healing_events.insert_one({
+        "id": str(uuid.uuid4()),
+        "kind": "app_routed_assisted",
+        "source": "fixture_rebase",
+        "context": {"application_id": app_id, "user_id": user_id,
+                     "reason": _FIXTURE_ASSISTED_REASON,
+                     "fixture": True},
+        "at": now,
+    })
+    return app_id
+
+
+async def _seed_fixture_active_kill_list_row(user_id: str, now) -> str:
+    """Insert one ACTIVE kill-list row so the restore round-trip is
+    visually exercisable on every future pass. `restored_at=None` keeps
+    it under the `active` bucket of `GET /api/v1/outcomes/kill-list`."""
+    db = get_db()
+    row = {
+        "id": str(uuid.uuid4()),
+        "user_id": user_id,
+        "employer": _FIXTURE_KILL_LIST_EMPLOYER,
+        "reason": _FIXTURE_KILL_LIST_REASON,
+        "created_at": now,
+        "restored_at": None,
+        "fixture": True,
+    }
+    await db.kill_list.insert_one(dict(row))
+    return row["id"]
 
 
 async def _cleanup_non_sample_test_jobs() -> int:

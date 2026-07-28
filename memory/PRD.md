@@ -5,10 +5,47 @@
 
 ---
 
+## 🎯 Merge-decision packet (2026-07-28 · final)
+
+Branch `feat/real-job-discovery` @ **HEAD `1f6009fcfea618bafa82f9228c1cb63a499a4fb2`**. Discovery + precision-autopilot lane is **feature-complete and verified in preview**.
+
+**Tester verdicts to date:**
+* Phase 3 (14-gate + feed): PASS (51/51) — `/app/test_reports/iteration_20.json`.
+* Phase 4 low-supply prompt: PASS.
+* Phase 4 email-route + receipt collision fix: PASS.
+* Phase 4 · Item 4 fill-and-abort 20/20: PASS.
+* Phase 5.0 pre-flight validator: PASS (3/3).
+* Phase 5.1 lifecycle truthfulness: PASS.
+* Phase 5.1 preflight simulate: PASS. Docs aligned on 401-vs-403 auth-failure semantics.
+* Phase 5.2 form-map cache hygiene: PASS (20 docs, `structure_captured=false`, PII scan null).
+* Phase 5.3/5.4 outcome + self-healing evidence: PASS.
+* Additive backend surface (kill-list list/restore + reallocation/latest): PASS (7/7 endpoint tests + live curl).
+* Three P2 UI surfaces (simulate feedback / assisted-lane chip / kill-list restore): **4/4 PASS** by independent tester 2026-07-28 (`/app/test_reports/iteration_21.json`).
+
+**Founder-gated (deliberately parked) pending explicit green-light:**
+* Apply-at-birth polling scheduler wiring. Services + tiers shipped; scheduler task not attached.
+* New sanctioned field-structure capture dry-run. Form-map cache wired only to the URL-fingerprint bootstrap from the already-approved 20/20 pass.
+
+**Post-merge backlog (spec-only, do NOT build until founder green-lights post-merge work):**
+* **Outcomes drift sparkline** — a per-employer week-over-week sparkline of `response_rate` and `median_days_to_response`, driven purely from the existing `application_outcomes` ledger. Read-only, no new write path. Strengthens the `/outcomes` explainer from "why fewer apps to X today" into "and here's the observed trend that led to it". Would sit on the existing `/outcomes` page above the reallocation panel; every data point is already produced by `outcome_autopilot.compute_group_stats(user_id, since_days=…)` today.
+
+**Config-required (unset by design):** USAJOBS (`USAJOBS_API_KEY`, `USAJOBS_USER_AGENT_EMAIL`), live SMTP (`EMAIL_ROUTE_*`), Apple sign-in, Twilio Verify OTP, Resend / SendGrid webhooks, Razorpay / PayPal / Paystack, ElevenLabs, `PRIVATE_AUTOPILOT_OWNER_EMAILS`, and the production auth flip (`PROD_MODE=true` + `CI_TEST_ISSUER_ENABLED=false` + prod-only `CORS_ALLOW_ORIGINS` + rotated `JWT_SECRET / INTERNAL_SERVICE_TOKEN`). Full matrix in `/app/docs/DISCOVERY-EVIDENCE.md`.
+
+**Rails (unchanged):** preview only, no merge, no push, no deploy, no `.env` edits, no real submissions, no live email, no scraping, no CAPTCHA bypass, no LinkedIn / Indeed / Handshake ingest, no new headless automation without founder green-light. All additive endpoints are consent-gated and read stored artifacts verbatim.
+
+---
+
 ## 🚦 Phase 5 P2 close-out — SHIPPED (2026-07-28)
 
 ### Tester verdict (relayed 2026-07-28)
 Phase 5.1–5.4 independent tester pass: **2 PASS · 2 EVIDENCE-INCOMPLETE · 0 FAIL**. Backend freeze **LIFTED**.
+Three P2 UI surfaces subsequent tester pass: **4/4 PASS** (`/app/test_reports/iteration_21.json`).
+
+### Fixture demonstration seeds (2026-07-28)
+`backend/domains/seeds/seeder.py::_rebase_fixture_user` now also seeds ONE `state=assisted` application (pinned to a SampleCo `is_sample=True` job with `assisted_reason="FIXTURE seed · form-map fill confidence dropped below threshold (low_confidence · sample) — sanctioned demo row…"`) AND ONE active `kill_list` row (`employer="sampleco-demo-ghosts"`, `reason="FIXTURE seed · 5 silence outcomes and zero viewed/response/interview signals in the last 21 days · sanctioned demo row…"`). Both rows carry `fixture: true` in the payload and are wiped/reseeded on every backend restart. Feed acceptance geometry (9 passing / 6 excluded across the 15 SampleCo sample jobs on the fixture user) is preserved — feed reads `jobs`, not `applications`.
+
+Wipe list extended to cover the Phase 5 per-user collections so successive rebases stay clean: `application_outcomes`, `budget_reallocations`, `kill_list`, `self_healing_events`, `preflight_verdicts`.
+
 
 * **Test 1 lifecycle truthfulness** — PASS. Sweep metadata surfaced on `GET /api/v1/jobs/feed` (`discovery.{polled_at, sweep_id, boards_swept_last_pass, closed_last_pass}`). 75 closed jobs each carry `closed_detected_at`. Zero closed leak into live feed. 22,055 of 22,071 live rows stamped `last_polled_at`; the 16 unstamped rows are seed fixtures (not source-board rows).
 * **Test 2 preflight simulate** — PASS. Auth + `submit_applications`-consent gated. Identity mismatch flagged with named `body_signature` finding. Zero writes to `preflight_verdicts`, `submission_receipts`, `email_outbox`. Application state untouched. **Unauth semantics correction (agent-side docs alignment 2026-07-28):** unauth returns **401** if the session cookie is missing and **403 csrf_check_failed** if the cookie is present but CSRF header is missing/mismatched. Both are correct; the earlier "unauth = 403" phrasing in the brief is now interpreted as "auth-layer rejects with 401 OR 403 depending on which layer trips first". Docstring at `backend/domains/preflight/__init__.py` amended to match.
