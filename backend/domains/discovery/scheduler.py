@@ -7,6 +7,17 @@ Scheduler:
     DISCOVERY_REFRESH_INTERVAL_SECONDS for testing.
   * First run happens ~10s after boot so the app becomes healthy first.
 
+Apply-at-birth loop (Founder Directive 2026-07-28 · Item 3):
+  * Runs a `services.apply_at_birth.tick()` on a tighter cadence so hot
+    boards (≥5 postings/24h) are re-polled every 20 minutes and warm
+    boards every 2 hours. Cold boards fall through to the 6-hour full
+    refresh above.
+  * Gated by APPLY_AT_BIRTH_ENABLED (default: false — must be explicitly
+    enabled per founder rule "no new automation without approval").
+  * Tick cadence is APPLY_AT_BIRTH_TICK_INTERVAL_S (default 300 s / 5 min).
+    Every tick asks the service which boards are due; boards below their
+    tier interval are skipped.
+
 Router (admin-only manual trigger):
   * POST /api/v1/discovery/refresh — runs `refresh_all()` synchronously
     (owner-gated by existing admin dep) and returns the summary.
@@ -22,16 +33,23 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from core.deps import get_current_user
 from domains.discovery import service as svc
+from services import apply_at_birth
 
 
 log = logging.getLogger("oppos.discovery.scheduler")
 
 DEFAULT_INTERVAL_S = 6 * 3600
 _task: Optional[asyncio.Task] = None
+_aab_task: Optional[asyncio.Task] = None
 
 
 def _enabled() -> bool:
     return (os.environ.get("DISCOVERY_SCHEDULER_ENABLED", "true").strip().lower()
+            in ("1", "true", "yes", "on"))
+
+
+def _aab_enabled() -> bool:
+    return (os.environ.get("APPLY_AT_BIRTH_ENABLED", "false").strip().lower()
             in ("1", "true", "yes", "on"))
 
 
@@ -41,6 +59,13 @@ def _interval_s() -> int:
                                     str(DEFAULT_INTERVAL_S)))
     except ValueError:
         return DEFAULT_INTERVAL_S
+
+
+def _aab_tick_interval_s() -> int:
+    try:
+        return int(os.environ.get("APPLY_AT_BIRTH_TICK_INTERVAL_S", "300"))
+    except ValueError:
+        return 300
 
 
 async def _loop():
@@ -55,8 +80,39 @@ async def _loop():
         await asyncio.sleep(_interval_s())
 
 
+async def _aab_loop():
+    """Apply-at-birth tick loop. Waits until the base refresh has run at
+    least once (so `discovery.employer_token` is populated) before
+    starting, then ticks every APPLY_AT_BIRTH_TICK_INTERVAL_S."""
+    initial_delay = float(os.environ.get(
+        "APPLY_AT_BIRTH_INITIAL_DELAY_SECONDS", "60"))
+    await asyncio.sleep(initial_delay)
+    log.info("apply_at_birth.scheduler: activated (tick_interval_s=%s, "
+              "hot=%ss warm=%ss cold=%ss)",
+              _aab_tick_interval_s(),
+              apply_at_birth._TIER_INTERVAL_SECONDS[apply_at_birth.TIER_HOT],
+              apply_at_birth._TIER_INTERVAL_SECONDS[apply_at_birth.TIER_WARM],
+              apply_at_birth._TIER_INTERVAL_SECONDS[apply_at_birth.TIER_COLD])
+    while True:
+        try:
+            summary = await apply_at_birth.tick(actor="apply-at-birth-scheduler")
+            log.info(
+                "apply_at_birth.tick: due=%s polled=%s errored=%s closed=%s "
+                "tiers=%s median_lag_min=%s",
+                summary.get("boards_due"),
+                summary.get("boards_polled"),
+                summary.get("boards_errored"),
+                summary.get("closed_total"),
+                summary.get("tiers_polled"),
+                summary.get("median_lag_minutes_last_24h"),
+            )
+        except Exception:
+            log.exception("apply_at_birth.tick failed")
+        await asyncio.sleep(_aab_tick_interval_s())
+
+
 def start_scheduler() -> None:
-    global _task
+    global _task, _aab_task
     if _task and not _task.done():
         return
     if not _enabled():
@@ -65,13 +121,23 @@ def start_scheduler() -> None:
     loop = asyncio.get_event_loop()
     _task = loop.create_task(_loop())
     log.info("discovery.scheduler: task created")
+    # Apply-at-birth loop is a SEPARATE task; enabled by its own env flag.
+    if _aab_enabled():
+        _aab_task = loop.create_task(_aab_loop())
+        log.info("apply_at_birth.scheduler: task created")
+    else:
+        log.info("apply_at_birth.scheduler: disabled by env "
+                  "(APPLY_AT_BIRTH_ENABLED != true)")
 
 
 def stop_scheduler() -> None:
-    global _task
+    global _task, _aab_task
     if _task and not _task.done():
         _task.cancel()
     _task = None
+    if _aab_task and not _aab_task.done():
+        _aab_task.cancel()
+    _aab_task = None
 
 
 # ---------------------------------------------------------------- router

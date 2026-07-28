@@ -1,0 +1,1019 @@
+{
+  "started_at": "2026-07-28T00:17:23.287280+00:00",
+  "finished_at": "2026-07-28T00:19:29.991901+00:00",
+  "elapsed_s": 126.704621,
+  "targets": 20,
+  "filled_and_aborted": 20,
+  "fields_correct": 20,
+  "skipped_captcha": 0,
+  "failed": 0,
+  "non_get_attempts_total": 69,
+  "non_get_attempts_to_employer_origins": 3,
+  "non_get_attempts_to_employer_origins_sample": [
+    {
+      "method": "POST",
+      "url": "https://jobs.lever.co/cdn-cgi/challenge-platform/h/g/jsd/oneshot/b0da9f4911ba/0.6243144914972503:1785193227:uc8gZAGRTqCmvZpp_aWbPZWBIVycGE0b1JjnEMMdA8M/a21fb4be8e86d94a",
+      "host": "jobs.lever.co",
+      "resource_type": "xhr"
+    },
+    {
+      "method": "POST",
+      "url": "https://jobs.lever.co/cdn-cgi/challenge-platform/h/g/jsd/oneshot/b0da9f4911ba/0.6243144914972503:1785193227:uc8gZAGRTqCmvZpp_aWbPZWBIVycGE0b1JjnEMMdA8M/a21fb4d1788cd94a",
+      "host": "jobs.lever.co",
+      "resource_type": "xhr"
+    },
+    {
+      "method": "POST",
+      "url": "https://jobs.lever.co/cdn-cgi/challenge-platform/h/g/jsd/oneshot/b0da9f4911ba/0.6243144914972503:1785193227:uc8gZAGRTqCmvZpp_aWbPZWBIVycGE0b1JjnEMMdA8M/a21fb5a13936d94a",
+      "host": "jobs.lever.co",
+      "resource_type": "xhr"
+    }
+  ],
+  "employer_hosts_visited": [
+    "boards.greenhouse.io",
+    "job-boards.greenhouse.io",
+    "jobs.lever.co"
+  ],
+  "results": [
+    {
+      "index": 0,
+      "url": "https://job-boards.greenhouse.io/ionq/jobs/6005910004",
+      "state": "filled_and_aborted",
+      "captcha_provider": null,
+      "http_status": 200,
+      "fields_found": 25,
+      "fields_filled": 6,
+      "fields_filled_correctly": true,
+      "screenshot": "/app/docs/dryrun-screenshots/dryrun_00.png",
+      "error": null,
+      "captured_fields": [
+        {
+          "name": "g-recaptcha-response",
+          "type": "text",
+          "required": false
+        }
+      ],
+      "captured_selectors": [
+        {
+          "selector": "[name=\"g-recaptcha-response\"]",
+          "role": "unmapped",
+          "confidence": 0.0
+        }
+      ]
+    },
+    {
+      "index": 1,
+      "url": "https://job-boards.greenhouse.io/whisperaero/jobs/5323857008",
+      "state": "filled_and_aborted",
+      "captcha_provider": null,
+      "http_status": 200,
+      "fields_found": 16,
+      "fields_filled": 8,
+      "fields_filled_correctly": true,
+      "screenshot": "/app/docs/dryrun-screenshots/dryrun_01.png",
+      "error": null,
+      "captured_fields": [
+        {
+          "name": "g-recaptcha-response",
+          "type": "text",
+          "required": false
+        }
+      ],
+      "captured_selectors": [
+        {
+          "selector": "[name=\"g-recaptcha-response\"]",
+          "role": "unmapped",
+          "confidence": 0.0
+        }
+      ]
+    },
+    {
+      "index": 2,
+      "url": "https://boards.greenhouse.io/lightmatter/jobs/4838692008?gh_jid=4838692008",
+      "state": "filled_and_aborted",
+      "captcha_provider": null,
+      "http_status": 200,
+      "fields_found": 30,
+      "fields_filled": 6,
+      "fields_filled_correctly": true,
+      "screenshot": "/app/docs/dryrun-screenshots/dryrun_02.png",
+      "error": null,
+      "captured_fields": [
+        {
+          "name": "g-recaptcha-response",
+          "type": "text",
+          "required": false
+        }
+      ],
+      "captured_selectors": [
+        {
+          "selector": "[name=\"g-recaptcha-response\"]",
+          "role": "unmapped",
+          "confidence": 0.0
+        }
+      ]
+    },
+    {
+      "index": 3,
+      "url": "https://boards.greenhouse.io/robinhood/jobs/6669758?t=gh_src=&gh_jid=6669758",
+      "state": "filled_and_aborted",
+      "captcha_provider": null,
+      "http_status": 200,
+      "fields_found": 40,
+      "fields_filled": 6,
+      "fields_filled_correctly": true,
+      "screenshot": "/app/docs/dryrun-screenshots/dryrun_03.png",
+      "error": null,
+      "captured_fields": [
+        {
+          "name": "g-recaptcha-response",
+          "type": "text",
+          "required": false
+        }
+      ],
+      "captured_selectors": [
+        {
+          "selector": "[name=\"g-recaptcha-response\"]",
+          "role": "unmapped",
+          "confidence": 0.0
+        }
+      ]
+    },
+    {
+      "index": 4,
+      "url": "https://boards.greenhouse.io/relativity/jobs/8639195002?gh_jid=8639195002",
+      "state": "filled_and_aborted",
+      "captcha_provider": null,
+      "http_status": 200,
+      "fields_found": 19,
+      "fields_filled": 7,
+      "fields_filled_correctly": true,
+      "screenshot": "/app/docs/dryrun-screenshots/dryrun_04.png",
+      "error": null,
+      "captured_fields": [
+        {
+          "name": "g-recaptcha-response",
+          "type": "text",
+          "required": false
+        }
+      ],
+      "captured_selectors": [
+        {
+          "selector": "[name=\"g-recaptcha-response\"]",
+          "role": "unmapped",
+          "confidence": 0.0
+        }
+      ]
+    },
+    {
+      "index": 5,
+      "url": "https://boards.greenhouse.io/faire/jobs/8601430002?gh_jid=8601430002",
+      "state": "filled_and_aborted",
+      "captcha_provider": null,
+      "http_status": 200,
+      "fields_found": 24,
+      "fields_filled": 7,
+      "fields_filled_correctly": true,
+      "screenshot": "/app/docs/dryrun-screenshots/dryrun_05.png",
+      "error": null,
+      "captured_fields": [
+        {
+          "name": "g-recaptcha-response",
+          "type": "text",
+          "required": false
+        }
+      ],
+      "captured_selectors": [
+        {
+          "selector": "[name=\"g-recaptcha-response\"]",
+          "role": "unmapped",
+          "confidence": 0.0
+        }
+      ]
+    },
+    {
+      "index": 6,
+      "url": "https://job-boards.greenhouse.io/tenstorrent/jobs/5055233007",
+      "state": "filled_and_aborted",
+      "captcha_provider": null,
+      "http_status": 200,
+      "fields_found": 17,
+      "fields_filled": 6,
+      "fields_filled_correctly": true,
+      "screenshot": "/app/docs/dryrun-screenshots/dryrun_06.png",
+      "error": null,
+      "captured_fields": [
+        {
+          "name": "g-recaptcha-response",
+          "type": "text",
+          "required": false
+        }
+      ],
+      "captured_selectors": [
+        {
+          "selector": "[name=\"g-recaptcha-response\"]",
+          "role": "unmapped",
+          "confidence": 0.0
+        }
+      ]
+    },
+    {
+      "index": 7,
+      "url": "https://job-boards.greenhouse.io/momentus/jobs/6004816004",
+      "state": "filled_and_aborted",
+      "captcha_provider": null,
+      "http_status": 200,
+      "fields_found": 28,
+      "fields_filled": 5,
+      "fields_filled_correctly": true,
+      "screenshot": "/app/docs/dryrun-screenshots/dryrun_07.png",
+      "error": null,
+      "captured_fields": [
+        {
+          "name": "g-recaptcha-response",
+          "type": "text",
+          "required": false
+        }
+      ],
+      "captured_selectors": [
+        {
+          "selector": "[name=\"g-recaptcha-response\"]",
+          "role": "unmapped",
+          "confidence": 0.0
+        }
+      ]
+    },
+    {
+      "index": 8,
+      "url": "https://job-boards.greenhouse.io/kodiak/jobs/4327498009",
+      "state": "filled_and_aborted",
+      "captcha_provider": null,
+      "http_status": 200,
+      "fields_found": 23,
+      "fields_filled": 6,
+      "fields_filled_correctly": true,
+      "screenshot": "/app/docs/dryrun-screenshots/dryrun_08.png",
+      "error": null,
+      "captured_fields": [
+        {
+          "name": "g-recaptcha-response",
+          "type": "text",
+          "required": false
+        }
+      ],
+      "captured_selectors": [
+        {
+          "selector": "[name=\"g-recaptcha-response\"]",
+          "role": "unmapped",
+          "confidence": 0.0
+        }
+      ]
+    },
+    {
+      "index": 9,
+      "url": "https://job-boards.greenhouse.io/discord/jobs/8433948002",
+      "state": "filled_and_aborted",
+      "captcha_provider": null,
+      "http_status": 200,
+      "fields_found": 33,
+      "fields_filled": 6,
+      "fields_filled_correctly": true,
+      "screenshot": "/app/docs/dryrun-screenshots/dryrun_09.png",
+      "error": null,
+      "captured_fields": [
+        {
+          "name": "g-recaptcha-response",
+          "type": "text",
+          "required": false
+        }
+      ],
+      "captured_selectors": [
+        {
+          "selector": "[name=\"g-recaptcha-response\"]",
+          "role": "unmapped",
+          "confidence": 0.0
+        }
+      ]
+    },
+    {
+      "index": 10,
+      "url": "https://boards.greenhouse.io/spacex/jobs/8643277002?gh_jid=8643277002",
+      "state": "filled_and_aborted",
+      "captcha_provider": null,
+      "http_status": 200,
+      "fields_found": 46,
+      "fields_filled": 6,
+      "fields_filled_correctly": true,
+      "screenshot": "/app/docs/dryrun-screenshots/dryrun_10.png",
+      "error": null,
+      "captured_fields": [
+        {
+          "name": "g-recaptcha-response",
+          "type": "text",
+          "required": false
+        }
+      ],
+      "captured_selectors": [
+        {
+          "selector": "[name=\"g-recaptcha-response\"]",
+          "role": "unmapped",
+          "confidence": 0.0
+        }
+      ]
+    },
+    {
+      "index": 11,
+      "url": "https://boards.greenhouse.io/vast/jobs/4694238006?gh_jid=4694238006",
+      "state": "filled_and_aborted",
+      "captcha_provider": null,
+      "http_status": 200,
+      "fields_found": 39,
+      "fields_filled": 7,
+      "fields_filled_correctly": true,
+      "screenshot": "/app/docs/dryrun-screenshots/dryrun_11.png",
+      "error": null,
+      "captured_fields": [
+        {
+          "name": "g-recaptcha-response",
+          "type": "text",
+          "required": false
+        }
+      ],
+      "captured_selectors": [
+        {
+          "selector": "[name=\"g-recaptcha-response\"]",
+          "role": "unmapped",
+          "confidence": 0.0
+        }
+      ]
+    },
+    {
+      "index": 12,
+      "url": "https://boards.greenhouse.io/redwoodmaterials/jobs/5894704004?gh_jid=5894704004",
+      "state": "filled_and_aborted",
+      "captcha_provider": null,
+      "http_status": 200,
+      "fields_found": 13,
+      "fields_filled": 6,
+      "fields_filled_correctly": true,
+      "screenshot": "/app/docs/dryrun-screenshots/dryrun_12.png",
+      "error": null,
+      "captured_fields": [
+        {
+          "name": "g-recaptcha-response",
+          "type": "text",
+          "required": false
+        }
+      ],
+      "captured_selectors": [
+        {
+          "selector": "[name=\"g-recaptcha-response\"]",
+          "role": "unmapped",
+          "confidence": 0.0
+        }
+      ]
+    },
+    {
+      "index": 13,
+      "url": "https://job-boards.greenhouse.io/betterhelp/jobs/4234786009",
+      "state": "filled_and_aborted",
+      "captcha_provider": null,
+      "http_status": 200,
+      "fields_found": 7,
+      "fields_filled": 5,
+      "fields_filled_correctly": true,
+      "screenshot": "/app/docs/dryrun-screenshots/dryrun_13.png",
+      "error": null,
+      "captured_fields": [
+        {
+          "name": "g-recaptcha-response",
+          "type": "text",
+          "required": false
+        }
+      ],
+      "captured_selectors": [
+        {
+          "selector": "[name=\"g-recaptcha-response\"]",
+          "role": "unmapped",
+          "confidence": 0.0
+        }
+      ]
+    },
+    {
+      "index": 14,
+      "url": "https://job-boards.greenhouse.io/lucidmotors/jobs/5151086007",
+      "state": "filled_and_aborted",
+      "captcha_provider": null,
+      "http_status": 200,
+      "fields_found": 28,
+      "fields_filled": 9,
+      "fields_filled_correctly": true,
+      "screenshot": "/app/docs/dryrun-screenshots/dryrun_14.png",
+      "error": null,
+      "captured_fields": [
+        {
+          "name": "g-recaptcha-response",
+          "type": "text",
+          "required": false
+        }
+      ],
+      "captured_selectors": [
+        {
+          "selector": "[name=\"g-recaptcha-response\"]",
+          "role": "unmapped",
+          "confidence": 0.0
+        }
+      ]
+    },
+    {
+      "index": 15,
+      "url": "https://boards.greenhouse.io/figma/jobs/5364702004?gh_jid=5364702004",
+      "state": "filled_and_aborted",
+      "captcha_provider": null,
+      "http_status": 200,
+      "fields_found": 19,
+      "fields_filled": 6,
+      "fields_filled_correctly": true,
+      "screenshot": "/app/docs/dryrun-screenshots/dryrun_15.png",
+      "error": null,
+      "captured_fields": [
+        {
+          "name": "g-recaptcha-response",
+          "type": "text",
+          "required": false
+        }
+      ],
+      "captured_selectors": [
+        {
+          "selector": "[name=\"g-recaptcha-response\"]",
+          "role": "unmapped",
+          "confidence": 0.0
+        }
+      ]
+    },
+    {
+      "index": 16,
+      "url": "https://job-boards.greenhouse.io/rocketlab/jobs/7763159003",
+      "state": "filled_and_aborted",
+      "captcha_provider": null,
+      "http_status": 200,
+      "fields_found": 36,
+      "fields_filled": 5,
+      "fields_filled_correctly": true,
+      "screenshot": "/app/docs/dryrun-screenshots/dryrun_16.png",
+      "error": null,
+      "captured_fields": [
+        {
+          "name": "g-recaptcha-response",
+          "type": "text",
+          "required": false
+        }
+      ],
+      "captured_selectors": [
+        {
+          "selector": "[name=\"g-recaptcha-response\"]",
+          "role": "unmapped",
+          "confidence": 0.0
+        }
+      ]
+    },
+    {
+      "index": 17,
+      "url": "https://jobs.lever.co/wealthfront/78d6f6d5-1f08-4d5d-87be-c4250567bfb5/apply",
+      "state": "filled_and_aborted",
+      "captcha_provider": null,
+      "http_status": 200,
+      "fields_found": 12,
+      "fields_filled": 5,
+      "fields_filled_correctly": true,
+      "screenshot": "/app/docs/dryrun-screenshots/dryrun_17.png",
+      "error": null,
+      "captured_fields": [
+        {
+          "name": "name",
+          "type": "text",
+          "required": true
+        },
+        {
+          "name": "email",
+          "type": "email",
+          "required": true
+        },
+        {
+          "name": "phone",
+          "type": "text",
+          "required": true
+        },
+        {
+          "name": "location",
+          "type": "text",
+          "required": false
+        },
+        {
+          "name": "org",
+          "type": "text",
+          "required": false
+        },
+        {
+          "name": "urls[linkedin]",
+          "type": "text",
+          "required": false
+        },
+        {
+          "name": "urls[portfolio]",
+          "type": "text",
+          "required": false
+        },
+        {
+          "name": "urls[other]",
+          "type": "text",
+          "required": false
+        },
+        {
+          "name": "cards[a1d93a51-fdfb-40d0-88bc-10dabbf56636][field1]",
+          "type": "text",
+          "required": true
+        },
+        {
+          "name": "cards[a1d93a51-fdfb-40d0-88bc-10dabbf56636][field3]",
+          "type": "text",
+          "required": false
+        },
+        {
+          "name": "cards[a1d93a51-fdfb-40d0-88bc-10dabbf56636][field6]",
+          "type": "text",
+          "required": false
+        },
+        {
+          "name": "cards[a1d93a51-fdfb-40d0-88bc-10dabbf56636][field7]",
+          "type": "text",
+          "required": true
+        }
+      ],
+      "captured_selectors": [
+        {
+          "selector": "[name=\"name\"]",
+          "role": "name",
+          "confidence": 1.0
+        },
+        {
+          "selector": "[name=\"email\"]",
+          "role": "email",
+          "confidence": 1.0
+        },
+        {
+          "selector": "[name=\"phone\"]",
+          "role": "phone",
+          "confidence": 1.0
+        },
+        {
+          "selector": "[name=\"location\"]",
+          "role": "location",
+          "confidence": 1.0
+        },
+        {
+          "selector": "[name=\"org\"]",
+          "role": "unmapped",
+          "confidence": 0.0
+        },
+        {
+          "selector": "[name=\"urls[linkedin]\"]",
+          "role": "linkedin",
+          "confidence": 1.0
+        },
+        {
+          "selector": "[name=\"urls[portfolio]\"]",
+          "role": "unmapped",
+          "confidence": 0.0
+        },
+        {
+          "selector": "[name=\"urls[other]\"]",
+          "role": "unmapped",
+          "confidence": 0.0
+        },
+        {
+          "selector": "[name=\"cards[a1d93a51-fdfb-40d0-88bc-10dabbf56636][field1]\"]",
+          "role": "unmapped",
+          "confidence": 0.0
+        },
+        {
+          "selector": "[name=\"cards[a1d93a51-fdfb-40d0-88bc-10dabbf56636][field3]\"]",
+          "role": "unmapped",
+          "confidence": 0.0
+        },
+        {
+          "selector": "[name=\"cards[a1d93a51-fdfb-40d0-88bc-10dabbf56636][field6]\"]",
+          "role": "unmapped",
+          "confidence": 0.0
+        },
+        {
+          "selector": "[name=\"cards[a1d93a51-fdfb-40d0-88bc-10dabbf56636][field7]\"]",
+          "role": "unmapped",
+          "confidence": 0.0
+        }
+      ]
+    },
+    {
+      "index": 18,
+      "url": "https://jobs.lever.co/shieldai/41468aca-c1c2-4a7b-aec8-f499e64b6d1e/apply",
+      "state": "filled_and_aborted",
+      "captcha_provider": null,
+      "http_status": 200,
+      "fields_found": 22,
+      "fields_filled": 5,
+      "fields_filled_correctly": true,
+      "screenshot": "/app/docs/dryrun-screenshots/dryrun_18.png",
+      "error": null,
+      "captured_fields": [
+        {
+          "name": "name",
+          "type": "text",
+          "required": true
+        },
+        {
+          "name": "email",
+          "type": "email",
+          "required": true
+        },
+        {
+          "name": "phone",
+          "type": "text",
+          "required": false
+        },
+        {
+          "name": "location",
+          "type": "text",
+          "required": false
+        },
+        {
+          "name": "org",
+          "type": "text",
+          "required": false
+        },
+        {
+          "name": "urls[linkedin]",
+          "type": "text",
+          "required": false
+        },
+        {
+          "name": "urls[twitter]",
+          "type": "text",
+          "required": false
+        },
+        {
+          "name": "urls[github]",
+          "type": "text",
+          "required": false
+        },
+        {
+          "name": "urls[portfolio]",
+          "type": "text",
+          "required": false
+        },
+        {
+          "name": "urls[other]",
+          "type": "text",
+          "required": false
+        },
+        {
+          "name": "cards[115d9079-dcfa-4a25-aff3-f213bf88362e][field2]",
+          "type": "text",
+          "required": false
+        },
+        {
+          "name": "cards[7e99ef70-58ab-4a59-bc31-cc1c35935935][field1]",
+          "type": "text",
+          "required": false
+        },
+        {
+          "name": "cards[5f2a739c-bb0e-4283-92c6-1dc8c09b459c][field1]",
+          "type": "text",
+          "required": false
+        },
+        {
+          "name": "cards[a90569ad-6b52-448e-9792-055f7c122285][field1]",
+          "type": "text",
+          "required": false
+        },
+        {
+          "name": "cards[eb3750bb-e1f0-473c-a54d-012919c5e349][field0]",
+          "type": "text",
+          "required": true
+        },
+        {
+          "name": "cards[07fdf1f1-9952-493d-a9b7-320969a56fed][field2]",
+          "type": "text",
+          "required": false
+        },
+        {
+          "name": "cards[07fdf1f1-9952-493d-a9b7-320969a56fed][field3]",
+          "type": "text",
+          "required": false
+        },
+        {
+          "name": "cards[07fdf1f1-9952-493d-a9b7-320969a56fed][field4]",
+          "type": "text",
+          "required": false
+        },
+        {
+          "name": "cards[07fdf1f1-9952-493d-a9b7-320969a56fed][field5]",
+          "type": "text",
+          "required": true
+        },
+        {
+          "name": "cards[f27077c2-d069-4885-b031-ee14b393fd41][field2]",
+          "type": "text",
+          "required": false
+        },
+        {
+          "name": "eeo[disabilitysignature]",
+          "type": "text",
+          "required": false
+        },
+        {
+          "name": "eeo[disabilitysignaturedate]",
+          "type": "text",
+          "required": false
+        }
+      ],
+      "captured_selectors": [
+        {
+          "selector": "[name=\"name\"]",
+          "role": "name",
+          "confidence": 1.0
+        },
+        {
+          "selector": "[name=\"email\"]",
+          "role": "email",
+          "confidence": 1.0
+        },
+        {
+          "selector": "[name=\"phone\"]",
+          "role": "phone",
+          "confidence": 1.0
+        },
+        {
+          "selector": "[name=\"location\"]",
+          "role": "location",
+          "confidence": 1.0
+        },
+        {
+          "selector": "[name=\"org\"]",
+          "role": "unmapped",
+          "confidence": 0.0
+        },
+        {
+          "selector": "[name=\"urls[linkedin]\"]",
+          "role": "linkedin",
+          "confidence": 1.0
+        },
+        {
+          "selector": "[name=\"urls[twitter]\"]",
+          "role": "unmapped",
+          "confidence": 0.0
+        },
+        {
+          "selector": "[name=\"urls[github]\"]",
+          "role": "unmapped",
+          "confidence": 0.0
+        },
+        {
+          "selector": "[name=\"urls[portfolio]\"]",
+          "role": "unmapped",
+          "confidence": 0.0
+        },
+        {
+          "selector": "[name=\"urls[other]\"]",
+          "role": "unmapped",
+          "confidence": 0.0
+        },
+        {
+          "selector": "[name=\"cards[115d9079-dcfa-4a25-aff3-f213bf88362e][field2]\"]",
+          "role": "unmapped",
+          "confidence": 0.0
+        },
+        {
+          "selector": "[name=\"cards[7e99ef70-58ab-4a59-bc31-cc1c35935935][field1]\"]",
+          "role": "unmapped",
+          "confidence": 0.0
+        },
+        {
+          "selector": "[name=\"cards[5f2a739c-bb0e-4283-92c6-1dc8c09b459c][field1]\"]",
+          "role": "unmapped",
+          "confidence": 0.0
+        },
+        {
+          "selector": "[name=\"cards[a90569ad-6b52-448e-9792-055f7c122285][field1]\"]",
+          "role": "unmapped",
+          "confidence": 0.0
+        },
+        {
+          "selector": "[name=\"cards[eb3750bb-e1f0-473c-a54d-012919c5e349][field0]\"]",
+          "role": "unmapped",
+          "confidence": 0.0
+        },
+        {
+          "selector": "[name=\"cards[07fdf1f1-9952-493d-a9b7-320969a56fed][field2]\"]",
+          "role": "unmapped",
+          "confidence": 0.0
+        },
+        {
+          "selector": "[name=\"cards[07fdf1f1-9952-493d-a9b7-320969a56fed][field3]\"]",
+          "role": "unmapped",
+          "confidence": 0.0
+        },
+        {
+          "selector": "[name=\"cards[07fdf1f1-9952-493d-a9b7-320969a56fed][field4]\"]",
+          "role": "unmapped",
+          "confidence": 0.0
+        },
+        {
+          "selector": "[name=\"cards[07fdf1f1-9952-493d-a9b7-320969a56fed][field5]\"]",
+          "role": "unmapped",
+          "confidence": 0.0
+        },
+        {
+          "selector": "[name=\"cards[f27077c2-d069-4885-b031-ee14b393fd41][field2]\"]",
+          "role": "unmapped",
+          "confidence": 0.0
+        },
+        {
+          "selector": "[name=\"eeo[disabilitysignaturedate]\"]",
+          "role": "unmapped",
+          "confidence": 0.0
+        }
+      ]
+    },
+    {
+      "index": 19,
+      "url": "https://jobs.lever.co/loftorbital/0d2134a5-e7da-4787-a1fa-4bd4d6d92685/apply",
+      "state": "filled_and_aborted",
+      "captcha_provider": null,
+      "http_status": 200,
+      "fields_found": 16,
+      "fields_filled": 5,
+      "fields_filled_correctly": true,
+      "screenshot": "/app/docs/dryrun-screenshots/dryrun_19.png",
+      "error": null,
+      "captured_fields": [
+        {
+          "name": "name",
+          "type": "text",
+          "required": true
+        },
+        {
+          "name": "email",
+          "type": "email",
+          "required": true
+        },
+        {
+          "name": "phone",
+          "type": "text",
+          "required": true
+        },
+        {
+          "name": "location",
+          "type": "text",
+          "required": true
+        },
+        {
+          "name": "org",
+          "type": "text",
+          "required": false
+        },
+        {
+          "name": "urls[linkedin]",
+          "type": "text",
+          "required": false
+        },
+        {
+          "name": "urls[twitter]",
+          "type": "text",
+          "required": false
+        },
+        {
+          "name": "urls[github]",
+          "type": "text",
+          "required": false
+        },
+        {
+          "name": "urls[portfolio]",
+          "type": "text",
+          "required": false
+        },
+        {
+          "name": "urls[other]",
+          "type": "text",
+          "required": false
+        },
+        {
+          "name": "cards[1a77b225-1d28-466f-8174-975a2c683d04][field0]",
+          "type": "text",
+          "required": true
+        },
+        {
+          "name": "cards[1a77b225-1d28-466f-8174-975a2c683d04][field1]",
+          "type": "text",
+          "required": true
+        },
+        {
+          "name": "cards[1a77b225-1d28-466f-8174-975a2c683d04][field2]",
+          "type": "text",
+          "required": true
+        },
+        {
+          "name": "cards[1a77b225-1d28-466f-8174-975a2c683d04][field5]",
+          "type": "text",
+          "required": false
+        },
+        {
+          "name": "eeo[disabilitysignature]",
+          "type": "text",
+          "required": false
+        },
+        {
+          "name": "eeo[disabilitysignaturedate]",
+          "type": "text",
+          "required": false
+        }
+      ],
+      "captured_selectors": [
+        {
+          "selector": "[name=\"name\"]",
+          "role": "name",
+          "confidence": 1.0
+        },
+        {
+          "selector": "[name=\"email\"]",
+          "role": "email",
+          "confidence": 1.0
+        },
+        {
+          "selector": "[name=\"phone\"]",
+          "role": "phone",
+          "confidence": 1.0
+        },
+        {
+          "selector": "[name=\"location\"]",
+          "role": "location",
+          "confidence": 1.0
+        },
+        {
+          "selector": "[name=\"org\"]",
+          "role": "unmapped",
+          "confidence": 0.0
+        },
+        {
+          "selector": "[name=\"urls[linkedin]\"]",
+          "role": "linkedin",
+          "confidence": 1.0
+        },
+        {
+          "selector": "[name=\"urls[twitter]\"]",
+          "role": "unmapped",
+          "confidence": 0.0
+        },
+        {
+          "selector": "[name=\"urls[github]\"]",
+          "role": "unmapped",
+          "confidence": 0.0
+        },
+        {
+          "selector": "[name=\"urls[portfolio]\"]",
+          "role": "unmapped",
+          "confidence": 0.0
+        },
+        {
+          "selector": "[name=\"urls[other]\"]",
+          "role": "unmapped",
+          "confidence": 0.0
+        },
+        {
+          "selector": "[name=\"cards[1a77b225-1d28-466f-8174-975a2c683d04][field0]\"]",
+          "role": "unmapped",
+          "confidence": 0.0
+        },
+        {
+          "selector": "[name=\"cards[1a77b225-1d28-466f-8174-975a2c683d04][field1]\"]",
+          "role": "unmapped",
+          "confidence": 0.0
+        },
+        {
+          "selector": "[name=\"cards[1a77b225-1d28-466f-8174-975a2c683d04][field2]\"]",
+          "role": "unmapped",
+          "confidence": 0.0
+        },
+        {
+          "selector": "[name=\"cards[1a77b225-1d28-466f-8174-975a2c683d04][field5]\"]",
+          "role": "unmapped",
+          "confidence": 0.0
+        },
+        {
+          "selector": "[name=\"eeo[disabilitysignaturedate]\"]",
+          "role": "unmapped",
+          "confidence": 0.0
+        }
+      ]
+    }
+  ]
+}

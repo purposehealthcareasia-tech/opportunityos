@@ -268,26 +268,54 @@ async def _run(urls: list[str], out_dir: Path, evidence_md: Path, limit: int = 2
                     slot["fields_found"] = len(inputs)
                     filled = 0
                     matched_email = matched_name = False
+                    # Field-structure capture (Founder Directive 2026-07-28 · Item 4).
+                    # For each input we record ONLY {name, type, required} — the
+                    # structural triplet consumed by
+                    # `services.form_map_cache.canonical_fingerprint`. NEVER a
+                    # value, NEVER user-input data. `selector_map` is the
+                    # short CSS `[name="…"]` selector + a coarse role guess.
+                    captured_fields: list[dict] = []
+                    captured_selectors: list[dict] = []
                     for inp in inputs:
                         try:
                             name = (await inp.get_attribute("name") or "").lower()
                             label = (await inp.get_attribute("aria-label") or "").lower()
                             placeholder = (await inp.get_attribute("placeholder") or "").lower()
+                            ftype = (await inp.get_attribute("type") or "text").lower()
+                            required_attr = await inp.get_attribute("required")
+                            required = required_attr is not None
+                            # Structural triplet — sanitize length, no values.
+                            if name:
+                                captured_fields.append({
+                                    "name": name[:60],
+                                    "type": ftype[:20],
+                                    "required": required,
+                                })
                             slug = f"{name} {label} {placeholder}".strip()
+                            matched_role = None
                             for key, val in FIXTURE_FILL.items():
                                 variants = (key, key.replace("_", " "), key.replace("_", "-"))
                                 if any(v in slug for v in variants):
                                     await inp.fill(val)
                                     filled += 1
+                                    matched_role = key
                                     if key == "email":
                                         matched_email = True
                                     if key in {"first_name", "last_name", "full_name", "name",
                                                 "given_name", "family_name"}:
                                         matched_name = True
                                     break
+                            if name:
+                                captured_selectors.append({
+                                    "selector": f'[name="{name[:60]}"]',
+                                    "role": (matched_role or "unmapped")[:60],
+                                    "confidence": 1.0 if matched_role else 0.0,
+                                })
                         except Exception:
                             continue
                     slot["fields_filled"] = filled
+                    slot["captured_fields"] = captured_fields
+                    slot["captured_selectors"] = captured_selectors
                     # "correctly" means we hit at least email + a name variant
                     slot["fields_filled_correctly"] = matched_email and matched_name
 

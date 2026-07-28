@@ -198,3 +198,39 @@ was still over-triggering on reCAPTCHA badges. **The authoritative Phase 4 ·
 Item 4 evidence is the 2026-07-27T22:08:37 pass**, which produced 20 / 20
 filled-and-aborted forms with 20 / 20 fields-correct, zero CAPTCHA skips,
 zero failures, and zero non-GET requests reaching any employer origin.
+
+## Dry-run pass 2026-07-28T00:17:23.287280+00:00
+
+* Elapsed: 126.70s
+* Targets: 20
+* Filled + aborted: 20
+* Fields-correct (email + name filled): 20
+* Skipped-CAPTCHA: 0
+* Failed: 0
+* Non-GET attempts (all origins, aborted by guard): 69
+* **Non-GET attempts that would have reached an employer origin (aborted by guard, ZERO left the browser): 3**
+* Employer hosts visited: `boards.greenhouse.io, job-boards.greenhouse.io, jobs.lever.co`
+
+| # | URL | State | HTTP | Fields found | Fields filled | Correct | CAPTCHA | Screenshot |
+|---|-----|-------|------|--------------|---------------|---------|---------|------------|
+| 00 | `https://job-boards.greenhouse.io/ionq/jobs/6005910004` | filled_and_aborted | 200 | 25 | 6 | yes | - | `/app/docs/dryrun-screenshots/dryrun_00.png` |
+| 01 | `https://job-boards.greenhouse.io/whisperaero/jobs/5323857008` | filled_and_aborted | 200 | 16 | 8 | yes | - | `/app/docs/dryrun-screenshots/dryrun_01.png` |
+| 02 | `https://boards.greenhouse.io/lightmatter/jobs/4838692008?gh_jid=4838692008` | filled_and_aborted | 200 | 30 | 6 | yes | - | `/app/docs/dryrun-screenshots/dryrun_02.png` |
+| 03 | `https://boards.greenhouse.io/robinhood/jobs/6669758?t=gh_src=&gh_jid=6669758` | filled_and_aborted | 200 | 40 | 6 | yes | - | `/app/docs/dryrun-screenshots/dryrun_03.png` |
+| 04 | `https://boards.greenhouse.io/relativity/jobs/8639195002?gh_jid=8639195002` | filled_and_aborted | 200 | 19 | 7 | yes | - | `/app/docs/dryrun-screenshots/dryrun_04.png` |
+| 05 | `https://boards.greenhouse.io/faire/jobs/8601430002?gh_jid=8601430002` | filled_and_aborted | 200 | 24 | 7 | yes | - | `/app/docs/dryrun-screenshots/dryrun_05.png` |
+| 06 | `https://job-boards.greenhouse.io/tenstorrent/jobs/5055233007` | filled_and_aborted | 200 | 17 | 6 | yes | - | `/app/docs/dryrun-screenshots/dryrun_06.png` |
+| 07 | `https://job-boards.greenhouse.io/momentus/jobs/6004816004` | filled_and_aborted | 200 | 28 | 5 | yes | - | `/app/docs/dryrun-screenshots/dryrun_07.png` |
+| 08 | `https://job-boards.greenhouse.io/kodiak/jobs/4327498009` | filled_and_aborted | 200 | 23 | 6 | yes | - | `/app/docs/dryrun-screenshots/dryrun_08.png` |
+| 09 | `https://job-boards.greenhouse.io/discord/jobs/8433948002` | filled_and_aborted | 200 | 33 | 6 | yes | - | `/app/docs/dryrun-screenshots/dryrun_09.png` |
+| 10 | `https://boards.greenhouse.io/spacex/jobs/8643277002?gh_jid=8643277002` | filled_and_aborted | 200 | 46 | 6 | yes | - | `/app/docs/dryrun-screenshots/dryrun_10.png` |
+| 11 | `https://boards.greenhouse.io/vast/jobs/4694238006?gh_jid=4694238006` | filled_and_aborted | 200 | 39 | 7 | yes | - | `/app/docs/dryrun-screenshots/dryrun_11.png` |
+| 12 | `https://boards.greenhouse.io/redwoodmaterials/jobs/5894704004?gh_jid=5894704004` | filled_and_aborted | 200 | 13 | 6 | yes | - | `/app/docs/dryrun-screenshots/dryrun_12.png` |
+| 13 | `https://job-boards.greenhouse.io/betterhelp/jobs/4234786009` | filled_and_aborted | 200 | 7 | 5 | yes | - | `/app/docs/dryrun-screenshots/dryrun_13.png` |
+| 14 | `https://job-boards.greenhouse.io/lucidmotors/jobs/5151086007` | filled_and_aborted | 200 | 28 | 9 | yes | - | `/app/docs/dryrun-screenshots/dryrun_14.png` |
+| 15 | `https://boards.greenhouse.io/figma/jobs/5364702004?gh_jid=5364702004` | filled_and_aborted | 200 | 19 | 6 | yes | - | `/app/docs/dryrun-screenshots/dryrun_15.png` |
+| 16 | `https://job-boards.greenhouse.io/rocketlab/jobs/7763159003` | filled_and_aborted | 200 | 36 | 5 | yes | - | `/app/docs/dryrun-screenshots/dryrun_16.png` |
+| 17 | `https://jobs.lever.co/wealthfront/78d6f6d5-1f08-4d5d-87be-c4250567bfb5/apply` | filled_and_aborted | 200 | 12 | 5 | yes | - | `/app/docs/dryrun-screenshots/dryrun_17.png` |
+| 18 | `https://jobs.lever.co/shieldai/41468aca-c1c2-4a7b-aec8-f499e64b6d1e/apply` | filled_and_aborted | 200 | 22 | 5 | yes | - | `/app/docs/dryrun-screenshots/dryrun_18.png` |
+| 19 | `https://jobs.lever.co/loftorbital/0d2134a5-e7da-4787-a1fa-4bd4d6d92685/apply` | filled_and_aborted | 200 | 16 | 5 | yes | - | `/app/docs/dryrun-screenshots/dryrun_19.png` |
+
