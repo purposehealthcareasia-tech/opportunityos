@@ -5,6 +5,48 @@
 
 ---
 
+## 🌊 Phase 0 — Fynd Liquid retheme + rebrand — READY FOR TESTER (2026-08-04)
+
+**Rebrand:** OpportunityOS → **Fynd** (user-visible strings only — code identifiers, env vars, DB name, and API paths unchanged). 15 frontend files touched, 31 occurrences replaced.
+
+**Branch:** `feat/liquid-ui` @ HEAD `daf06b68…` (+ two sanctioned commits on top of `1f6009fc`). Founder confirmed rebase is NOT required (2026-08-04).
+
+**Shipped in Phase 0 (working tree on top of `1f6009fc`):**
+* Fynd Liquid design tokens (`src/index.css` + `tailwind.config.js`): 3 glass elevations (`liquid-bar / liquid-card / liquid-sheet`), specular top-edge, concentric radii, dark-first base `#0B0D10`, warm calm radial haze.
+* Guardrails: `prefers-reduced-transparency: reduce` drops backdrop-filters to solid tints; `prefers-reduced-motion: reduce` collapses transitions to 0.001 ms.
+* 8 screens rethemed (Landing / Login / Feed / Applications / Outcomes / Passport / Submit-Sprint / mobile-390 sweep). Screenshots in `/app/docs/phase-0-screenshots/`.
+* New components: `FyndMark`, `SmartCTA`, `DailyBudgetCapsule`, `StreakChip`, `SurpriseMeCapsule`.
+* Backend Surprise Me: `POST /api/v1/jobs/surprise-me` + `GET /api/v1/jobs/surprise-me/status`. Consent-gated on `discover_jobs`; 5/day limit; only real, non-sample, out-of-lane-eligible jobs; verbatim `why_you_qualify` from `reason_codes[].explanation` + gate `notes[]`.
+* `_rebase_fixture_broad_user()` in seeder — wider-prefs fixture user (`fixture-broad@opportunityos.dev` / `Fixture!Broad1`) with `status=us_citizen`, no `role_families` filter, `salary_floor=0`. Enables the real Surprise Me draw path against Greenhouse / Lever / Ashby corpus.
+* `application_outcomes` / `budget_reallocations` / `kill_list` / `self_healing_events` / `preflight_verdicts` collections are wiped/reseeded on every backend restart alongside fixture users.
+* Apply-at-Birth scheduler activated behind `APPLY_AT_BIRTH_ENABLED=true` env flag (founder-authorized).
+* Field-Structure Capture pass on 20 ATS URLs — zero PII leaks (form_maps DB scan clean).
+
+**Phase 0 burn-down (2026-08-04, closeout):**
+* 390 px `DailyBudgetCapsule` overlap on `/outcomes` — **FIXED** (Layout `pb-24` → `pb-32` on mobile). Post-fix 390 px screenshot recorded.
+* Surprise Me 403 consent-revoked path — **VERIFIED** live (curl trace in `/app/docs/PHASE-0-EVIDENCE.md` §8:4).
+* Surprise Me real draw against real corpus — **VERIFIED** via `fixture-broad@` (returned live PsiQuantum row, `is_sample=false`).
+* Interview-scheduled micro-delight — **DEFERRED** (Phase 1 scope).
+* Presentation-only perf pass (frontend-only): `<link rel="preconnect">` + `<link rel="dns-prefetch">` to `%REACT_APP_BACKEND_URL%` — Landing Lighthouse 68 → **80** (LCP 5.4 s → 4.1 s). Feed Playwright LCP 5.4 s → 3.98 s. Named limitation: preview runs `react-scripts start` (dev mode), which caps LH scores ~20–30 points below production builds. Scorer-unfreeze deferred until AAB 24 h window closes.
+* Focused pytest baseline at closeout: **62 passed / 0 failed** (matches pre-closeout count).
+
+**24 h AAB observation window:** RUNNING as of 2026-08-04 evening. Backend has NOT been restarted since window start. Median posting→queue metric + any 429/5xx events will be reported when window closes.
+
+**NOT-VERIFIED (open items for tester or later burn-down):**
+Guardrails empirically (reduced-transparency / reduced-motion / WCAG contrast), SmartCTA rungs 1–2, DailyBudget cap-reached state, StreakChip visible state, `liquidRipple` wiring, sidebar 768–1023 px breakpoint, dark-mode fresh-boot audit, some rethemed screens at pixel level. Full list in `/app/docs/PHASE-0-EVIDENCE.md` §8.
+
+**Rails held all pass:** preview only, no merge/push/deploy, no `.env` edits, no employer submissions, no scraping/CAPTCHA-bypass, no backend restart during AAB window.
+
+**Awaiting:** independent tester pass on the 3 Fynd Liquid user flows (Surprise Me — incl. 403 + real draw via `fixture-broad@` · assisted-lane chip on Applications · kill-list Restore on Outcomes) plus zero-regression shortlist→sprint→simulate spot-check.
+
+**Post-Phase-0 (do NOT start until founder signals Phase 0 PASS):**
+* Phase 1 CONVERSION LAYER: speed-ranked feed sort · Apply Wave + Spectrum Builder · instant-scheduling link · follow-up engine.
+* Phase 2 INTELLIGENCE VISIBLE: `/outcomes` sparklines · weekly digest · rejection autopsy.
+* Phase 3 SUPPLY ENGINE: `/employers/connect` · request-this-employer voting.
+
+---
+
+
 ## 🎯 Merge-decision packet (2026-07-28 · final)
 
 Branch `feat/real-job-discovery` @ **HEAD `1f6009fcfea618bafa82f9228c1cb63a499a4fb2`**. Discovery + precision-autopilot lane is **feature-complete and verified in preview**.

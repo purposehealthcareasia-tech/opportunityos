@@ -5,6 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#0B0D10" media="(prefers-color-scheme: dark)" />
     <meta name="theme-color" content="#f6f7f9" media="(prefers-color-scheme: light)" />
+    <!-- Fynd Liquid presentation-only perf pass (Phase-0 §7):
+         Preconnect + dns-prefetch to the backend origin so the first
+         /api/* request on /feed doesn't pay DNS + TLS + TCP setup cost
+         on the LCP-critical path. Zero-risk hint, ignored if the browser
+         doesn't support it. Substituted at build time by CRA. -->
+    <link rel="preconnect" href="%REACT_APP_BACKEND_URL%" crossorigin />
+    <link rel="dns-prefetch" href="%REACT_APP_BACKEND_URL%" />
     <meta
       name="description"
       content="Fynd — apply to the right jobs with applications employers can trust."

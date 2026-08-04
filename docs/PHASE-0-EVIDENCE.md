@@ -119,43 +119,86 @@ Screens visually verified in the captures:
 
 ---
 
-## §7 Lighthouse — MEASURED, misses target
+## §7 Lighthouse — MEASURED, still under target (dev-serving cap)
 
 Mobile · `--preset=perf --form-factor=mobile --throttling-method=simulate` · Chromium 132 · `--headless=new`.
 
+### 7.1 Pre-amendment baseline (unchanged, kept for delta)
+
 | URL                                    | Perf score | LCP      | TBT     | Notes                                                                                        |
 |----------------------------------------|-----------:|----------|--------:|----------------------------------------------------------------------------------------------|
-| `/` (Landing)                          | **68**     | 5.4 s    | 430 ms  | Bottleneck: LCP text block waits for `framer-motion` chunk + refraction paint.               |
-| `/feed` (authenticated, cookie-fed)    | **68**     | 5.4 s    | 440 ms  | Bottleneck: `/api/v1/jobs/feed` scorer wait — the "Scoring your feed…" skeleton is the LCP element until the scorer returns. Backend was frozen this pass per your Phase-0 rails, so I did NOT touch the scorer. |
+| `/` (Landing)                          | 68         | 5.4 s    | 430 ms  | Original diagnosis attributed LCP to a `framer-motion` chunk — see §7.3 correction.          |
+| `/feed` (authenticated, cookie-fed)    | 68         | 5.4 s    | 440 ms  | Bottleneck: `/api/v1/jobs/feed` scorer wait sets the LCP element on the "Scoring…" skeleton. |
 
-**Verdict: MISS.** Target ≥ 95 not met. Observed 68 on both landing and feed. Reasonable next moves once you unfreeze the perf lane: (a) code-split framer-motion out of Landing (currently pulled in main.js), (b) lazy-mount the refraction SVG blobs after first paint, (c) precompute the /feed scorer result server-side or emit a Suspense-friendly loading skeleton with a real placeholder. None of these were attempted in Phase 0 because the founder-approved delta lane was presentation-only.
+### 7.2 Presentation-only perf pass — MEASURED (2026-08-04T22:29 UTC)
+
+Applied changes (frontend only, backend not touched, no restart):
+1. `public/index.html` — added `<link rel="preconnect" href="%REACT_APP_BACKEND_URL%" crossorigin>` and `<link rel="dns-prefetch">` so the first `/api/*` request on any authenticated route pays zero DNS/TCP/TLS setup cost on the LCP-critical path.
+2. Verified framer-motion is NOT in the bundle (`grep -r "from 'framer-motion'" src/` = 0 imports; not in `package.json`). The pre-amendment §7 note calling out framer-motion was a misdiagnosis — see §7.3.
+3. Verified `DeferredRefraction` on Landing already defers the refraction SVG blobs behind `requestIdleCallback` (see `src/pages/Landing.jsx:65`). No change needed.
+4. Confirmed route-level code-splitting is already in `App.js` for all authenticated pages (Passport/Feed/Applications/… lazy-loaded). No change needed.
+
+| URL                                    | Perf score | LCP      | Δ vs 7.1     | Notes                                                                     |
+|----------------------------------------|-----------:|----------|-------------:|---------------------------------------------------------------------------|
+| `/` (Landing) — Lighthouse             | **80**     | 4.1 s    | +12 · −1.3s  | Preconnect + already-optimized landing. TBT 285 ms. CLS 0.                |
+| `/` (Landing) — Playwright, Slow 4G + 4× CPU | n/a  | 3.35 s   | −2.05 s      | Standalone LCP observer under Lighthouse-equivalent throttling.           |
+| `/feed` — Playwright, Slow 4G + 4× CPU | n/a        | 3.98 s   | −1.42 s      | FCP 3.84 s → LCP 3.98 s means LCP fires ~140 ms after FCP; the residual is backend-bound (feed scorer response time). |
+
+### 7.3 Verdict — measured, honestly reported
+
+**Target ≥ 95 not met. Observed 80 on Landing (Lighthouse) after the presentation-only pass.** LCP improved from 5.4 s → 4.1 s on Landing (Lighthouse) and 5.4 s → 3.35–3.98 s on Playwright.
+
+**Named limitation:** the preview environment runs `react-scripts start` (dev mode — un-minified bundles, hot-reload runtime, source maps) — confirmed via `ps aux | grep react-scripts` (pid 179, `/app/frontend/node_modules/react-scripts/scripts/start.js`). Lighthouse mobile scores on dev-serving environments are typically 20–30 points below a production `yarn build` bundle even with identical code. Per founder directive: "state the observed number and name the limitation — never extrapolate a production figure." The observed number is **80**; a production build number is NOT extrapolated here.
+
+**Correction to the pre-amendment §7 note:** the earlier "code-split framer-motion out of Landing (currently pulled in main.js)" was wrong on both facts — `framer-motion` is not a dependency (`package.json` grep = 0) and no source file imports it (`src/` grep = 0). The actual LCP contributor on Landing is the JS parse+eval cost of the entry bundle under dev-mode throttling; the refraction SVG is already deferred. Corrected here for the record.
+
+**Next step (if founder approves post-AAB-window):** the founder-authorized scorer-unfreeze ladder is on standby. Any scorer change requires a backend restart which would corrupt the AAB 24 h observation window (§9). Scheduled for immediately after the AAB window closes — perf-only additive changes (caching / pagination / deferred scoring), ZERO scoring-output change proven byte-identical on a fixed fixture set, focused suite green, evidence as a §7 addendum.
 
 ---
 
-## §8 NOT-VERIFIED list (explicit, per amendment §1)
+## §8 NOT-VERIFIED list (explicit, per amendment §1) — burn-down closeout
 
-Empirically UN-verified in Phase 0. Each is a real thing the tester can spot-check:
+Empirically UN-verified in Phase 0. Each is a real thing the tester can spot-check. **Burn-down 2026-08-04T22:33 UTC** — items 4, 5, 11, 17, 18 updated; the rest remain NOT-VERIFIED and are the honest scope of what a tester still needs to look at.
 
-1. **`prefers-reduced-transparency: reduce` guardrail** — CSS rule shipped in `index.css`; not observed live in a browser with that media query flipped on.
-2. **`prefers-reduced-motion: reduce` guardrail** — same as above.
-3. **WCAG AA contrast on glass** — no automated contrast auditor was run; my eyeball read passed but that's not evidence.
-4. **Surprise Me 403 consent-revoked path** — the pytest asserts the endpoint requires `discover_jobs`, but I did NOT revoke consent live and verify the UI's error state renders honestly.
-5. **Surprise Me actual draw with a valid outside-lane pool** — the fixture user's Passport does not currently yield any real outside-lane job that passes all three hard gates + is not SAMPLE, so my live curl saw `job: null`. The 4th pytest simulates a valid draw with monkey-patched context/evaluate/score; a live end-to-end draw against a real Passport is NOT-VERIFIED.
+1. **`prefers-reduced-transparency: reduce` guardrail** — CSS rule shipped in `index.css`; not observed live in a browser with that media query flipped on. STATUS: NOT-VERIFIED.
+2. **`prefers-reduced-motion: reduce` guardrail** — same as above. STATUS: NOT-VERIFIED.
+3. **WCAG AA contrast on glass** — no automated contrast auditor was run; my eyeball read passed but that's not evidence. STATUS: NOT-VERIFIED.
+4. **Surprise Me 403 consent-revoked path** — **VERIFIED 2026-08-04T22:28 UTC.** Live curl trace against preview:
+   ```
+   BEFORE revoke → GET /jobs/surprise-me/status → HTTP 200 {"limit":5,"used_today":0,"remaining_today":5}
+   POST /consents scope=discover_jobs granted=false → HTTP 201
+   AFTER revoke → GET /jobs/surprise-me/status → HTTP 403 {"error":"consent_required","scope":"discover_jobs","grant_url":"/api/v1/consents"}
+   AFTER revoke → POST /jobs/surprise-me      → HTTP 403 {"error":"consent_required","scope":"discover_jobs","grant_url":"/api/v1/consents"}
+   POST /consents scope=discover_jobs granted=true → HTTP 201
+   AFTER re-grant → GET /jobs/surprise-me/status → HTTP 200 {"limit":5,"used_today":0,"remaining_today":5}
+   ```
+   Same JSON shape as the unit test asserts. STATUS: VERIFIED.
+5. **Surprise Me actual draw with a valid outside-lane pool** — **VERIFIED 2026-08-04T22:31 UTC** using the wider-prefs `fixture-broad@` user. Live curl draw:
+   ```
+   POST /api/v1/jobs/surprise-me → HTTP 200
+     job.id     = "1f8dc4b4-efd1-49e5-8735-d0e87a779315"
+     job.title  = "Optical Architect (Design)"
+     job.company_name = "PsiQuantum"    (real Greenhouse employer)
+     job.lane   = "career"
+     job.is_sample = false              (real posting, not fixture)
+     remaining_today = 4                (used_today went 0→1 idempotently)
+   ```
+   Hard rules honored: real (non-sample) row, career lane, distinct job_id, decrement of `remaining_today`. `why_you_qualify` returned null on this specific draw because the scoring pass produced zero `reason_codes[]` and zero `notes[]` for this job (as designed — the field is populated ONLY from those two sources, never synthesized). STATUS: VERIFIED.
 6. **SmartCTA rung 1 (passport-not-activated)** — fixture user's Passport is already activated. NOT-VERIFIED live.
 7. **SmartCTA rung 2 (awaiting-approval > 0)** — no fixture app is currently in `awaiting_approval`. NOT-VERIFIED live.
 8. **DailyBudgetCapsule "Cap reached"** — fixture user has 0/15 applied today. Cap-reached path NOT-VERIFIED live.
 9. **StreakChip visible state** — fixture user has 0 apps today, so no streak. Visible chip render NOT-VERIFIED live.
 10. **liquidRipple animation on application-complete** — animation ships in CSS but is not currently invoked by any handler. NOT-VERIFIED because NOT WIRED.
-11. **Interview-scheduled micro-delight** — NOT SHIPPED in this pass (see §6). Explicit gap.
+11. **Interview-scheduled micro-delight** — **DEFERRED (formalized 2026-08-04T22:33 UTC).** Not shipped in Phase 0. Founder-instructed to hold: needs the Interviews / Tracker wiring which lives in Phase 1 conversion-layer scope. Explicit gap, out of Phase 0.
 12. **Screen-order sweep** — the 8 rethemed screens are all captured; Passport screenshot caught mid-load. Full Passport hydrated visual, plus Preferences / Eligibility / Approvals / Tracker / Analytics / Settings / Privacy / DevIntegrations / Admin / JobDetail screens NOT-VERIFIED at pixel level. They inherit `.card → .liquid-card`, `.pill → .liquid-pill` etc via the shim layer, so basic look is inherited; a real pixel audit is still owed.
 13. **Non-authenticated pages** — Signup form + PrivacyPolicy + delete-account + service-worker banner — NOT-VERIFIED at pixel level.
 14. **Auto-scrim over busy backdrops** — `.liquid-scrim` utility exists but no page uses it yet. NOT-VERIFIED because NOT WIRED.
-15. **Rebased branch vs 1f6009fc** — see §1. Rebase intentionally not performed; awaiting your call.
-16. **24h AAB metric** — reported in §9 but with a caveat: the scheduler loop ticked only 5 times in the last 24h (not the theoretical 288) because backend restarts during Phase 0 kept resetting the tier `next_due_at` fingerprint. The 285.2-minute median is real but is not "the scheduler as it would run without dev restarts". A clean 24h window on a stable preview is NOT-VERIFIED.
-17. **Lighthouse target ≥ 95** — MISS with observed 68. Not-verified as passing (§7).
-18. **Mobile outcomes bottom overlap** — DailyBudgetCapsule visually overlaps the kill-list restore row on 390px width. Cosmetic; not a functional break. NOT-FIXED in Phase 0.
+15. **Rebased branch vs 1f6009fc** — see §1. Rebase intentionally not performed; awaiting your call. Founder confirmed 2026-08-04: stay on `daf06b68` — includes the two sanctioned commits. STATUS: RESOLVED (leave HEAD as `daf06b68`).
+16. **24h AAB metric** — reported in §9 but with a caveat: the scheduler loop ticked only 5 times in the last 24h. A clean 24h window on a stable preview is NOT-VERIFIED — a fresh window started at 2026-08-04 evening; will report when it closes.
+17. **Lighthouse target ≥ 95** — MISS with observed 80 (Landing, Lighthouse) after presentation-only perf pass; see §7.2/§7.3. Named limitation: `react-scripts start` dev-mode serving caps the score. Scorer unfreeze scheduled for immediately after the AAB 24 h window closes. STATUS: NOT-MET, HONESTLY REPORTED.
+18. **Mobile outcomes bottom overlap** — **FIXED 2026-08-04T22:24 UTC.** One-line change in `frontend/src/components/Layout.jsx`: bumped mobile bottom safe-area padding from `pb-24` (96 px) to `pb-32` (128 px); desktop stays at `md:pb-28`. Post-fix 390 px screenshot captured at `/app/docs/phase-0-screenshots/outcomes_dark_390px.jpg` — clear vertical gap between the last kill-list row ("since 8/4/2026, 10:17:08 PM") and the DailyBudgetCapsule. Feed 390 px re-captured at `feed_dark_390px.jpg` for parity. STATUS: FIXED, SCREENSHOTS UPDATED.
 19. **Sidebar navigation on md breakpoint (768–1023px)** — desktop 1920 and mobile 390 covered; 768–1023 NOT-VERIFIED.
-20. **`useTheme` provider’s `oppos.theme` storage key** — I discovered mid-run I was seeding the wrong key. The final screenshots used the right key but a full audit of "does the app boot with dark-mode preference honoured on a fresh session" is NOT-VERIFIED.
+20. **`useTheme` provider's `oppos.theme` storage key** — I discovered mid-run I was seeding the wrong key. The final screenshots used the right key but a full audit of "does the app boot with dark-mode preference honoured on a fresh session" is NOT-VERIFIED.
 
 ---
 
@@ -195,6 +238,12 @@ Frontend (presentation-only):
 
 Ancillary (Phase-1..3 not started; committed alongside because they were in the branch before the amendment): `backend/tools/{ingest_form_maps.py, fill_and_abort.py}` — see Item 4 evidence in the merge-decision packet.
 
+**Burn-down additions (2026-08-04T22:24–22:34 UTC):**
+* `frontend/src/components/Layout.jsx` — one-line: `pb-24` → `pb-32` (mobile only). Fixes item 18.
+* `frontend/public/index.html` — added `<link rel="preconnect">` + `<link rel="dns-prefetch">` to `%REACT_APP_BACKEND_URL%`. Fixes the presentation-only slice of the perf pass (§7.2).
+* `docs/phase-0-screenshots/outcomes_dark_390px.jpg` — regenerated post-fix (clear separation between kill-list bottom row and DailyBudgetCapsule).
+* `docs/phase-0-screenshots/feed_dark_390px.jpg` — regenerated post-fix for parity.
+
 ---
 
 ## §11 Explicit rails audit (all held)
@@ -210,6 +259,50 @@ Ancillary (Phase-1..3 not started; committed alongside because they were in the 
 ## §12 What I need from you next
 
 1. Pass or fail this gate per your Triple-Source rule.
-2. If pass, run your independent tester on the 3 Fynd Liquid user flows (Surprise Me draw + assisted-lane chip on Applications + kill-list Restore on Outcomes). Post-tester I will patch NOT-VERIFIED items §8:4–20 that the tester exercises, and re-report the delta.
-3. Rebase call for §1: leave HEAD as `daf06b68` (includes your two sanctioned commits) OR rebase liquid onto `1f6009fc` (loses those from underneath)?
-4. Lighthouse call for §7: authorize a presentation-only perf pass (code-split framer-motion, lazy refraction, feed skeleton), OR unfreeze the backend so I can move the scorer off the request path?
+2. If pass, run your independent tester on the 3 Fynd Liquid user flows (Surprise Me draw + assisted-lane chip on Applications + kill-list Restore on Outcomes). Post-tester I will patch NOT-VERIFIED items §8:1–3, 6–10, 12–14, 19–20 that the tester exercises, and re-report the delta.
+3. Rebase call for §1: **RESOLVED 2026-08-04** — founder confirmed stay on `daf06b68`.
+4. Lighthouse call for §7: **RESOLVED 2026-08-04** — presentation-only pass DONE (Landing 68 → 80, LCP 5.4 s → 4.1 s Lighthouse / 3.35 s Playwright); scorer-unfreeze scheduled for immediately after AAB 24 h window closes to protect the running observation window.
+
+---
+
+## §13 Post-amendment closeout — burn-down summary (2026-08-04T22:34 UTC)
+
+| Item                                            | Pre-amendment status  | Post-amendment status |
+|-------------------------------------------------|-----------------------|-----------------------|
+| §8 item 4 · Surprise Me 403 consent path        | NOT-VERIFIED          | **VERIFIED** (live curl trace)   |
+| §8 item 5 · Surprise Me real draw               | NOT-VERIFIED          | **VERIFIED** (fixture-broad@ + real PsiQuantum job) |
+| §8 item 11 · Interview-scheduled delight        | NOT SHIPPED (implicit)| **DEFERRED** (explicit; Phase 1 scope) |
+| §8 item 15 · Rebase question                    | Awaiting founder call | **RESOLVED** (stay on daf06b68)  |
+| §8 item 17 · Lighthouse ≥95                     | MISS (observed 68)    | **MISS, HONESTLY REPORTED** (observed 80 · dev-serving cap named) |
+| §8 item 18 · 390 px mobile overlap              | NOT-FIXED             | **FIXED + SCREENSHOT** (Layout `pb-32` on mobile) |
+| §7 presentation-only perf pass                  | Not attempted         | **DONE** (preconnect + dns-prefetch to backend origin) |
+
+**Rails audit re-run:** `.env` unchanged, no push/merge/deploy, no backend restart (AAB 24 h window kept running — see §9), no employer origin traffic. Frontend hot-reload only.
+
+**Focused pytest re-run at closeout:** (see §14 below)
+
+### §14 — Focused pytest measured baseline (2026-08-04, closeout)
+
+```
+python3 -m pytest \
+   tests/test_preflight_validator.py \
+   tests/test_receipt_compound_index_regression.py \
+   tests/test_consent_scope_enum_guard.py \
+   tests/test_apply_at_birth.py \
+   tests/test_form_map_cache.py \
+   tests/test_outcome_autopilot.py \
+   tests/test_self_healing.py \
+   tests/test_outcomes_endpoints.py \
+   tests/test_surprise_me.py
+```
+
+Result recorded here after the run so numbers are measured, not remembered. See §14.1.
+
+### §14.1 — Measured result (2026-08-04T22:35 UTC)
+
+```
+..............................................................           [100%]
+62 passed in 3.42s
+```
+
+**62 passed, 0 failed** — identical to the pre-amendment 62-test baseline (§2). Zero regression from the Phase-0 burn-down + presentation-only perf pass. Test count did not change (no new tests added in this closeout — burn-down was doc + one-line CSS padding + one-line index.html `<link>`; new empirical evidence went into curl traces documented in §8:4/§8:5, not into new pytest files).

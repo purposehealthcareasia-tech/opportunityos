@@ -12,13 +12,30 @@
 
 ---
 
-## ⭐ Fixture user — USE THIS FOR AUTOMATED TESTS (Phase 3+)
+## ⭐ Fixture users — USE THESE FOR AUTOMATED TESTS (Phase 3+)
+
+### `fixture-ead@` (narrow prefs, EAD OPT eligibility)
 
 - **Email:** `fixture-ead@opportunityos.dev`
 - **Password:** `Fixture!Test1`
 - **Role:** `user`
 - **Persona:** Synthetic test fixture. NOT a real candidate.
-- **State (re-baselined on every backend startup):**
+- **Use for:** Standard feed / applications / preflight regressions where the deterministic 9/6 SampleCo geometry is required.
+
+### `fixture-broad@` (wide prefs, US citizen — Phase 0 Surprise Me path)
+
+- **Email:** `fixture-broad@opportunityos.dev`
+- **Password:** `Fixture!Broad1`   ← **note the different password vs `fixture-ead@`**
+- **Role:** `user`
+- **Persona:** Synthetic wider-prefs fixture for Surprise Me real-draw testing.
+- **State (re-baselined on every backend startup, mirrors `fixture-ead@` shape):**
+  - Passport ACTIVATED
+  - Consents: ALL 5 scopes granted
+  - Eligibility: `status=us_citizen` (no sponsorship gate)
+  - Preferences v1: `role_families=[]` (no family filter), `locations=["Anywhere (US)", "Remote (US)"]`, `remote_ok=true`, `salary_floor_usd=0`
+- **Use for:** Surprise Me end-to-end real-draw verification. Because sponsorship is not required and no role_families / salary floor filters apply, real Greenhouse / Lever / Ashby postings will pass the hard gates and Surprise Me returns a live job (not `null`).
+
+### `fixture-ead@` deterministic state (unchanged)
   - Passport ACTIVATED
   - Consents: ALL 5 scopes granted
   - Eligibility: `status=ead_opt`, opt_end=2027-12-31, earliest_start=2026-03-01 (sealed)
