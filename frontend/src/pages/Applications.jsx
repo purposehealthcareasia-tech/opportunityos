@@ -4,6 +4,7 @@ import { Send, ArrowRight, TestTube2, Clock, LifeBuoy, ChevronDown, ChevronUp } 
 import { api, withIdempotency } from '../lib/api';
 import Button from '../components/ui/Button';
 import { LoadingBlock, ErrorBlock, EmptyBlock } from '../lib/scope';
+import StreakChip from '../components/StreakChip';
 
 const STATE_ORDER = [
   'shortlisted', 'preparing', 'awaiting_approval', 'approved',
@@ -187,12 +188,15 @@ export default function ApplicationsPage() {
 
   return (
     <div className="max-w-5xl mx-auto space-y-6 animate-fadeIn" data-testid="applications-page">
-      <div>
-        <h1 className="text-2xl font-semibold flex items-center gap-2"><Send className="h-5 w-5" /> Applications</h1>
-        <p className="muted text-sm mt-1 max-w-2xl">
-          Real applications you've shortlisted. State transitions run through an atomic precondition check on the server — no fabricated stages, no phantom progress.
-          {sampleCount > 0 && <> SAMPLE rows below are shown but never counted in your metrics.</>}
-        </p>
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-semibold flex items-center gap-2 tracking-display"><Send className="h-5 w-5" /> Applications</h1>
+          <p className="muted text-sm mt-1 max-w-2xl">
+            Real applications you've shortlisted. State transitions run through an atomic precondition check on the server — no fabricated stages, no phantom progress.
+            {sampleCount > 0 && <> SAMPLE rows below are shown but never counted in your metrics.</>}
+          </p>
+        </div>
+        <StreakChip />
       </div>
 
       {flash && (

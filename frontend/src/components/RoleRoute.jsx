@@ -11,7 +11,7 @@ export function RoleRoute({ roles, children }) {
         <Card>
           <CardHeader title="Not available for your account" subtitle="This surface is limited to admin and support roles." />
           <p className="text-sm muted">
-            If you believe you should have access, contact your OpportunityOS administrator.
+            If you believe you should have access, contact your Fynd administrator.
           </p>
         </Card>
       </div>

@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import ThemeToggle from './ThemeToggle';
 import { LogOut, Gauge } from 'lucide-react';
 import { api } from '../lib/api';
+import SmartCTA from './SmartCTA';
 
 function UsageMeterChip() {
   const [usage, setUsage] = useState(null);
@@ -24,7 +25,7 @@ function UsageMeterChip() {
   const period = usage.period || (usage.jobs_processed?.meter || 'now');
   return (
     <div
-      className="hidden md:inline-flex items-center gap-1.5 rounded-md border border-line dark:border-line-dark px-2.5 py-1.5 text-xs muted"
+      className="liquid-pill hidden md:inline-flex text-xs"
       title={`Period ${period} — jobs scored: ${jp}, apps prepared: ${ap}, apps submitted: ${as}`}
       data-testid="usage-meter-chip"
     >
@@ -41,19 +42,24 @@ export function Topbar() {
   const nav = useNavigate();
   const initials = (user?.name || user?.email || '?').trim().slice(0, 1).toUpperCase();
   return (
-    <header className="h-14 border-b border-line dark:border-line-dark bg-white/70 dark:bg-neutral-900/70 backdrop-blur px-4 md:px-6 flex items-center justify-between">
-      <div className="text-sm muted">Signed in as <span className="text-ink dark:text-ink-dark font-medium">{user?.email}</span></div>
+    <header
+      className="liquid-bar sticky top-0 z-40 h-14 px-4 md:px-6 flex items-center justify-between"
+      data-testid="topbar"
+    >
+      <div className="text-sm muted truncate">Signed in as <span className="text-ink dark:text-ink-dark font-medium">{user?.email}</span></div>
       <div className="flex items-center gap-2">
+        <SmartCTA className="hidden lg:inline-flex text-xs" />
         <UsageMeterChip />
         <ThemeToggle />
         <button
           type="button"
           onClick={() => { logout(); nav('/login', { replace: true }); }}
-          className="inline-flex items-center gap-2 rounded-md border border-line dark:border-line-dark px-2.5 py-1.5 text-xs muted hover:bg-neutral-100 dark:hover:bg-neutral-800"
+          className="liquid-capsule liquid-secondary text-xs"
+          data-testid="topbar-signout"
         >
           <LogOut className="h-3.5 w-3.5" /> Sign out
         </button>
-        <div className="ml-2 h-8 w-8 rounded-full bg-neutral-200 dark:bg-neutral-700 grid place-items-center text-sm font-semibold">{initials}</div>
+        <div className="ml-2 h-8 w-8 rounded-full bg-gradient-to-br from-accent to-accent-hover text-white grid place-items-center text-sm font-semibold shadow-liquid-1-light dark:shadow-liquid-1">{initials}</div>
       </div>
     </header>
   );

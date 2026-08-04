@@ -1,4 +1,4 @@
-/* OpportunityOS Service Worker — Standards-based Web Push (VAPID).
+/* Fynd Service Worker — Standards-based Web Push (VAPID).
  *
  * Handles push events + notification clicks. Payloads are always the
  * minimal shape the backend guarantees:
@@ -20,13 +20,13 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('push', (event) => {
   if (!event.data) return;
-  let payload = { title: 'OpportunityOS', body: 'You have an update.' };
+  let payload = { title: 'Fynd', body: 'You have an update.' };
   try {
     payload = event.data.json();
   } catch (e) {
     try { payload.body = event.data.text() || payload.body; } catch (_) {}
   }
-  const title = payload.title || 'OpportunityOS';
+  const title = payload.title || 'Fynd';
   const options = {
     body: payload.body || '',
     icon: '/logo192.png',

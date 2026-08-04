@@ -8,20 +8,20 @@ export const CONSENT_SCOPES_FALLBACK = [
     required: true,
     label: 'Process my career information',
     description:
-      'Let OpportunityOS process the résumé data, claims, and projects I approve so I can build a verified Career Passport.',
+      'Let Fynd process the résumé data, claims, and projects I approve so I can build a verified Career Passport.',
   },
   {
     scope: 'discover_jobs',
     required: false,
     label: 'Surface job opportunities',
-    description: 'Let OpportunityOS discover job openings that match my approved Career Passport.',
+    description: 'Let Fynd discover job openings that match my approved Career Passport.',
   },
   {
     scope: 'generate_materials',
     required: false,
     label: 'Draft grounded application materials',
     description:
-      'Let OpportunityOS help me draft résumés and cover letters grounded strictly in my approved Passport. Every draft is reviewed by me before it leaves my account.',
+      'Let Fynd help me draft résumés and cover letters grounded strictly in my approved Passport. Every draft is reviewed by me before it leaves my account.',
   },
   {
     scope: 'track_applications',

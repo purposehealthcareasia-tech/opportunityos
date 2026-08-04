@@ -11,6 +11,7 @@ import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
 import { LoadingBlock, ErrorBlock, ScopeRequiredPrompt } from '../lib/scope';
 import { safeExternalHref } from '../lib/utils';
+import SurpriseMeCapsule from '../components/SurpriseMeCapsule';
 
 const REASON_LABELS = {
   requires_us_person: 'US-person required (ITAR)',
@@ -857,23 +858,26 @@ export default function FeedPage() {
         </div>
       )}
 
-      <div className="grid md:grid-cols-3 gap-3">
-        <div className="card p-4">
+      <div className="grid md:grid-cols-3 gap-4">
+        <div className="liquid-card p-5">
           <div className="text-xs muted">Opportunities passing all gates</div>
-          <div className="text-2xl font-semibold mt-1" data-testid="feed-totals-passing-real">{passingReal.length}</div>
+          <div className="text-3xl font-semibold mt-1 tracking-display" data-testid="feed-totals-passing-real">{passingReal.length}</div>
           <div className="text-[11px] muted mt-1">Excludes {passingSample} SAMPLE row(s) from the count — they're shown, not measured.</div>
         </div>
-        <div className="card p-4">
+        <div className="liquid-card p-5">
           <div className="text-xs muted">Excluded (with reasons)</div>
-          <div className="text-2xl font-semibold mt-1" data-testid="feed-totals-excluded">{excluded.length}</div>
+          <div className="text-3xl font-semibold mt-1 tracking-display" data-testid="feed-totals-excluded">{excluded.length}</div>
           <div className="text-[11px] muted mt-1">Includes SAMPLE rows — badged, never counted in production cohorts.</div>
         </div>
-        <div className="card p-4">
+        <div className="liquid-card p-5">
           <div className="text-xs muted">Live jobs in this lane</div>
-          <div className="text-2xl font-semibold mt-1" data-testid="feed-totals-live-in-lane">{totals.live_jobs ?? ((totals.passing || 0) + (totals.excluded || 0))}</div>
+          <div className="text-3xl font-semibold mt-1 tracking-display" data-testid="feed-totals-live-in-lane">{totals.live_jobs ?? ((totals.passing || 0) + (totals.excluded || 0))}</div>
           <div className="text-[11px] muted mt-1">Feed is fresh-only. Anything older than 14 days is auto-marked stale.</div>
         </div>
       </div>
+
+      {/* Fynd Liquid — Surprise Me draw (outside your usual lanes) */}
+      <SurpriseMeCapsule />
 
       {/* Phase 2/3 — Lane filter + sort selector */}
       <div className="flex flex-wrap items-center justify-between gap-3">

@@ -1,10 +1,34 @@
+/*
+ * FYND LIQUID — presentation tokens (Apple Liquid-Glass class, iOS-26 feel).
+ *
+ * Rules:
+ *   1. Never write ad-hoc glass CSS inside components. Compose using the
+ *      utility classes here (.liquid-bar / .liquid-card / .liquid-sheet /
+ *      .liquid-capsule / .liquid-primary etc).
+ *   2. Every glass surface carries a specular top-edge (1px inner border)
+ *      and a soft depth shadow.
+ *   3. Guardrails at the bottom of this file honour
+ *      prefers-reduced-transparency (drop the blur → solid tint) and
+ *      prefers-reduced-motion (drop the spring morphs).
+ */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
   :root {
-    color-scheme: light;
+    color-scheme: light dark;
+    /* Fynd Liquid CSS variables — glass tints, depth, refraction */
+    --fynd-tint-strong-dark: rgba(20, 24, 30, 0.62);
+    --fynd-tint-mid-dark:    rgba(20, 24, 30, 0.48);
+    --fynd-tint-soft-dark:   rgba(20, 24, 30, 0.34);
+    --fynd-tint-strong-light: rgba(255, 255, 255, 0.72);
+    --fynd-tint-mid-light:    rgba(255, 255, 255, 0.58);
+    --fynd-tint-soft-light:   rgba(255, 255, 255, 0.44);
+    --fynd-specular-dark:  linear-gradient(to bottom, rgba(255,255,255,0.14) 0%, rgba(255,255,255,0) 45%);
+    --fynd-specular-light: linear-gradient(to bottom, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0) 45%);
+    --fynd-hair-dark:  1px solid rgba(255,255,255,0.08);
+    --fynd-hair-light: 1px solid rgba(15,23,42,0.08);
   }
   html.dark {
     color-scheme: dark;
@@ -15,59 +39,281 @@
   body {
     @apply bg-surface text-ink antialiased;
     font-feature-settings: 'cv11', 'ss01', 'ss03';
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
   html.dark body {
     @apply bg-surface-dark text-ink-dark;
+    /* Subtle radial haze — the base-#0B0D10 canvas gets a warm 10% teal
+       radiance so the glass surfaces above it have something rich to
+       refract. NEVER a rainbow gradient. */
+    background-image:
+      radial-gradient(1200px 800px at 15% -10%, rgba(20, 184, 166, 0.06), transparent 60%),
+      radial-gradient(1000px 700px at 100% 100%, rgba(56, 189, 248, 0.04), transparent 55%);
+    background-attachment: fixed;
+  }
+  html:not(.dark) body {
+    background-image:
+      radial-gradient(1000px 700px at 20% -10%, rgba(15, 118, 110, 0.06), transparent 60%),
+      radial-gradient(900px 600px at 100% 100%, rgba(2, 132, 199, 0.04), transparent 55%);
+    background-attachment: fixed;
   }
   h1, h2, h3, h4 {
     @apply tracking-tight;
   }
+  h1 { @apply tracking-display-tight; }
+  h2 { @apply tracking-display; }
   a {
     @apply text-accent hover:text-accent-hover;
+    transition: color 200ms cubic-bezier(0.22, 1.2, 0.36, 1);
   }
   ::selection {
-    background: rgba(15, 118, 110, 0.18);
+    background: rgba(15, 118, 110, 0.20);
   }
 }
 
 @layer components {
-  .btn {
-    @apply inline-flex items-center justify-center gap-2 font-medium rounded-md px-4 py-2 text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 disabled:opacity-50 disabled:cursor-not-allowed;
+  /* --------------------------------------------------------------- glass */
+  .liquid-bar {
+    /* Nav / sticky-header elevation (blur 20-24, tint strong). */
+    background-color: var(--fynd-tint-strong-light);
+    -webkit-backdrop-filter: blur(22px) saturate(1.8);
+            backdrop-filter: blur(22px) saturate(1.8);
+    border-bottom: var(--fynd-hair-light);
+    box-shadow: 0 1px 0 rgba(255,255,255,0.5) inset, 0 8px 24px -12px rgba(15,23,42,0.10);
+    position: relative;
+    isolation: isolate;
   }
-  .btn-primary {
-    @apply bg-ink text-white hover:bg-black dark:bg-white dark:text-ink dark:hover:bg-neutral-200;
+  .liquid-bar::before {
+    content: ''; position: absolute; inset: 0; border-radius: inherit;
+    pointer-events: none;
+    background: var(--fynd-specular-light);
+    opacity: 0.55;
   }
-  .btn-secondary {
-    @apply bg-transparent border border-line text-ink dark:text-ink-dark dark:border-line-dark hover:bg-neutral-100 dark:hover:bg-neutral-800;
+  html.dark .liquid-bar {
+    background-color: var(--fynd-tint-strong-dark);
+    border-bottom: var(--fynd-hair-dark);
+    box-shadow: 0 1px 0 rgba(255,255,255,0.06) inset, 0 12px 32px -12px rgba(0,0,0,0.5);
   }
-  .btn-ghost {
-    @apply bg-transparent hover:bg-neutral-100 dark:hover:bg-neutral-800 text-ink dark:text-ink-dark;
+  html.dark .liquid-bar::before { background: var(--fynd-specular-dark); opacity: 0.85; }
+
+  .liquid-card {
+    /* Card elevation (blur 12-16, tint mid). Nested content radius = outer - padding. */
+    background-color: var(--fynd-tint-mid-light);
+    -webkit-backdrop-filter: blur(14px) saturate(1.7);
+            backdrop-filter: blur(14px) saturate(1.7);
+    border: var(--fynd-hair-light);
+    border-radius: 20px;
+    box-shadow: theme(boxShadow.liquid-1-light);
+    position: relative;
+    isolation: isolate;
   }
-  .btn-accent {
-    @apply bg-accent text-white hover:bg-accent-hover;
+  .liquid-card::before {
+    content: ''; position: absolute; inset: 0; border-radius: inherit;
+    pointer-events: none;
+    background: var(--fynd-specular-light);
+    opacity: 0.5;
   }
-  .card {
-    @apply bg-white dark:bg-neutral-900 border border-line dark:border-line-dark rounded-card shadow-subtle;
+  html.dark .liquid-card {
+    background-color: var(--fynd-tint-mid-dark);
+    border: var(--fynd-hair-dark);
+    box-shadow: theme(boxShadow.liquid-1);
   }
-  .field-label {
-    @apply block text-sm font-medium text-ink dark:text-ink-dark mb-1.5;
+  html.dark .liquid-card::before { background: var(--fynd-specular-dark); opacity: 0.85; }
+  .liquid-card > * { position: relative; z-index: 1; }
+
+  .liquid-sheet {
+    /* Sheet / overlay elevation (blur 28, tint strong). */
+    background-color: var(--fynd-tint-strong-light);
+    -webkit-backdrop-filter: blur(28px) saturate(1.8);
+            backdrop-filter: blur(28px) saturate(1.8);
+    border: var(--fynd-hair-light);
+    border-radius: 28px;
+    box-shadow: theme(boxShadow.liquid-2-light);
+    position: relative;
+    isolation: isolate;
   }
-  .field-input {
-    @apply w-full rounded-md border border-line dark:border-line-dark bg-white dark:bg-neutral-900 px-3 py-2 text-sm text-ink dark:text-ink-dark placeholder:text-ink-muted dark:placeholder:text-ink-dark-muted focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/25;
+  .liquid-sheet::before {
+    content: ''; position: absolute; inset: 0; border-radius: inherit;
+    pointer-events: none;
+    background: var(--fynd-specular-light);
+    opacity: 0.6;
   }
-  .muted {
-    @apply text-ink-muted dark:text-ink-dark-muted;
+  html.dark .liquid-sheet {
+    background-color: var(--fynd-tint-strong-dark);
+    border: var(--fynd-hair-dark);
+    box-shadow: theme(boxShadow.liquid-2);
   }
-  .divider {
-    @apply border-t border-line dark:border-line-dark;
+  html.dark .liquid-sheet::before { background: var(--fynd-specular-dark); opacity: 0.9; }
+  .liquid-sheet > * { position: relative; z-index: 1; }
+
+  /* --------------------------------------------------------------- capsules */
+  .liquid-capsule {
+    @apply inline-flex items-center justify-center gap-2 font-medium text-sm;
+    padding: 0.55rem 1.1rem;
+    border-radius: 999px;
+    transition: transform 220ms cubic-bezier(0.34, 1.28, 0.64, 1),
+                background-color 200ms cubic-bezier(0.22, 1.2, 0.36, 1),
+                box-shadow 200ms cubic-bezier(0.22, 1.2, 0.36, 1);
+    will-change: transform;
+    isolation: isolate;
+    position: relative;
   }
-  .pill {
-    @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium border;
+  .liquid-capsule:active { transform: scale(0.97); }
+  .liquid-capsule:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.35);
   }
-  .pill-neutral {
-    @apply border-line dark:border-line-dark text-ink-muted dark:text-ink-dark-muted;
+
+  .liquid-primary {
+    color: white;
+    background: linear-gradient(180deg, #15a394 0%, #0f766e 100%);
+    box-shadow: 0 1px 0 rgba(255,255,255,0.25) inset, 0 8px 22px -8px rgba(15,118,110,0.55);
   }
-  .pill-accent {
-    @apply border-accent/30 text-accent bg-accent/5;
+  .liquid-primary:hover { background: linear-gradient(180deg, #17b0a0 0%, #10857c 100%); }
+  .liquid-primary:disabled {
+    background: linear-gradient(180deg, #a3a3a3 0%, #737373 100%);
+    box-shadow: none;
+    cursor: not-allowed;
+  }
+
+  .liquid-secondary {
+    @apply text-ink dark:text-ink-dark;
+    background-color: var(--fynd-tint-strong-light);
+    -webkit-backdrop-filter: blur(16px) saturate(1.6);
+            backdrop-filter: blur(16px) saturate(1.6);
+    border: var(--fynd-hair-light);
+    box-shadow: 0 1px 0 rgba(255,255,255,0.6) inset;
+  }
+  html.dark .liquid-secondary {
+    background-color: var(--fynd-tint-strong-dark);
+    border: var(--fynd-hair-dark);
+    box-shadow: 0 1px 0 rgba(255,255,255,0.06) inset;
+  }
+  .liquid-secondary:hover { transform: translateY(-1px); }
+
+  .liquid-ghost {
+    @apply text-ink dark:text-ink-dark;
+    background-color: transparent;
+    border: 1px solid transparent;
+  }
+  .liquid-ghost:hover {
+    background-color: rgba(15,23,42,0.05);
+  }
+  html.dark .liquid-ghost:hover {
+    background-color: rgba(255,255,255,0.05);
+  }
+
+  /* --------------------------------------------------------------- inputs */
+  .liquid-input {
+    @apply w-full text-sm text-ink dark:text-ink-dark placeholder:text-ink-muted dark:placeholder:text-ink-dark-muted;
+    padding: 0.65rem 0.95rem;
+    border-radius: 14px;
+    background-color: rgba(255,255,255,0.6);
+    -webkit-backdrop-filter: blur(10px);
+            backdrop-filter: blur(10px);
+    border: var(--fynd-hair-light);
+    transition: border-color 180ms cubic-bezier(0.22, 1.2, 0.36, 1),
+                box-shadow 180ms cubic-bezier(0.22, 1.2, 0.36, 1);
+  }
+  html.dark .liquid-input {
+    background-color: rgba(20,24,30,0.55);
+    border: var(--fynd-hair-dark);
+  }
+  .liquid-input:focus {
+    outline: none;
+    border-color: rgba(15, 118, 110, 0.55);
+    box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.18);
+  }
+
+  /* --------------------------------------------------------------- pills / chips */
+  .liquid-pill {
+    @apply inline-flex items-center gap-1 text-xs font-medium;
+    padding: 0.25rem 0.7rem;
+    border-radius: 999px;
+    background-color: rgba(255,255,255,0.55);
+    -webkit-backdrop-filter: blur(10px);
+            backdrop-filter: blur(10px);
+    border: var(--fynd-hair-light);
+  }
+  html.dark .liquid-pill {
+    background-color: rgba(255,255,255,0.06);
+    border: var(--fynd-hair-dark);
+  }
+  .liquid-pill--accent { color: #0f766e; border-color: rgba(15,118,110,0.35); background-color: rgba(15,118,110,0.08); }
+  html.dark .liquid-pill--accent { color: #5eead4; border-color: rgba(15,118,110,0.35); background-color: rgba(15,118,110,0.10); }
+
+  /* --------------------------------------------------------------- ripple */
+  .liquid-ripple {
+    position: absolute; inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    background: radial-gradient(circle at center, rgba(20,184,166,0.55) 0%, rgba(20,184,166,0) 60%);
+    animation: liquidRipple 520ms ease-out forwards;
+  }
+
+  /* --------------------------------------------------------------- legacy shims
+   * Keep these while pages migrate — they map old class names onto new
+   * liquid tokens so the paint doesn't regress mid-refactor. */
+  .card { @apply liquid-card p-5; }
+  .btn { @apply liquid-capsule liquid-ghost; }
+  .btn-primary { @apply liquid-primary; }
+  .btn-secondary { @apply liquid-secondary; }
+  .btn-ghost { @apply liquid-ghost; }
+  .btn-accent { @apply liquid-primary; }
+  .field-label { @apply block text-sm font-medium text-ink dark:text-ink-dark mb-1.5; }
+  .field-input { @apply liquid-input; }
+  .muted { @apply text-ink-muted dark:text-ink-dark-muted; }
+  .divider { @apply border-t border-line dark:border-line-dark; }
+  .pill { @apply liquid-pill; }
+  .pill-neutral {}
+  .pill-accent { @apply liquid-pill--accent; }
+}
+
+/* -------------------------------------------------------------- guardrails */
+@media (prefers-reduced-transparency: reduce) {
+  .liquid-bar, .liquid-card, .liquid-sheet, .liquid-secondary,
+  .liquid-input, .liquid-pill {
+    -webkit-backdrop-filter: none !important;
+            backdrop-filter: none !important;
+  }
+  html:not(.dark) .liquid-bar,
+  html:not(.dark) .liquid-card,
+  html:not(.dark) .liquid-sheet { background-color: #ffffff !important; }
+  html:not(.dark) .liquid-secondary,
+  html:not(.dark) .liquid-input,
+  html:not(.dark) .liquid-pill { background-color: #f6f7f9 !important; }
+  html.dark .liquid-bar,
+  html.dark .liquid-card,
+  html.dark .liquid-sheet { background-color: #131820 !important; }
+  html.dark .liquid-secondary,
+  html.dark .liquid-input,
+  html.dark .liquid-pill { background-color: #1a1f26 !important; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
   }
 }
+
+/* ------------------------------------------------------- displacement SVG
+ * Landing hero refraction only (performance rail). See Landing.jsx. */
+.liquid-refraction { filter: url(#fyndLiquidRefraction); }
+
+/* Auto-scrim over busy backdrops — Feed hero uses this to keep AA text
+   contrast even when the wallpaper radiance is warm. */
+.liquid-scrim {
+  position: relative;
+  isolation: isolate;
+}
+.liquid-scrim::before {
+  content: ''; position: absolute; inset: 0; border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.18) 90%);
+  z-index: 0;
+}
+.liquid-scrim > * { position: relative; z-index: 1; }

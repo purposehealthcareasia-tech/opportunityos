@@ -39,7 +39,7 @@ export function ScopeRequiredPrompt({ scope, description, onGranted }) {
         <div className="min-w-0">
           <h3 className="text-sm font-semibold">This feature is off until you grant the <span className="font-mono">{scope}</span> scope</h3>
           <p className="text-sm muted mt-1 leading-relaxed max-w-lg">
-            {description || 'OpportunityOS only turns on features once you\'ve explicitly consented to them. Revoke later in Settings whenever you want.'}
+            {description || 'Fynd only turns on features once you\'ve explicitly consented to them. Revoke later in Settings whenever you want.'}
           </p>
           {error && <p className="text-xs text-red-600 dark:text-red-400 mt-2">{error}</p>}
           <div className="mt-4 flex items-center gap-2">

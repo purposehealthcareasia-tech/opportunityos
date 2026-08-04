@@ -36,6 +36,7 @@ async def scratch_db(monkeypatch):
     # patch the captured reference directly on the endpoint module in
     # addition to `core.db`, otherwise the handlers see the real DB.
     import domains.outcomes.service as outcomes_svc
+    import domains.audit.service as audit_svc
     client = AsyncIOMotorClient(MONGO_URL, uuidRepresentation="standard")
     db = client[DB_NAME]
     for cn in ("applications", "application_outcomes",
@@ -43,6 +44,10 @@ async def scratch_db(monkeypatch):
         await db.drop_collection(cn)
     monkeypatch.setattr(core_db, "get_db", lambda: db)
     monkeypatch.setattr(outcomes_svc, "get_db", lambda: db)
+    # `audit.write` also captures get_db at import time — patch it too,
+    # otherwise the handler's audit-log insert reaches a stale motor
+    # client whose event loop was closed by a prior test.
+    monkeypatch.setattr(audit_svc, "get_db", lambda: db)
     try:
         yield db
     finally:

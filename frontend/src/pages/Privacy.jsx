@@ -110,7 +110,7 @@ export default function PrivacyPage() {
       <section className="space-y-3" data-testid="release-log">
         <h2 className="text-lg font-semibold">Data-release log</h2>
         {releases.length === 0 ? (
-          <p className="muted text-sm">No releases yet — nothing has been sent to an employer via OpportunityOS on your behalf.</p>
+          <p className="muted text-sm">No releases yet — nothing has been sent to an employer via Fynd on your behalf.</p>
         ) : (
           <ul className="space-y-2 text-sm">
             {releases.map((r) => (

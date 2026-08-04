@@ -148,7 +148,7 @@ export default function Settings() {
       </Card>
 
       <Card>
-        <CardHeader title="Theme" subtitle="Choose how OpportunityOS looks on this device." />
+        <CardHeader title="Theme" subtitle="Choose how Fynd looks on this device." />
         <div className="flex items-center justify-between">
           <span className="text-sm muted">Light and dark modes are both first-class.</span>
           <ThemeToggle />

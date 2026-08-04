@@ -54,7 +54,7 @@ export default function PrivacyPolicy() {
         <PolicySection id="who-we-are" number="1" title="Who we are">
           <p>
             &ldquo;Fynd&rdquo; is the product name of the consent-first job-application
-            platform operated on the OpportunityOS backend by Purpose Healthcare Labs
+            platform operated by Purpose Healthcare Labs
             (the &ldquo;Operator&rdquo;). The Operator is the data controller for the
             personal data described below. You can reach the Operator at{' '}
             <a className="underline" href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>.
@@ -326,7 +326,7 @@ export default function PrivacyPolicy() {
 
         <footer className="pt-6 border-t border-line dark:border-line-dark text-xs muted flex items-center justify-between">
           <span>
-            © {new Date().getFullYear()} Purpose Healthcare Labs, operating Fynd on the OpportunityOS backend.
+            © {new Date().getFullYear()} Purpose Healthcare Labs, operating Fynd.
           </span>
           <Link to="/" className="underline">Back to Fynd</Link>
         </footer>

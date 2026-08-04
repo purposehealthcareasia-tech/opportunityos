@@ -40,7 +40,7 @@ export default function EmployerIntake() {
           <CheckCircle2 className="h-8 w-8 text-accent mx-auto" />
           <h1 className="text-xl font-semibold text-ink dark:text-ink-dark">Thanks — we'll be in touch</h1>
           <p className="text-sm muted leading-relaxed">
-            Your OpportunityOS intake has been recorded. A member of the team will reply to <span className="font-mono">{form.contact_email}</span> to discuss connecting your ATS.
+            Your Fynd intake has been recorded. A member of the team will reply to <span className="font-mono">{form.contact_email}</span> to discuss connecting your ATS.
           </p>
           <p className="text-xs muted">Reference: <span className="font-mono">{state.id}</span></p>
         </div>
@@ -56,7 +56,7 @@ export default function EmployerIntake() {
           <span className="text-xs font-mono tracking-wide muted uppercase">For employers</span>
         </div>
         <h1 className="text-2xl md:text-3xl font-semibold text-ink dark:text-ink-dark">
-          Connect your ATS to OpportunityOS
+          Connect your ATS to Fynd
         </h1>
         <p className="text-sm muted mt-2 leading-relaxed">
           We surface real, consent-based candidates from our Passport-verified pool. Tell us about your open roles and we'll walk you through the fastest way to plug in — usually Greenhouse, Lever, or Ashby's public boards.

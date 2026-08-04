@@ -107,8 +107,8 @@ export default function Login() {
   const isOtpConfigured    = otpCfg.configured === true;
 
   return (
-    <div className="min-h-screen bg-surface-muted dark:bg-surface-dark">
-      <header className="px-6 md:px-10 py-5 flex items-center justify-between">
+    <div className="min-h-screen">
+      <header className="liquid-bar px-6 md:px-10 py-4 flex items-center justify-between sticky top-0 z-40">
         <Link to="/" className="flex items-center gap-2 no-underline text-ink dark:text-ink-dark">
           <ArrowLeft className="h-4 w-4" /> <span className="text-sm">Back to home</span>
         </Link>
@@ -116,10 +116,10 @@ export default function Login() {
       </header>
       <main className="px-6 md:px-10 pb-16">
         <div className="max-w-md mx-auto pt-10">
-          <h1 className="text-2xl font-semibold mb-2">Sign in</h1>
+          <h1 className="text-3xl font-semibold mb-2 tracking-display-tight">Sign in</h1>
           <p className="muted text-sm mb-8">Welcome back. Pick the sign-in method you registered with.</p>
 
-          <div className="card p-6 space-y-4">
+          <div className="liquid-sheet p-6 space-y-4">
             <button
               type="button"
               onClick={googleStart}

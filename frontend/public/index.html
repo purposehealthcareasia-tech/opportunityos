@@ -3,17 +3,31 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#0b0d10" />
+    <meta name="theme-color" content="#0B0D10" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#f6f7f9" media="(prefers-color-scheme: light)" />
     <meta
       name="description"
-      content="OpportunityOS — apply to the right jobs with applications employers can trust."
+      content="Fynd — apply to the right jobs with applications employers can trust."
     />
-    <link rel="preconnect" href="https://rsms.me/" />
-    <link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
-    <title>OpportunityOS</title>
+    <meta property="og:title" content="Fynd" />
+    <meta property="og:description" content="Fynd — apply to the right jobs with applications employers can trust." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="Fynd" />
+    <meta name="twitter:description" content="Fynd — apply to the right jobs with applications employers can trust." />
+    <title>Fynd</title>
   </head>
   <body>
     <noscript>You need to enable JavaScript to run this app.</noscript>
     <div id="root"></div>
+    <!-- Fynd Liquid — shared displacement filter for the landing hero refraction (§2). -->
+    <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+      <defs>
+        <filter id="fyndLiquidRefraction" x="-4%" y="-4%" width="108%" height="108%">
+          <feTurbulence type="fractalNoise" baseFrequency="0.008 0.012" numOctaves="2" seed="7" result="noise" />
+          <feDisplacementMap in="SourceGraphic" in2="noise" scale="6" xChannelSelector="R" yChannelSelector="G" />
+        </filter>
+      </defs>
+    </svg>
   </body>
 </html>

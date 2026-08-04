@@ -275,3 +275,175 @@ async def shortlist_job(job_id: str, user: dict = Depends(require_consent("disco
             **e.cap_info,
         })
     return app_row
+
+
+
+# --------------------------------------------------------------------- #
+# SURPRISE ME — Fynd Liquid directive (2026-07-28)
+#
+# Draws ONE eligible job deliberately OUTSIDE the user's usual title
+# / industry lanes (measured by the median score-derived family of the
+# user's shortlisted applications). The candidate MUST still pass:
+#   * the three hard gates (evaluate.pass_all is True)
+#   * the rolling 30-day per-employer cap logic (informational — draw
+#     itself does not consume the cap; the cap kicks in at shortlist)
+#   * dedup — no job the user has already drawn today may be redrawn
+# Rate-limit: 5 draws per user per calendar day (UTC).
+# Consent-gate: `discover_jobs`.
+# Draws are logged in `surprise_me_draws` for audit + no-repeat.
+# --------------------------------------------------------------------- #
+
+from datetime import datetime, timezone, timedelta
+import random as _random
+
+_SURPRISE_DAILY_LIMIT = 5
+
+
+async def _user_usual_families(user_id: str) -> set[str]:
+    """Infer the user's usual title families from their shortlisted /
+    submitted applications. If they have fewer than 2 apps, the set is
+    empty and Surprise Me draws from the full eligible pool."""
+    db = get_db()
+    fams: dict[str, int] = {}
+    async for a in db.applications.find(
+        {"user_id": user_id,
+         "state": {"$in": ["shortlisted", "preparing", "awaiting_approval",
+                            "approved", "submitting", "submitted", "response",
+                            "interview", "offer"]}},
+        {"job_snapshot": 1, "_id": 0},
+    ):
+        snap = a.get("job_snapshot") or {}
+        fam = (snap.get("taxonomy_family") or "").strip().lower()
+        if fam:
+            fams[fam] = fams.get(fam, 0) + 1
+    if sum(fams.values()) < 2:
+        return set()
+    return set(fams.keys())
+
+
+@router.post("/surprise-me")
+async def surprise_me(user: dict = Depends(require_consent("discover_jobs"))):
+    """Return ONE outside-lane eligible job with a validator-grounded
+    "why you qualify" trace. Rate-limited to 5/day, logged, no-repeat.
+    """
+    db = get_db()
+    now = datetime.now(timezone.utc)
+    day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    todays_draws = [d async for d in db.surprise_me_draws.find(
+        {"user_id": user["id"], "drawn_at": {"$gte": day_start}},
+        {"_id": 0, "job_id": 1},
+    )]
+    if len(todays_draws) >= _SURPRISE_DAILY_LIMIT:
+        raise HTTPException(status_code=429, detail={
+            "error": "surprise_daily_limit_reached",
+            "limit": _SURPRISE_DAILY_LIMIT,
+            "remaining_today": 0,
+            "message": (f"You've drawn {_SURPRISE_DAILY_LIMIT} surprises today. "
+                          "The dice reset at midnight UTC."),
+        })
+    already_drawn_ids = {d["job_id"] for d in todays_draws}
+
+    # Also exclude any job the user has ever drawn (across all time) so
+    # the same row never comes up twice.
+    async for d in db.surprise_me_draws.find(
+        {"user_id": user["id"]}, {"_id": 0, "job_id": 1},
+    ):
+        already_drawn_ids.add(d["job_id"])
+
+    usual = await _user_usual_families(user["id"])
+    ctx = await build_context(user["id"])
+    hidden = ctx.get("hidden_job_ids") or set()
+    all_live = await jobs_repo.list_live()
+
+    # Candidate pool = live · not hidden · not already-drawn · passes 3 gates
+    # · OUTSIDE the user's usual families (unless they have <2 apps).
+    candidates: list[tuple[dict, dict, dict]] = []
+    for job in all_live:
+        if job["id"] in hidden or job["id"] in already_drawn_ids:
+            continue
+        if job.get("is_sample"):
+            # Founder rule: Surprise Me never draws SAMPLE rows — the whole
+            # point is real, verifiable, out-of-lane opportunities.
+            continue
+        fam = (job.get("taxonomy_family") or "").strip().lower()
+        if usual and fam and fam in usual:
+            continue  # inside usual lane — skip
+        gate = evaluate(ctx, job)
+        if not gate["pass_all"]:
+            continue
+        s = score_job(ctx, job, gate)
+        candidates.append((job, gate, s))
+        if len(candidates) >= 200:
+            break  # bounded scan — this endpoint must return quickly
+
+    if not candidates:
+        return {
+            "job": None,
+            "why_you_qualify": [],
+            "remaining_today": _SURPRISE_DAILY_LIMIT - len(todays_draws),
+            "message": ("No outside-lane opportunities are eligible right now. "
+                          "As Fynd sees more Passport claims and the discovery "
+                          "catalog grows, this will populate."),
+        }
+
+    # Deterministic-but-varied pick: weight lightly by score so a stronger
+    # match is preferred but we still surprise the user.
+    weights = [max(1, int((s.get("score") or 0) * 100)) for _, _, s in candidates]
+    picked = _random.choices(candidates, weights=weights, k=1)[0]
+    job, gate, s = picked
+
+    # "why you qualify" trace — pulled ONLY from the scoring `reason_codes`
+    # that were POSITIVELY applied and the gate `notes`. Never invents.
+    why: list[str] = []
+    for rc in (s or {}).get("reason_codes") or []:
+        if (rc.get("weight_applied") or 0) > 0 and rc.get("explanation"):
+            why.append(rc["explanation"])
+        if len(why) >= 3:
+            break
+    for note in (gate.get("notes") or [])[:2]:
+        if note not in why:
+            why.append(note)
+
+    # Log the draw. Append-only; never overwritten.
+    from domains.audit import service as audit_svc
+    draw_id = str(uuid.uuid4())
+    await db.surprise_me_draws.insert_one({
+        "id": draw_id,
+        "user_id": user["id"],
+        "job_id": job["id"],
+        "employer": job.get("company_name"),
+        "taxonomy_family": job.get("taxonomy_family"),
+        "score": (s or {}).get("score"),
+        "drawn_at": now,
+        "usual_families_snapshot": sorted(usual),
+    })
+    await audit_svc.write(user["id"], "feed.surprise_me.draw",
+                             f"job:{job['id']}",
+                             {"draw_id": draw_id,
+                              "employer": job.get("company_name"),
+                              "taxonomy_family": job.get("taxonomy_family")})
+
+    return {
+        "draw_id": draw_id,
+        "job": _shape_job_card(job, s),
+        "why_you_qualify": why,
+        "remaining_today": _SURPRISE_DAILY_LIMIT - (len(todays_draws) + 1),
+        "message": ("This role sits outside the lanes you usually apply to, "
+                     "but your Passport meets every hard gate. Have a look."),
+    }
+
+
+@router.get("/surprise-me/status")
+async def surprise_me_status(user: dict = Depends(require_consent("discover_jobs"))):
+    """How many draws remain today; used by the UI to enable/disable the CTA."""
+    db = get_db()
+    now = datetime.now(timezone.utc)
+    day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    used = await db.surprise_me_draws.count_documents(
+        {"user_id": user["id"], "drawn_at": {"$gte": day_start}})
+    return {
+        "limit": _SURPRISE_DAILY_LIMIT,
+        "used_today": used,
+        "remaining_today": max(0, _SURPRISE_DAILY_LIMIT - used),
+    }

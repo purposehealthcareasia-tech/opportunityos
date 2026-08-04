@@ -80,7 +80,7 @@ export default function Signup() {
   }
 
   return (
-    <div className="min-h-screen bg-surface-muted dark:bg-surface-dark">
+    <div className="min-h-screen">
       <header className="px-6 md:px-10 py-5 flex items-center justify-between">
         <Link to="/" className="flex items-center gap-2 no-underline text-ink dark:text-ink-dark">
           <ArrowLeft className="h-4 w-4" /> <span className="text-sm">Back to home</span>
@@ -90,9 +90,9 @@ export default function Signup() {
 
       <main className="px-6 md:px-10 pb-16">
         <div className="max-w-2xl mx-auto">
-          <h1 className="text-2xl md:text-3xl font-semibold mb-2">Create your OpportunityOS account</h1>
+          <h1 className="text-2xl md:text-3xl font-semibold mb-2">Create your Fynd account</h1>
           <p className="muted mb-8 text-sm max-w-lg">
-            You control what OpportunityOS is allowed to do on your behalf. Each scope below is a promise we make about how your data is used — not a marketing checkbox. Only the required scope is needed to create the account.
+            You control what Fynd is allowed to do on your behalf. Each scope below is a promise we make about how your data is used — not a marketing checkbox. Only the required scope is needed to create the account.
           </p>
 
           <form onSubmit={handleSubmit} className="card p-6 md:p-8 space-y-6">
@@ -180,7 +180,7 @@ export default function Signup() {
           </form>
 
           <p className="text-xs muted mt-6 max-w-lg">
-            By creating an account, you agree that OpportunityOS will act as a candidate-fiduciary. We will never auto-submit an application without your explicit approval, and we will never invent facts about you.
+            By creating an account, you agree that Fynd will act as a candidate-fiduciary. We will never auto-submit an application without your explicit approval, and we will never invent facts about you.
           </p>
         </div>
       </main>
