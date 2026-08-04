@@ -480,6 +480,186 @@ async def _rebase_fixture_user() -> str:
 
 
 # --------------------------------------------------------------------- #
+# Wider-prefs fixture user — Fynd Liquid tester-support (2026-08-04)
+#
+# Per founder directive item 5 in the Precision Protocol Amendment,
+# the tester needs a truthful path to see one real Surprise Me draw.
+# The primary fixture-ead@ user's EAD-with-sponsorship eligibility
+# means most real Greenhouse/Lever/Ashby jobs fail the sponsorship
+# gate as "unknown", so Surprise Me returns null (accurately). This
+# second fixture user is us_citizen with wide-open role_families and
+# no sponsorship requirement, so real jobs pass the hard gates and
+# Surprise Me can draw a real outside-lane row.
+#
+# Rails preserved:
+#   * Same seeding path as fixture-ead@ (deterministic re-baseline).
+#   * Same production-mode guard prevents this from ever running in
+#     prod (see rebase_all() at the top of this module).
+#   * SAMPLE jobs are still excluded from Surprise Me (is_sample=False
+#     filter is in the handler); the tester sees only REAL jobs.
+# --------------------------------------------------------------------- #
+
+FIXTURE_BROAD_EMAIL = "fixture-broad@opportunityos.dev"
+FIXTURE_BROAD_PASSWORD = "Fixture!Broad1"
+FIXTURE_BROAD_NAME = "Fixture Broad-Prefs Tester"
+
+_BROAD_PREFERENCES = {
+    # No role_families filter → every taxonomy_family is in play.
+    "role_families": [],
+    "locations": ["Anywhere (US)", "Remote (US)"],
+    "remote_ok": True,
+    "salary_floor_usd": 0,  # no floor
+    "employer_include": [],
+    "employer_exclude": [],
+    "screener_answers": {},
+    "search_intensity": "medium",
+}
+
+_BROAD_ELIGIBILITY = {
+    "status": "us_citizen",
+    "dates": {},
+    "notes": "Synthetic fixture — wider-prefs tester profile so real Greenhouse/Lever/Ashby jobs pass the sponsorship gate and Surprise Me has a draw path.",
+}
+
+_BROAD_SKILLS = [
+    "python", "product management", "javascript", "sql",
+    "communication", "customer support", "operations",
+    "marketing", "data analysis",
+]
+
+
+async def _rebase_fixture_broad_user() -> str:
+    """Re-baseline the wider-prefs fixture user on every startup.
+
+    Mirrors the shape of `_rebase_fixture_user` but with `us_citizen`
+    eligibility and open role_families / no salary floor. Emits an
+    audit row on completion; never touches employer origins.
+    """
+    db = get_db()
+    now = utc_now()
+    user_id = await _ensure_user(FIXTURE_BROAD_EMAIL, FIXTURE_BROAD_PASSWORD, FIXTURE_BROAD_NAME)
+
+    to_wipe = [
+        "preferences", "eligibility_profiles", "applications", "hidden_jobs",
+        "match_scores", "usage_meters", "documents", "resume_versions",
+        "score_feedback", "claims", "consent_records",
+        "ai_generations", "screening_answers",
+        "authorization_scopes", "outcomes", "interviews",
+        "manual_queue_items", "submission_receipts", "subscriptions",
+        "walkins", "personas",
+        "application_outcomes", "budget_reallocations", "kill_list",
+        "self_healing_events", "preflight_verdicts",
+        "surprise_me_draws",
+    ]
+    for coll in to_wipe:
+        await db[coll].delete_many({"user_id": user_id})
+
+    # Grant every consent scope.
+    for scope_row in CONSENT_SCOPES:
+        await db.consent_records.insert_one({
+            "id": str(uuid.uuid4()),
+            "user_id": user_id,
+            "scope": scope_row["scope"],
+            "granted": True,
+            "policy_text_version": policy_version(),
+            "ts": now,
+            "actor": "system:fixture-broad",
+            "source": "fixture_broad_rebase",
+        })
+
+    # Approved contact + name claims + generalist skill set.
+    base_claim = {
+        "user_id": user_id,
+        "source": {"type": "user_provided",
+                     "note": "FIXTURE BROAD re-baseline. Synthetic data for automated tests only."},
+        "evidence": [],
+        "verification": {"level": 0, "note": "unverified"},
+        "confidence": None,
+        "user_approved": True,
+        "status": "approved",
+        "version": 1,
+        "superseded_by": None,
+        "created_at": now,
+    }
+    docs = [
+        {"id": str(uuid.uuid4()), "type": "contact",
+         "value": {"email": FIXTURE_BROAD_EMAIL},
+         "sensitivity": "normal", **base_claim},
+        {"id": str(uuid.uuid4()), "type": "name",
+         "value": {"full_name": FIXTURE_BROAD_NAME,
+                     "first_name": "Fixture", "last_name": "Broad-Prefs"},
+         "sensitivity": "normal", **base_claim},
+    ]
+    for skill in _BROAD_SKILLS:
+        docs.append({"id": str(uuid.uuid4()), "type": "skill",
+                       "value": {"name": skill},
+                       "sensitivity": "normal", **base_claim})
+    if docs:
+        await db.claims.insert_many(docs)
+
+    await db.preferences.insert_one({
+        "id": str(uuid.uuid4()),
+        "user_id": user_id,
+        "version": 1,
+        "payload": _BROAD_PREFERENCES,
+        "updated_at": now,
+    })
+
+    from services.gate_engine import derive_flags
+    await db.eligibility_profiles.insert_one({
+        "id": str(uuid.uuid4()),
+        "user_id": user_id,
+        "version": 1,
+        "status": _BROAD_ELIGIBILITY["status"],
+        "dates": _BROAD_ELIGIBILITY["dates"],
+        "notes": _BROAD_ELIGIBILITY["notes"],
+        "derived_flags": derive_flags(_BROAD_ELIGIBILITY["status"]),
+        "sensitivity": "sealed",
+        "updated_at": now,
+    })
+
+    await db.users.update_one({"id": user_id}, {"$set": {"passport_activated": True}})
+
+    # Base resume_version so the passport can render.
+    from services.llm import template_fallback_lines
+    approved = [c for c in docs if c.get("status") == "approved"]
+    base_lines = template_fallback_lines(approved)
+    base_manifest = [
+        {"line_id": str(uuid.uuid4()), "text": L["text"], "claim_ids": L["claim_ids"],
+         "status": "accepted", "base_line_ref": None}
+        for L in base_lines
+    ]
+    await db.resume_versions.insert_one({
+        "id": str(uuid.uuid4()),
+        "user_id": user_id,
+        "application_id": None,
+        "name": "base",
+        "base": True,
+        "render_manifest": {"lines": base_manifest},
+        "s3_key": None,
+        "sha256": None,
+        "created_at": now,
+        "updated_at": now,
+    })
+
+    from domains.subscriptions import service as subs_svc
+    await subs_svc.set_plan(user_id, "plus", actor="system:fixture-broad")
+
+    await db.audit_logs.insert_one({
+        "id": str(uuid.uuid4()),
+        "actor": "system:fixture-broad",
+        "action": "seed.fixture_broad_rebase",
+        "object_ref": f"user:{user_id}",
+        "ts": now,
+        "meta": {"email": FIXTURE_BROAD_EMAIL,
+                   "eligibility": _BROAD_ELIGIBILITY["status"]},
+    })
+    log.info("FIXTURE BROAD user re-baselined: %s (%s)",
+              FIXTURE_BROAD_EMAIL, user_id)
+    return user_id
+
+
+# --------------------------------------------------------------------- #
 # Phase 5.3 / 5.4 fixture UI-visibility seeds (Founder Directive)
 # --------------------------------------------------------------------- #
 # On EVERY backend restart these seed one demonstration row so the
@@ -666,7 +846,11 @@ async def run_seeds() -> dict:
 
     # FIXTURE user — deterministic re-baseline on EVERY startup.
     fx_id = await _rebase_fixture_user()
+    # Wider-prefs FIXTURE user for Surprise Me real-draw path (2026-08-04).
+    fx_broad_id = await _rebase_fixture_broad_user()
 
-    counts.update({"admin_users": 2, "user_zero_id": uz_id, "fixture_user_id": fx_id})
+    counts.update({"admin_users": 2, "user_zero_id": uz_id,
+                     "fixture_user_id": fx_id,
+                     "fixture_broad_user_id": fx_broad_id})
     log.info("Seed counts: %s", counts)
     return counts

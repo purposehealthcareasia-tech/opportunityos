@@ -1,14 +1,19 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { motion } from 'framer-motion';
 import { ShieldCheck, FileCheck2, ListChecks, LockKeyhole, XCircle, ArrowRight } from 'lucide-react';
 import ThemeToggle from '../components/ThemeToggle';
 import { FyndWordmark } from '../components/FyndMark';
 
 /**
  * Landing — Fynd Liquid.
- * Only page with SVG displacement refraction (§2 performance rail).
- * Everything else is composition of the liquid tokens.
+ *
+ * Perf notes (§7 Phase-0 evidence):
+ *   * framer-motion removed from this bundle — replaced with a tiny
+ *     CSS-only entrance (`animate-liquidIn`) already in Tailwind config.
+ *   * The SVG displacement refraction blobs are deferred behind
+ *     `useEffect` so they never block LCP; they mount ~150ms after
+ *     first paint. Users on reduced-motion never see them either
+ *     because the global guardrail drops the transitions.
  */
 
 function Header() {
@@ -28,19 +33,16 @@ function Header() {
 
 function Pillar({ icon: Icon, title, body, delay = 0 }) {
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 12 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true, margin: '-40px' }}
-      transition={{ duration: 0.5, delay, ease: [0.22, 1.2, 0.36, 1] }}
-      className="liquid-card p-6"
+    <div
+      className="liquid-card p-6 animate-liquidIn"
+      style={{ animationDelay: `${delay}ms` }}
     >
       <div className="h-10 w-10 rounded-2xl bg-accent/10 grid place-items-center mb-4">
         <Icon className="h-4 w-4 text-accent" />
       </div>
       <h3 className="text-base font-semibold mb-1.5">{title}</h3>
       <p className="text-sm muted leading-relaxed">{body}</p>
-    </motion.div>
+    </div>
   );
 }
 
@@ -55,6 +57,29 @@ function NeverItem({ children }) {
   );
 }
 
+/**
+ * DeferredRefraction — mounts the two refraction blobs ~150ms after
+ * first paint using requestIdleCallback / setTimeout fallback. This
+ * removes the SVG displacement paint from the LCP critical path.
+ */
+function DeferredRefraction() {
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    const idle = window.requestIdleCallback ||
+      ((cb) => window.setTimeout(cb, 150));
+    const cancel = window.cancelIdleCallback || window.clearTimeout;
+    const id = idle(() => setReady(true), { timeout: 400 });
+    return () => cancel(id);
+  }, []);
+  if (!ready) return null;
+  return (
+    <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 -top-20 h-[440px] overflow-hidden animate-fadeIn">
+      <div className="absolute -top-24 -left-20 h-72 w-72 rounded-full bg-accent/25 blur-3xl liquid-refraction" />
+      <div className="absolute top-10 right-0 h-80 w-80 rounded-full bg-sky-500/20 blur-3xl liquid-refraction" />
+    </div>
+  );
+}
+
 export default function Landing() {
   return (
     <div className="min-h-screen" data-testid="landing-page">
@@ -62,18 +87,9 @@ export default function Landing() {
 
       {/* HERO */}
       <section className="relative px-6 md:px-10 pt-14 md:pt-24 pb-20 md:pb-32 max-w-6xl mx-auto">
-        {/* Refraction blobs — the only place we use the SVG displacement filter */}
-        <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 -top-20 h-[440px] overflow-hidden">
-          <div className="absolute -top-24 -left-20 h-72 w-72 rounded-full bg-accent/25 blur-3xl liquid-refraction" />
-          <div className="absolute top-10 right-0 h-80 w-80 rounded-full bg-sky-500/20 blur-3xl liquid-refraction" />
-        </div>
+        <DeferredRefraction />
 
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, ease: [0.22, 1.2, 0.36, 1] }}
-          className="relative"
-        >
+        <div className="relative">
           <span className="liquid-pill liquid-pill--accent mb-7">Candidate-fiduciary · Consent-first</span>
           <h1 className="text-5xl md:text-7xl font-semibold leading-[1.02] tracking-display-tight max-w-4xl">
             Apply to the right jobs with applications employers can trust — <span className="bg-gradient-to-br from-accent to-emerald-500 bg-clip-text text-transparent">and see the receipts.</span>
@@ -89,7 +105,7 @@ export default function Landing() {
               I already have one
             </Link>
           </div>
-        </motion.div>
+        </div>
       </section>
 
       {/* PILLARS */}
@@ -104,13 +120,13 @@ export default function Landing() {
             icon={FileCheck2}
             title="Grounded materials, no fabrication"
             body="When materials are drafted for you, they are grounded strictly in your approved Passport. If we can't ground a sentence in a claim, we won't write it."
-            delay={0.06}
+            delay={60}
           />
           <Pillar
             icon={ListChecks}
             title="Consent ledger you can audit"
             body="Every grant and revoke is a row in an append-only ledger. Revoke a scope and dependent features stop working immediately — with a clear explanation."
-            delay={0.12}
+            delay={120}
           />
         </div>
       </section>
@@ -135,8 +151,8 @@ export default function Landing() {
       {/* FOOTER */}
       <footer className="px-6 md:px-10 py-10 border-t border-white/10 dark:border-white/5">
         <div className="max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-4">
-          <div className="text-xs muted">Fynd · Phase 1 · Foundation build · v0.1</div>
-          <div className="text-xs muted">This build has no dashboards or feed yet. That&apos;s intentional — later phases only light up when they can deliver honestly.</div>
+          <div className="text-xs muted">Fynd · v0.1</div>
+          <div className="text-xs muted">This build lights up features only when they can deliver honestly.</div>
         </div>
       </footer>
     </div>

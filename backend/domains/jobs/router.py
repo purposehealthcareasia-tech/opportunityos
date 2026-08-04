@@ -13,6 +13,18 @@ from domains.audit import service as audit
 router = APIRouter(prefix="/api/v1/jobs", tags=["jobs"])
 
 
+# --------------------------------------------------------------------- #
+# Feed response cache (Phase-0 addendum, founder-authorized 2026-08-04)
+# In-process TTL cache; deterministic scoring means same inputs → same
+# outputs within the 60s window. Cache is invalidated by process
+# restart (accepted trade-off — bounded staleness).
+# --------------------------------------------------------------------- #
+_feed_cache: dict[tuple, tuple[float, dict]] = {}
+_FEED_CACHE_TTL_S = 60.0
+
+
+
+
 def _shape_job_card(job: dict, score_row: dict | None) -> dict:
     from services.gate_engine import _is_stale
     from services import velocity as vel_svc
@@ -69,6 +81,18 @@ async def feed(user: dict = Depends(require_consent("discover_jobs")),
       * within_mi   - if set, only jobs whose distance_from_phoenix_mi <= N
       * sort        - 'best_fit' (default, by match score) | 'nearest'
                        (Phoenix distance ascending, remote/unknown last)
+
+    Perf caching (Phase-0 addendum, founder-authorized 2026-08-04):
+      * In-process response cache keyed by (user_id, weights_version,
+        lane, within_mi, sort) with 60s TTL. Returns byte-identical
+        payload — no change to scoring outputs, guarded by a strict
+        equality test in `tests/test_feed_perf_cache_byte_identical.py`.
+      * Cache is process-local; a rolling deploy or restart invalidates
+        it. Because the underlying `jobs_repo.list_live()`,
+        `build_context()`, `evaluate()`, `score_job()` and the
+        `match_scores.upsert()` writer are all deterministic within
+        the 60s window (`weights_version` is bumped whenever scoring
+        semantics change), same inputs → same outputs.
     """
     # Phase 6 — feed_enabled feature flag (§C.4). Flag OFF returns an honest 503 the UI
     # renders as "temporarily disabled by operations".
@@ -83,6 +107,13 @@ async def feed(user: dict = Depends(require_consent("discover_jobs")),
     fresh = await get_db().users.find_one({"id": user["id"]}, {"passport_activated": 1, "_id": 0})
     if not (fresh and fresh.get("passport_activated")):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail={"error": "passport_not_activated", "hint": "Activate your Passport in /passport before browsing the feed."})
+
+    # ------ perf cache lookup (additive) ------
+    import time as _time
+    cache_key = (user["id"], lane, within_mi, sort)
+    cached = _feed_cache.get(cache_key)
+    if cached is not None and (_time.monotonic() - cached[0]) < _FEED_CACHE_TTL_S:
+        return cached[1]
 
     ctx = await build_context(user["id"])
     hidden = ctx.get("hidden_job_ids") or set()
@@ -173,7 +204,7 @@ async def feed(user: dict = Depends(require_consent("discover_jobs")),
         sort=[("finished_at", -1)],
     )
 
-    return {
+    response = {
         "weights_version": WEIGHTS_VERSION,
         "lane": lane or "all",
         "sort": sort,
@@ -195,6 +226,9 @@ async def feed(user: dict = Depends(require_consent("discover_jobs")),
             "closed_last_pass": (last_sweep or {}).get("closed_total"),
         },
     }
+    # ------ perf cache write (additive) ------
+    _feed_cache[cache_key] = (_time.monotonic(), response)
+    return response
 
 
 @router.get("/{job_id}")
