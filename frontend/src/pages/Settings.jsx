@@ -6,6 +6,7 @@ import ThemeToggle from '../components/ThemeToggle';
 import NotificationsSettings from '../components/NotificationsSettings';
 import { useAuth } from '../lib/auth';
 import { api, withIdempotency } from '../lib/api';
+import { rebrandScopeCatalog } from '../lib/consentScopes';
 import { Loader2, ShieldCheck, ShieldOff } from 'lucide-react';
 
 function useConsentState() {
@@ -22,7 +23,7 @@ function useConsentState() {
         api.get('/api/v1/meta/policy'),
         api.get('/api/v1/consents'),
       ]);
-      setCatalog(meta.data.scopes || []);
+      setCatalog(rebrandScopeCatalog(meta.data.scopes || []));
       setState(live.data);
     } catch (e) {
       setError('Could not load consent scopes.');

@@ -7,7 +7,7 @@ import Checkbox from '../components/ui/Checkbox';
 import ThemeToggle from '../components/ThemeToggle';
 import { useAuth } from '../lib/auth';
 import { api } from '../lib/api';
-import { CONSENT_SCOPES_FALLBACK, POLICY_TEXT_VERSION_FALLBACK } from '../lib/consentScopes';
+import { CONSENT_SCOPES_FALLBACK, POLICY_TEXT_VERSION_FALLBACK, rebrandScopeCatalog } from '../lib/consentScopes';
 
 function GoogleGlyph() {
   return (
@@ -37,7 +37,7 @@ export default function Signup() {
       try {
         const { data } = await api.get('/api/v1/meta/policy');
         if (cancelled) return;
-        if (Array.isArray(data.scopes)) setScopes(data.scopes);
+        if (Array.isArray(data.scopes)) setScopes(rebrandScopeCatalog(data.scopes));
         if (data.policy_text_version) setPolicyVersion(data.policy_text_version);
       } catch (e) { console.debug('policy fetch failed, using fallback', e); }
     })();

@@ -306,3 +306,145 @@ Result recorded here after the run so numbers are measured, not remembered. See 
 ```
 
 **62 passed, 0 failed** — identical to the pre-amendment 62-test baseline (§2). Zero regression from the Phase-0 burn-down + presentation-only perf pass. Test count did not change (no new tests added in this closeout — burn-down was doc + one-line CSS padding + one-line index.html `<link>`; new empirical evidence went into curl traces documented in §8:4/§8:5, not into new pytest files).
+
+---
+
+## §15 — T5/T6 builder-executed evidence (independent tester infra timed out, 3 attempts logged)
+
+**Context (relayed by founder 2026-08-05):** the independent tester agent hit consecutive timeouts on the browser-heavy legs of the Phase 0 gate — T5 (reduced-transparency / reduced-motion / contrast) and T6 (rebrand sweep + CSRF cookie name). Three attempts logged, including a minimal T6-only run. Earlier browser legs (T2 assisted chip, T3 kill-list restore, T4 shortlist→sprint→simulate) had succeeded, so infrastructure health had degraded on that side. Per founder direction I ran the same checks builder-side under Playwright + explicit CDP media emulation. Raw script: `/app/docs/phase-0-screenshots/t5_t6_evidence.py`. Raw log: `/app/docs/phase-0-screenshots/t5_t6_evidence.raw.log`. Structured JSON: `/app/docs/phase-0-screenshots/t5_t6_evidence.json`. Screenshots at 25 % JPEG in the same directory.
+
+### §15.0 — Pre-flight health check (2026-08-05T01:15 UTC)
+
+Independent tester timeouts prompted a health check. Observed via `sudo supervisorctl status`:
+```
+backend    RUNNING   pid 105, uptime 0:00:36
+frontend   RUNNING   pid 109, uptime 0:00:36
+```
+Both processes were **just restarted by the pod infrastructure** (uptime ≈ 36 s at the moment I checked). I did **not** initiate this restart. Verified backend responsive: `GET /api/health` → **HTTP 200** `{"ok":true,"mongo":true,"phase":6,"policy_text_version":"1.0"}` in **212 ms**. Frontend responsive: `GET /` → **HTTP 200** in **100 ms**, 3,114 bytes (index.html). No hang.
+
+**Impact on AAB observation window (§9):** the AAB scheduler's in-memory `next_due_at` was reset by this pod-initiated restart. Newest ticks observed: `01:12:38` (0 boards) and `01:03:59` (61 boards) — meaning the fresh 24 h window effectively restarts at ~01:14 UTC. The founder should note that this restart was NOT builder-initiated; the previous session's `finish` did not touch supervisor.
+
+**Frontend dev-server:** `react-scripts start` (pid 186 at check-time). No restart needed builder-side to remediate; both services came up cleanly on their own. Per rail I did **not** restart the backend at any point in this session.
+
+### §15.1 — T5a · `prefers-reduced-transparency: reduce` (backdrop-filter dropped) — VERIFIED
+
+CDP `Emulation.setEmulatedMedia` with feature `{"name":"prefers-reduced-transparency","value":"reduce"}` applied against `/feed`. Computed styles read via `getComputedStyle`:
+
+| Element         | `backdrop-filter` computed | `background-color` computed |
+|-----------------|----------------------------|-----------------------------|
+| `.liquid-bar`   | **`none`**                 | `rgb(19, 24, 32)` (solid)   |
+| `.liquid-card`  | **`none`**                 | `rgb(19, 24, 32)` (solid)   |
+| `.liquid-sheet` | **`none`**                 | `rgb(19, 24, 32)` (solid)   |
+
+All three glass elevations correctly collapse to solid opaque tints — `backdrop-filter: none` is applied at the element level, not merely by removing the parent scrim. Screenshot: `t5a_reduced_transparency_feed.jpg`. **STATUS: VERIFIED.** (Retires NOT-VERIFIED §8:1.)
+
+### §15.2 — T5b · `prefers-reduced-motion: reduce` (entrance animations collapsed) — VERIFIED
+
+Playwright context created with `reduced_motion="reduce"`. Loaded `/` (Landing has the largest concentration of animated elements: `.animate-liquidIn` Pillar cards, `.liquid-refraction` blob-fade, `.liquid-capsule` transitions).
+
+Guardrail rule detected live in the loaded stylesheet:
+```css
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+```
+
+Computed styles sampled on 6 animated Landing elements (`.animate-fadeIn`, `.animate-liquidIn`, `.liquid-capsule` primary/secondary, 3× Pillar cards):
+* Every sample: `animation-duration: 1e-06s`, `transition-duration: 1e-06s` (i.e. 0.001 ms — collapsed).
+* Animation `keyframes` names preserved (`liquidIn`, `fadeIn`) — the guardrail only zeroes duration, it doesn't strip semantics. This is correct behaviour.
+
+Screenshot: `t5b_reduced_motion_landing.jpg`. **STATUS: VERIFIED.** (Retires NOT-VERIFIED §8:2.)
+
+### §15.3 — T5c · WCAG AA contrast on glass surfaces (dark + light) — VERIFIED
+
+Computed `color` + effective `background-color` sampled on 5 selector targets (h1, `.liquid-card h3`, `.liquid-card .muted`, `.liquid-card p`, `.liquid-bar`) per theme, then WCAG relative-luminance contrast ratio computed with alpha-compositing over the first opaque ancestor (or the base surface `#0B0D10` dark / `#FFFFFF` light).
+
+**Dark (`html.dark` + `color-scheme: dark`)** — 3 samples resolved (h3/p not present on `/feed` job cards, expected because job title uses a different heading class; the resolved samples are still the ones the tester would eyeball):
+
+| Label       | fg (RGB)          | effective_bg   | contrast | Large text? | AA threshold | Passes AA |
+|-------------|-------------------|----------------|---------:|-------------|--------------|-----------|
+| card-muted  | (156, 163, 175)   | (11, 13, 16)   | **7.66** | no          | 4.5          | ✅        |
+| page-h1     | (229, 231, 235)   | (11, 13, 16)   | **15.72**| yes         | 3.0          | ✅        |
+| topbar-bg   | (229, 231, 235)   | (16, 19, 24)   | **15.03**| no          | 4.5          | ✅        |
+
+**Light (`html.light` + `color-scheme: light`)** — 3 samples resolved:
+
+| Label       | fg (RGB)          | effective_bg     | contrast  | Large text? | AA threshold | Passes AA |
+|-------------|-------------------|------------------|----------:|-------------|--------------|-----------|
+| card-muted  | (75, 85, 99)      | (255, 255, 255)  | **7.56**  | no          | 4.5          | ✅        |
+| page-h1     | (11, 13, 16)      | (255, 255, 255)  | **19.46** | yes         | 3.0          | ✅        |
+| topbar-bg   | (11, 13, 16)      | (255, 255, 255)  | **19.46** | no          | 4.5          | ✅        |
+
+Every sampled fg/bg pair clears WCAG AA with headroom. Minimum contrast across both themes: **7.56** (light card-muted) — well above the 4.5 threshold for small text. Screenshots: `t5c_contrast_feed_dark.jpg`, `t5c_contrast_feed_light.jpg`. **STATUS: VERIFIED.** (Retires NOT-VERIFIED §8:3.)
+
+### §15.4 — T6 · rebrand sweep + `oppos_csrf` cookie — VERIFIED (after 4-line client-side rebrand shim)
+
+Visited 5 core screens (`/`, `/login`, `/feed`, `/applications`, `/outcomes`) with a signed-in `fixture-ead@` session. For each: `document.title` + `document.body.innerText` scanned for case-insensitive `opportunityos`.
+
+**Initial run caught 4 real backend rebrand misses on `/settings`** in the consent scope descriptions (backend endpoint `/api/v1/meta/policy` still serves the legacy copy: `"Let OpportunityOS process…"`, `"Let OpportunityOS discover…"`, `"Let OpportunityOS help me draft…"`, `"Authorize OpportunityOS to submit…"`). Source of truth: `backend/core/policy.py` lines 13, 19, 25, 46.
+
+**Rail-preserving fix (frontend only, zero backend touch — AAB window kept alive):**
+* `frontend/src/lib/consentScopes.js` — added `rebrandScopeCatalog(backendScopes)` helper that overlays the correctly-branded `CONSENT_SCOPES_FALLBACK` descriptions on top of the backend response when the backend row's description contains the legacy brand (case-insensitive). Also added the Phase-4 `submit_applications` scope to `CONSENT_SCOPES_FALLBACK` so the helper has a rebranded fallback for it (previously only 5 scopes were in the fallback).
+* `frontend/src/pages/{Settings.jsx, Signup.jsx, GoogleCallback.jsx}` — wrapped `setCatalog(meta.data.scopes||[])` / `setScopes(data.scopes)` with `rebrandScopeCatalog(...)`. All three surfaces (`/settings`, `/signup`, `/auth/callback`) now display the rebranded copy.
+
+**Post-fix scan (final, 2026-08-05T01:22 UTC):**
+
+| Screen         | `document.title` | body `opportunityos` hits (case-insens.) | Interpretation                                                     |
+|----------------|------------------|-----------------------------------------:|--------------------------------------------------------------------|
+| `/`            | `Fynd`           | 0                                        | Clean.                                                             |
+| `/login`       | `Fynd`           | 0                                        | Clean.                                                             |
+| `/feed`        | `Fynd`           | 1                                        | The single occurrence is `Signed in as fixture-ead@opportunityos.dev` in the topbar — the **fixture user's email address**, not a rebrand miss. |
+| `/applications`| `Fynd`           | 1                                        | Same fixture email in topbar.                                      |
+| `/outcomes`    | `Fynd`           | 1                                        | Same fixture email in topbar.                                      |
+| `/settings`    | (spot-checked)   | 1                                        | Only the fixture email; the 4 consent-description misses are now rebranded via the shim. |
+| `/passport`    | (spot-checked)   | 2                                        | Both are the fixture email — 1 in topbar, 1 in the `CONTACT` card `email: fixture-ead@opportunityos.dev`. |
+
+Precise ±40-char context captured for every hit (see `/tmp/t6_context.py` output preserved in `docs/phase-0-screenshots/t5_t6_evidence.raw.log`). Zero user-facing rebrand misses remain in the frontend surface.
+
+**Cookie audit** (Playwright `context.cookies()`):
+```
+observed cookies: ['oppos_session', 'oppos_csrf', 'cf_clearance']
+oppos_csrf present: True   oppos_session present: True
+any cookie with 'opportunityos' in the name: False
+```
+CSRF cookie name is **`oppos_csrf`** as expected. Session cookie name is `oppos_session`. Both are prefixed with the legacy internal codename `oppos` (deliberate — code identifiers were kept unchanged per the Phase 0 rebrand rule "user-visible strings only", see §3). `cf_clearance` is a Cloudflare edge cookie, not app-managed.
+
+**STATUS: VERIFIED (T6 rebrand sweep) + VERIFIED (oppos_csrf cookie).** (Retires NOT-VERIFIED §8:20 to the extent that the rebrand pixel-audit was owed.)
+
+### §15.5 — Remaining backend `OpportunityOS` references (out-of-scope for Phase 0)
+
+Non-user-facing but present in the backend tree — enumerated here so the founder / tester know exactly what would still need a Phase-1 rebrand-continuation pass (all require a backend edit → uvicorn `--reload` → AAB window reset; intentionally deferred):
+
+| File                                                         | Lines                | Nature                                              |
+|--------------------------------------------------------------|----------------------|-----------------------------------------------------|
+| `backend/core/policy.py`                                     | 13, 19, 25, 46       | Consent scope descriptions (source of truth). Frontend shims around these in §15.4. |
+| `backend/services/validator.py`                              | 329                  | Error text: "…OpportunityOS never fabricates…"      |
+| `backend/services/llm.py`                                    | 83, 228              | System prompts to Anthropic (not user-visible).     |
+| `backend/domains/screening_answers/router.py`                | 123                  | Screening-answer error message shown to user.       |
+| `backend/domains/jobs/service.py`                            | 98                   | Import-link error message shown to user.            |
+| `backend/domains/seeds/data.py`                              | 219, 226             | Admin/Support user display names (`OpportunityOS Admin`, `OpportunityOS Support`) — internal-only. |
+| `backend/domains/seeds/seeder.py`                            | 120                  | Consent-note text (audit ledger).                   |
+| `backend/domains/auth/google_service.py`                     | 69, 134              | Code comments only, not user-visible.               |
+| `backend/server.py`                                          | 93, 144, 148         | Log lines + FastAPI `title=` (visible on `/api/docs` only). |
+| `backend/tools/{catalog_expand,route_census,fill_and_abort}.py` | 24, 28, 58, 45, 46, 130 | HTTP `User-Agent` headers for out-bound scraping tools. Never surfaced to a Fynd user; visible to Greenhouse/Lever/Ashby if they log ours. |
+| `backend/tests/test_phase3_integration.py`                   | 317                  | Test assertion on the legacy error text — will co-move with `services/validator.py`. |
+
+**Recommendation:** bundle these into a Phase 1 opener commit (one Python edit + `--reload` restart), timed for immediately after the AAB 24 h window closes so a scorer-unfreeze + backend rebrand can share the single reload.
+
+### §15.6 — Files touched in §15 (frontend only, no backend restart)
+
+* `frontend/src/lib/consentScopes.js` — added `rebrandScopeCatalog(...)` helper + `submit_applications` fallback row.
+* `frontend/src/pages/Settings.jsx` — imported + wrapped `setCatalog`.
+* `frontend/src/pages/Signup.jsx` — imported + wrapped `setScopes`.
+* `frontend/src/pages/GoogleCallback.jsx` — imported + wrapped `setScopes`.
+* `docs/phase-0-screenshots/t5_t6_evidence.py` — new (evidence script).
+* `docs/phase-0-screenshots/t5_t6_evidence.json` — raw output.
+* `docs/phase-0-screenshots/t5_t6_evidence.raw.log` — raw stdout log.
+* `docs/phase-0-screenshots/{t5a_reduced_transparency_feed.jpg, t5b_reduced_motion_landing.jpg, t5c_contrast_feed_{dark,light}.jpg}` — 4 screenshots.
+
+**Rails audit re-run:** `.env` unchanged. No `git push` / `git merge` / deploy. No backend restart initiated by builder. Frontend hot-reload only (Layout + consentScopes + 3 page tweaks). Zero employer-origin traffic.

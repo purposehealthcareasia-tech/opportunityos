@@ -1,0 +1,252 @@
+{
+  "run_started_at": 1785892765,
+  "base_url": "https://lynk-preview-2.preview.emergentagent.com",
+  "t5a_reduced_transparency": {
+    "liquid-bar": {
+      "found": true,
+      "backdrop": "none",
+      "background": "rgb(19, 24, 32)"
+    },
+    "liquid-card": {
+      "found": true,
+      "backdrop": "none",
+      "background": "rgb(19, 24, 32)"
+    },
+    "liquid-sheet": {
+      "found": true,
+      "backdrop": "none",
+      "background": "rgb(19, 24, 32)"
+    }
+  },
+  "t5b_reduced_motion": {
+    "animations_sample": [
+      {
+        "cls": "liquid-capsule liquid-secondary no-underline",
+        "animationDuration": "1e-06s",
+        "transitionDuration": "1e-06s",
+        "animationName": "none"
+      },
+      {
+        "cls": "liquid-capsule liquid-primary no-underline",
+        "animationDuration": "1e-06s",
+        "transitionDuration": "1e-06s",
+        "animationName": "none"
+      },
+      {
+        "cls": "pointer-events-none absolute inset-x-0 -top-20 h-[440px] ove",
+        "animationDuration": "1e-06s",
+        "transitionDuration": "1e-06s",
+        "animationName": "fadeIn"
+      },
+      {
+        "cls": "liquid-capsule liquid-primary no-underline px-5 py-3 text-ba",
+        "animationDuration": "1e-06s",
+        "transitionDuration": "1e-06s",
+        "animationName": "none"
+      },
+      {
+        "cls": "liquid-capsule liquid-secondary no-underline px-5 py-3 text-",
+        "animationDuration": "1e-06s",
+        "transitionDuration": "1e-06s",
+        "animationName": "none"
+      },
+      {
+        "cls": "liquid-card p-6 animate-liquidIn",
+        "animationDuration": "1e-06s",
+        "transitionDuration": "1e-06s",
+        "animationName": "liquidIn"
+      },
+      {
+        "cls": "liquid-card p-6 animate-liquidIn",
+        "animationDuration": "1e-06s",
+        "transitionDuration": "1e-06s",
+        "animationName": "liquidIn"
+      },
+      {
+        "cls": "liquid-card p-6 animate-liquidIn",
+        "animationDuration": "1e-06s",
+        "transitionDuration": "1e-06s",
+        "animationName": "liquidIn"
+      }
+    ],
+    "css_guardrail": {
+      "found": true,
+      "media": "(prefers-reduced-motion: reduce)",
+      "rules": [
+        "*, ::before, ::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; scroll-behavior: auto !important; }"
+      ]
+    }
+  },
+  "t5c_contrast": {
+    "dark": [
+      {
+        "label": "card-muted",
+        "fg": [
+          156,
+          163,
+          175
+        ],
+        "effective_bg": [
+          11,
+          13,
+          16
+        ],
+        "contrast": 7.66,
+        "large_text": false,
+        "threshold": 4.5,
+        "passes_AA": true,
+        "fontSize": 12,
+        "fontWeight": "400"
+      },
+      {
+        "label": "page-h1",
+        "fg": [
+          229,
+          231,
+          235
+        ],
+        "effective_bg": [
+          11,
+          13,
+          16
+        ],
+        "contrast": 15.72,
+        "large_text": true,
+        "threshold": 3.0,
+        "passes_AA": true,
+        "fontSize": 24,
+        "fontWeight": "600"
+      },
+      {
+        "label": "topbar-bg",
+        "fg": [
+          229,
+          231,
+          235
+        ],
+        "effective_bg": [
+          16,
+          19,
+          24
+        ],
+        "contrast": 15.03,
+        "large_text": false,
+        "threshold": 4.5,
+        "passes_AA": true,
+        "fontSize": 16,
+        "fontWeight": "400"
+      }
+    ],
+    "light": [
+      {
+        "label": "card-muted",
+        "fg": [
+          75,
+          85,
+          99
+        ],
+        "effective_bg": [
+          255,
+          255,
+          255
+        ],
+        "contrast": 7.56,
+        "large_text": false,
+        "threshold": 4.5,
+        "passes_AA": true,
+        "fontSize": 12,
+        "fontWeight": "400"
+      },
+      {
+        "label": "page-h1",
+        "fg": [
+          11,
+          13,
+          16
+        ],
+        "effective_bg": [
+          255,
+          255,
+          255
+        ],
+        "contrast": 19.46,
+        "large_text": true,
+        "threshold": 3.0,
+        "passes_AA": true,
+        "fontSize": 24,
+        "fontWeight": "600"
+      },
+      {
+        "label": "topbar-bg",
+        "fg": [
+          11,
+          13,
+          16
+        ],
+        "effective_bg": [
+          255,
+          255,
+          255
+        ],
+        "contrast": 19.46,
+        "large_text": false,
+        "threshold": 4.5,
+        "passes_AA": true,
+        "fontSize": 16,
+        "fontWeight": "400"
+      }
+    ]
+  },
+  "t6_rebrand_csrf": {
+    "screens": [
+      {
+        "path": "/",
+        "label": "landing",
+        "title": "Fynd",
+        "title_has_old_brand": false,
+        "body_old_brand_occurrences": 0,
+        "body_preview_first_180": "Fynd\nLight\nSign in\nCreate account\nCandidate-fiduciary \u00b7 Consent-first\nApply to the right jobs with applications employers can trust \u2014 and see the receipts.\n\nFynd is optimized for q"
+      },
+      {
+        "path": "/login",
+        "label": "login",
+        "title": "Fynd",
+        "title_has_old_brand": false,
+        "body_old_brand_occurrences": 0,
+        "body_preview_first_180": "Back to home\nLight\nSign in\n\nWelcome back. Pick the sign-in method you registered with.\n\nContinue with Google\nContinue with Apple \u2014 not yet available\nEmail & password\nPhone one-time"
+      },
+      {
+        "path": "/feed",
+        "label": "feed",
+        "title": "Fynd",
+        "title_has_old_brand": false,
+        "body_old_brand_occurrences": 1,
+        "body_preview_first_180": "Fynd\nPassport\nPreferences\nEligibility\nFeed\nApplications\nApprovals\nTracker\nOutcomes\nAnalytics\nBilling\nP6\nPrivacy\nP2\nSettings\nFynd \u00b7 Approve \u2192 Submit \u2192 Track\nSigned in as fixture-ead"
+      },
+      {
+        "path": "/applications",
+        "label": "applications",
+        "title": "Fynd",
+        "title_has_old_brand": false,
+        "body_old_brand_occurrences": 1,
+        "body_preview_first_180": "Fynd\nPassport\nPreferences\nEligibility\nFeed\nApplications\nApprovals\nTracker\nOutcomes\nAnalytics\nBilling\nP6\nPrivacy\nP2\nSettings\nFynd \u00b7 Approve \u2192 Submit \u2192 Track\nSigned in as fixture-ead"
+      },
+      {
+        "path": "/outcomes",
+        "label": "outcomes",
+        "title": "Fynd",
+        "title_has_old_brand": false,
+        "body_old_brand_occurrences": 1,
+        "body_preview_first_180": "Fynd\nPassport\nPreferences\nEligibility\nFeed\nApplications\nApprovals\nTracker\nOutcomes\nAnalytics\nBilling\nP6\nPrivacy\nP2\nSettings\nFynd \u00b7 Approve \u2192 Submit \u2192 Track\nSigned in as fixture-ead"
+      }
+    ],
+    "cookies": [
+      "oppos_session",
+      "oppos_csrf",
+      "cf_clearance"
+    ],
+    "oppos_csrf_present": true,
+    "oppos_session_present": true,
+    "legacy_cookie_name_present": false
+  }
+}
