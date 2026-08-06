@@ -1,0 +1,133 @@
+{
+  "exported_at": "2026-08-06T23:47:43.394395Z",
+  "purpose": "Frozen snapshot of the 6 annotated wave_authorizations rows post-migration for founder audit.",
+  "total_annotated": 6,
+  "annotated_rows": [
+    {
+      "id": "379ca71d-efce-49d0-bdd5-e6a4a8ebf118",
+      "user_id": "c9f47fd8-fd59-4df9-8c9c-b7ff68fb4785",
+      "triggered_by": "user_batch",
+      "authorized_at": "2026-08-06T11:32:46.827000",
+      "consents_snapshot_original_top_level": {},
+      "consents_snapshot_correction": {
+        "original": {},
+        "corrected": {
+          "discover_jobs": "granted",
+          "email_me": "granted",
+          "generate_materials": "granted",
+          "process_career_data": "granted",
+          "submit_applications": "granted",
+          "track_applications": "granted"
+        },
+        "corrected_source": "fixture_invariant_fallback (historical consent_records cycled out by seed rebases; fixture invariant is all-6-granted)",
+        "corrected_at": "2026-08-06T23:44:35.322119+00:00",
+        "reason_first_120_chars": "phase-1-g3d-fix: `_snapshot_consents` reader in `domains/wave/__init__.py` was addressing legacy field names (`status` /..."
+      }
+    },
+    {
+      "id": "cfd72d6d-3582-4d7c-85ca-330357c1512f",
+      "user_id": "c9f47fd8-fd59-4df9-8c9c-b7ff68fb4785",
+      "triggered_by": "standing_wave_aab_tick",
+      "authorized_at": "2026-08-06T12:00:38.198000",
+      "consents_snapshot_original_top_level": {},
+      "consents_snapshot_correction": {
+        "original": {},
+        "corrected": {
+          "discover_jobs": "granted",
+          "email_me": "granted",
+          "generate_materials": "granted",
+          "process_career_data": "granted",
+          "submit_applications": "granted",
+          "track_applications": "granted"
+        },
+        "corrected_source": "fixture_invariant_fallback (historical consent_records cycled out by seed rebases; fixture invariant is all-6-granted)",
+        "corrected_at": "2026-08-06T23:44:35.323309+00:00",
+        "reason_first_120_chars": "phase-1-g3d-fix: `_snapshot_consents` reader in `domains/wave/__init__.py` was addressing legacy field names (`status` /..."
+      }
+    },
+    {
+      "id": "9dba93a8-9262-40d2-91fc-5e8cdb9fe03a",
+      "user_id": "c9f47fd8-fd59-4df9-8c9c-b7ff68fb4785",
+      "triggered_by": "standing_wave_aab_tick",
+      "authorized_at": "2026-08-06T12:45:41.767000",
+      "consents_snapshot_original_top_level": {},
+      "consents_snapshot_correction": {
+        "original": {},
+        "corrected": {
+          "discover_jobs": "granted",
+          "email_me": "granted",
+          "generate_materials": "granted",
+          "process_career_data": "granted",
+          "submit_applications": "granted",
+          "track_applications": "granted"
+        },
+        "corrected_source": "fixture_invariant_fallback (historical consent_records cycled out by seed rebases; fixture invariant is all-6-granted)",
+        "corrected_at": "2026-08-06T23:44:35.324338+00:00",
+        "reason_first_120_chars": "phase-1-g3d-fix: `_snapshot_consents` reader in `domains/wave/__init__.py` was addressing legacy field names (`status` /..."
+      }
+    },
+    {
+      "id": "9c759073-6082-4d74-b85b-cac29c7bf7d4",
+      "user_id": "c9f47fd8-fd59-4df9-8c9c-b7ff68fb4785",
+      "triggered_by": "user_batch",
+      "authorized_at": "2026-08-06T13:09:42.869000",
+      "consents_snapshot_original_top_level": {},
+      "consents_snapshot_correction": {
+        "original": {},
+        "corrected": {
+          "discover_jobs": "granted",
+          "email_me": "granted",
+          "generate_materials": "granted",
+          "process_career_data": "granted",
+          "submit_applications": "granted",
+          "track_applications": "granted"
+        },
+        "corrected_source": "fixture_invariant_fallback (historical consent_records cycled out by seed rebases; fixture invariant is all-6-granted)",
+        "corrected_at": "2026-08-06T23:44:35.325273+00:00",
+        "reason_first_120_chars": "phase-1-g3d-fix: `_snapshot_consents` reader in `domains/wave/__init__.py` was addressing legacy field names (`status` /..."
+      }
+    },
+    {
+      "id": "cf129ebf-d2d6-4efc-85f1-712137ae2e13",
+      "user_id": "c9f47fd8-fd59-4df9-8c9c-b7ff68fb4785",
+      "triggered_by": "user_batch",
+      "authorized_at": "2026-08-06T13:10:34.220000",
+      "consents_snapshot_original_top_level": {},
+      "consents_snapshot_correction": {
+        "original": {},
+        "corrected": {
+          "discover_jobs": "granted",
+          "email_me": "granted",
+          "generate_materials": "granted",
+          "process_career_data": "granted",
+          "submit_applications": "granted",
+          "track_applications": "granted"
+        },
+        "corrected_source": "fixture_invariant_fallback (historical consent_records cycled out by seed rebases; fixture invariant is all-6-granted)",
+        "corrected_at": "2026-08-06T23:44:35.326152+00:00",
+        "reason_first_120_chars": "phase-1-g3d-fix: `_snapshot_consents` reader in `domains/wave/__init__.py` was addressing legacy field names (`status` /..."
+      }
+    },
+    {
+      "id": "20ebbeeb-6b68-4982-9988-84863afa8877",
+      "user_id": "c9f47fd8-fd59-4df9-8c9c-b7ff68fb4785",
+      "triggered_by": "standing_wave_aab_tick",
+      "authorized_at": "2026-08-06T14:08:03.043000",
+      "consents_snapshot_original_top_level": {},
+      "consents_snapshot_correction": {
+        "original": {},
+        "corrected": {
+          "discover_jobs": "granted",
+          "email_me": "granted",
+          "generate_materials": "granted",
+          "process_career_data": "granted",
+          "submit_applications": "granted",
+          "track_applications": "granted"
+        },
+        "corrected_source": "fixture_invariant_fallback (historical consent_records cycled out by seed rebases; fixture invariant is all-6-granted)",
+        "corrected_at": "2026-08-06T23:44:35.326996+00:00",
+        "reason_first_120_chars": "phase-1-g3d-fix: `_snapshot_consents` reader in `domains/wave/__init__.py` was addressing legacy field names (`status` /..."
+      }
+    }
+  ]
+}

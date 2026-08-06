@@ -47,31 +47,33 @@ OUT_DIR = Path("/app/docs/phase-1-screenshots")
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 
-def http_login() -> list[dict]:
-    """Log in via curl and return Playwright-shaped cookies."""
-    proc = subprocess.run(
-        ["curl", "-si", "-X", "POST", f"{BASE}/api/v1/auth/login",
-          "-H", "Content-Type: application/json",
-          "-d",
-          '{"email":"fixture-ead@opportunityos.dev","password":"Fixture!Test1"}'],
-        capture_output=True, text=True, timeout=20,
-    )
-    host = re.sub(r"^https?://", "", BASE).rstrip("/")
-    cookies = []
-    for line in proc.stdout.splitlines():
-        m = re.match(r"^set-cookie:\s*([^=]+)=([^;]+)", line, re.I)
-        if m and m.group(1) in ("oppos_session", "oppos_csrf"):
-            cookies.append({
-                "name": m.group(1), "value": m.group(2),
-                "domain": host, "path": "/",
-            })
-    return cookies
-
-
 async def _screenshot(page, name: str) -> str:
     p = OUT_DIR / f"{name}.jpeg"
     await page.screenshot(path=str(p), quality=28, full_page=False, type="jpeg")
     return str(p)
+
+
+async def _goto_stable(page, url: str, *, max_attempts: int = 6) -> bool:
+    """Navigate to `url`, retrying on Cloudflare 502 during dev-mode
+    frontend restarts. Returns True when the page is NOT the Cloudflare
+    Bad-gateway shell, False if all attempts exhausted.
+
+    Preview `react-scripts start` restarts occasionally and Cloudflare
+    briefly returns HTTP 502 during that window. curl retries would
+    succeed just as easily; we do the equivalent here.
+    """
+    for _ in range(max_attempts):
+        try:
+            await page.goto(url, wait_until="domcontentloaded", timeout=45_000)
+        except Exception:
+            await page.wait_for_timeout(3000)
+            continue
+        # Look for Cloudflare's Bad-gateway shell text.
+        body_text = await page.evaluate("() => document.body ? document.body.innerText : ''")
+        if "Bad gateway" not in (body_text or "") and "Error code 502" not in (body_text or ""):
+            return True
+        await page.wait_for_timeout(4000)
+    return False
 
 
 async def _count(page, testid: str) -> int:
@@ -88,7 +90,7 @@ async def gate_g7_speed_sort(page) -> dict:
     label is honest ("no response data yet" for no-data employers,
     "median Xd" for data-bearing).
     """
-    await page.goto(f"{BASE}/feed", wait_until="domcontentloaded", timeout=45_000)
+    await _goto_stable(page, f"{BASE}/feed")
     await page.wait_for_timeout(4500)
 
     sort_opts = await page.evaluate(
@@ -101,7 +103,23 @@ async def gate_g7_speed_sort(page) -> dict:
     speed_chip_count = 0
     if has_speed:
         await page.locator('[data-testid="feed-sort-select"]').select_option("speed")
-        await page.wait_for_timeout(4500)
+        # Feed refetch for 22k-job sort can take a few seconds on a cold
+        # scored cache; wait until at least one speed chip is present.
+        try:
+            await page.wait_for_selector(
+                '[data-testid="job-card-speed-chip"]', timeout=45_000, state="visible")
+        except Exception:
+            # Feed request may have timed out on cold cache — click Retry
+            # if the frontend shows the honest error state, then wait again.
+            try:
+                retry = page.locator('text=Retry').first
+                if await retry.count() > 0:
+                    await retry.click()
+                    await page.wait_for_selector(
+                        '[data-testid="job-card-speed-chip"]', timeout=45_000, state="visible")
+            except Exception:
+                pass
+        await page.wait_for_timeout(1500)
         speed_chip_count = await _count(page, "job-card-speed-chip")
         for i in range(min(speed_chip_count, 6)):
             t = await page.locator('[data-testid="job-card-speed-chip"]').nth(i).inner_text()
@@ -109,12 +127,16 @@ async def gate_g7_speed_sort(page) -> dict:
         await _screenshot(page, "g7_feed_sort_speed")
 
     # Honest label: at least one card must have a plain "no response data yet"
-    # (fixture has SampleCo jobs with no history) OR a "median Xd" chip
+    # (fixture has SampleCo jobs with no history) OR a "Nd median" chip
     # (fixture-ead@ has 3 seeded outcomes vs ResponsiveDemo → median 4.0d).
     has_no_data_label = any(
         "no response data yet" in t.lower() for t in speed_first_texts)
-    has_data_label = any(re.search(r"\bmedian\s*\d", t.lower())
-                            for t in speed_first_texts)
+    # "4d median · 3/3" or "median 4.0d" — accept either ordering.
+    has_data_label = any(
+        (re.search(r"\bmedian\s*[\d.]+", t.lower())
+         or re.search(r"\b[\d.]+\s*d\s*median\b", t.lower()))
+        for t in speed_first_texts
+    )
     passed = has_speed and speed_chip_count > 0 and (has_no_data_label or has_data_label)
     return {
         "gate": "G7",
@@ -133,7 +155,7 @@ async def gate_g8_wave_preview(page) -> dict:
     """G8 — Wave Authorize dialog fires GET /wave/preview and confirm
     stays DISABLED until preview loads with eligible_count > 0.
     """
-    await page.goto(f"{BASE}/feed", wait_until="domcontentloaded", timeout=45_000)
+    await _goto_stable(page, f"{BASE}/feed")
     await page.wait_for_timeout(3500)
 
     capsule_present = await _count(page, "apply-wave-capsule") > 0
@@ -204,7 +226,7 @@ async def gate_g8_wave_preview(page) -> dict:
 async def gate_g9_booking_url(page) -> dict:
     """G9 — booking URL row: input renders, saved value round-trips,
     inline http:// validation error surfaces server-side."""
-    await page.goto(f"{BASE}/preferences", wait_until="domcontentloaded", timeout=45_000)
+    await _goto_stable(page, f"{BASE}/preferences")
     await page.wait_for_timeout(3000)
 
     row_present = await _count(page, "preferences-booking-url") > 0
@@ -223,7 +245,7 @@ async def gate_g9_booking_url(page) -> dict:
         await page.wait_for_timeout(2500)
         await _screenshot(page, "g9_booking_saved_https")
         # Reload and check value round-trip.
-        await page.goto(f"{BASE}/preferences", wait_until="domcontentloaded", timeout=45_000)
+        await _goto_stable(page, f"{BASE}/preferences")
         await page.wait_for_timeout(2500)
         saved_val = await page.locator(
             '[data-testid="preferences-booking-url-input"]').first.input_value()
@@ -265,7 +287,7 @@ async def gate_g10_follow_ups(page) -> dict:
     (rails: dry-run everywhere; the founder tester replays this script
     but we still don't want to fire dispatches on every builder run).
     """
-    await page.goto(f"{BASE}/follow-ups", wait_until="domcontentloaded", timeout=45_000)
+    await _goto_stable(page, f"{BASE}/follow-ups")
     await page.wait_for_timeout(3000)
 
     heading_present = await _count(page, "follow-ups-heading") > 0
@@ -338,22 +360,97 @@ async def gate_g10_follow_ups(page) -> dict:
     }
 
 
+async def ui_login(page) -> bool:
+    """Log in via the /login page — uses the SPA's own auth flow so the
+    browser stores cookies exactly as production does. More robust than
+    cookie-injection across dev-mode restarts.
+    """
+    for _ in range(6):
+        if await _goto_stable(page, f"{BASE}/login"):
+            break
+        await page.wait_for_timeout(3000)
+    # Wait for form fields to be interactive.
+    try:
+        await page.wait_for_selector('input[type="email"]', timeout=15_000, state="visible")
+    except Exception:
+        print("ui_login: email input never appeared")
+        return False
+    try:
+        email_el = page.locator('input[type="email"]').first
+        pw_el = page.locator('input[type="password"]').first
+        await email_el.fill("fixture-ead@opportunityos.dev")
+        await email_el.press("Tab")
+        await pw_el.fill("Fixture!Test1")
+        await pw_el.press("Tab")
+        await page.wait_for_timeout(500)
+        # DIAGNOSTIC — confirm values landed as expected.
+        vals = await page.evaluate("""
+            () => ({
+              email: (document.querySelector('input[type=email]') || {}).value,
+              pw_len: ((document.querySelector('input[type=password]') || {}).value || '').length,
+            })
+        """)
+        print(f"ui_login: pre-submit values={vals}")
+        submit_btn = page.locator('[data-testid="login-submit-btn"]').first
+        if await submit_btn.count() == 0:
+            submit_btn = page.locator('button:has-text("Sign in")').first
+        await submit_btn.click()
+    except Exception as e:
+        print(f"ui_login: exception during fill/click: {e}")
+        return False
+    # After successful sign-in the router pushes to `/passport` or `/feed`.
+    for _ in range(15):
+        await page.wait_for_timeout(1500)
+        url = page.url
+        if "/login" not in url:
+            try:
+                signed_in_present = await page.evaluate(
+                    "() => (document.body ? document.body.innerText : '').includes('Signed in as')")
+            except Exception:
+                signed_in_present = False
+            if signed_in_present:
+                return True
+    # Diagnostic: capture the login-error, if any.
+    try:
+        err = await page.locator(
+            '[data-testid="login-error-message"]').first.inner_text()
+        print(f"ui_login: login-error-message text = {err!r}")
+    except Exception:
+        pass
+    print(f"ui_login: still on login-like page, url={page.url}")
+    return False
+
+
 async def main():
-    cookies = http_login()
     async with async_playwright() as pw:
         browser = await pw.chromium.launch(
             headless=True,
             executable_path=(os.environ.get("CHROMIUM_PATH") or None),
         )
-        ctx = await browser.new_context(viewport={"width": 1440, "height": 900})
-        await ctx.add_cookies(cookies)
+        ctx = await browser.new_context(
+            viewport={"width": 1440, "height": 900},
+            user_agent=(
+                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            ),
+        )
         page = await ctx.new_page()
+        # Retry the whole login (up to 3 attempts) — dev-mode preview
+        # sometimes returns transient CORS/502 during frontend restarts.
+        logged_in = False
+        for attempt in range(3):
+            logged_in = await ui_login(page)
+            if logged_in:
+                break
+            print(f"ui_login: retrying (attempt {attempt+2}/3) after 10s")
+            await page.wait_for_timeout(10_000)
 
         report = {
             "run_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "base_url": BASE,
             "user": "fixture-ead@opportunityos.dev",
             "notes": "Builder-executed replay of Phase 1 G7-G10 browser-leg gates.",
+            "logged_in": logged_in,
         }
         try:
             report["G7"] = await gate_g7_speed_sort(page)

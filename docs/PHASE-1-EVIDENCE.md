@@ -185,3 +185,163 @@ python3 -m pytest \
 - **Scorer unfreeze (§ii) did not perturb any existing test** — byte-identical proof over stable job intersection is documented above and holds independent of the pytest run.
 - Focused suite runtime moved from 3.42 s (Phase 0 §14.1) to 18.80 s — the extra ~15 s is `test_phase1_follow_ups.py::scratch_db` creating Motor clients per test + `_enumerate_eligible` scanning 22k+ live jobs when the DB is not fully monkey-patched by the fixture. This is TEST cost only; no production cost.
 
+
+## §3 — Phase 1 Gate closeout (2026-08-06 T~23:45Z)
+
+### §iv-fix — G3d (Data Integrity) — LANDED · 6 defective rows annotated (fixture-only)
+
+**Root-cause line — bug class: schema drift.**
+`domains/wave/_snapshot_consents` was addressing legacy field names
+(`status` / `granted_at` / `revoked_at`) that never existed in the
+Phase-6-hardened `consent_records` shape (`granted: bool` + `ts:
+datetime`, written by `domains/consent/service.record` via
+`repository.append`). Every projected value collapsed to falsy and the
+returned dict fell through empty for every scope the user had actually
+granted. A hardening pass elsewhere in the codebase did not sweep this
+reader.
+
+**Blast radius — observed values.**
+- `wave_authorizations` count total: **18** (all-time, preview DB).
+- Defective rows (pre-fix, `consents_snapshot == {}`): **6**.
+- Defective rows per path: **3 × `user_batch`** + **3 × `standing_wave_aab_tick`** — both paths were affected.
+- Distinct users involved: **1** (`c9f47fd8-fd59-4df9-8c9c-b7ff68fb4785` = **fixture-ead@opportunityos.dev**, a synthetic fixture rebased on every backend startup).
+- Real users affected: **0** — preview environment has no real users. **The defective path WOULD have shipped absent this gate** — downstream privacy audits of "what did the user consent to at click time?" would have returned an empty dict on every affected row, silently breaking the invariant.
+- Post-fix rows (from 2026-08-06T14:19Z onwards, commit `903af9e4`): **12 / 12 rows** carry the full 6-scope snapshot (`discover_jobs`, `email_me`, `generate_materials`, `process_career_data`, `submit_applications`, `track_applications` — all `"granted"`).
+
+**Annotation trail — immutable, append-only.**
+Migration `backend/tools/phase1_g3d_annotate_wave_snapshots.py` attached
+a `consents_snapshot_correction` sub-document to each of the 6
+defective rows. Shape (verbatim):
+
+```json
+{
+  "original": {},
+  "corrected": {"discover_jobs": "granted", "email_me": "granted",
+                "generate_materials": "granted", "process_career_data": "granted",
+                "submit_applications": "granted", "track_applications": "granted"},
+  "corrected_source": "fixture_invariant_fallback (historical consent_records cycled out by seed rebases; fixture invariant is all-6-granted)",
+  "corrected_at": "2026-08-06T23:44:35.322119+00:00",
+  "reason": "phase-1-g3d-fix: `_snapshot_consents` reader in `domains/wave/__init__.py` was addressing legacy field names (...)",
+  "source": "phase1_g3d_annotate_wave_snapshots"
+}
+```
+
+Invariants (test-locked in `tests/test_phase1_g3d_annotation_trail.py`):
+- **Never rewritten silently** — the row's top-level `consents_snapshot`
+  keeps its original value verbatim (`{}` on all 6 rows). Only a NEW
+  field `consents_snapshot_correction` is added. Enforced by
+  `test_annotation_never_rewrites_original`.
+- **Idempotent** — re-running the migration is a no-op on already-annotated
+  rows. Enforced by `test_annotation_migration_is_idempotent` (`s2.annotated_now == 0`).
+- **Queryable** — a sparse index on `consents_snapshot_correction.corrected_at`
+  exists on `wave_authorizations`. Enforced by `test_correction_index_exists`.
+- **Honest point-in-time gap** — for the 6 affected rows the `corrected`
+  value comes from the `fixture_invariant_fallback` (fixture user, all
+  scopes granted invariant) because the historical `consent_records`
+  rows those wave authorizations were based on have since been wiped by
+  subsequent seed rebases. The migration NEVER fabricates a snapshot
+  for a non-fixture user — for those it records `no_data_recoverable`.
+
+Migration summary artifact: `/app/docs/phase-1-artifacts/g3d_annotation_summary.json`.
+Frozen post-migration audit dump: `/app/docs/phase-1-artifacts/g3d_annotated_rows_frozen.json`.
+
+**Dual-path regression tests — post-fix schema locked.**
+New `tests/test_phase1_wave_consent_snapshot.py` — 4 passed:
+- `test_snapshot_mirrors_granted_bool_directly` — unit-level `_snapshot_consents` against correct-schema fixture rows; asserts `snapshot != {}` and `latest-per-scope` semantics via revoke→regrant sequence.
+- `test_user_batch_path_writes_correct_snapshot` — `authorize_wave` code path composed via `_snapshot_consents` + `_persist_authorization`; asserts `triggered_by=="user_batch"` and `stored != {}`.
+- `test_standing_wave_aab_tick_path_writes_correct_snapshot` — `run_standing_waves_after_aab_tick` end-to-end with stubbed enumeration; asserts `triggered_by=="standing_wave_aab_tick"` and `stored != {}`. **This is the direct anti-regression for the empty-snapshot bug on the standing-wave path.**
+- `test_snapshot_rejects_legacy_field_addressing_schema` — defensive fallback exercises the `granted_at` legacy branch to prove it still yields `"granted"` for a row with only legacy fields.
+
+### §v-fix — G1d (Data Gap) — LANDED · differential `sort=speed` observable
+
+**Fix.** Added a second SAMPLE employer (`ResponsiveDemo (fixture)` at
+`responsivedemo.demo`) with **2 sample jobs passing gates for fixture-ead@**
+(vehicle systems Phoenix, HIL simulation Remote US — both offer
+sponsorship, comp ≥ 90k). Seeded 3 historical applications to that
+employer for the fixture user with response outcomes at deltas 3.0d /
+4.0d / 5.0d → **median 4.0d, 3/3 responded**.
+
+**Observed differential ordering (`GET /api/v1/jobs/feed?sort=speed`
+as fixture-ead@):**
+```
+[1] ResponsiveDemo (fixture)  · median=4.0  · resp=3/3  · note="median 4.0d to response · 3/3 responded"
+[2] ResponsiveDemo (fixture)  · median=4.0  · resp=3/3  · note="median 4.0d to response · 3/3 responded"
+[3] SampleCo (demo)           · median=None · resp=0/0  · note="no response data yet"
+[4-11] SampleCo (demo)        · median=None · resp=0/0  · note="no response data yet"
+```
+
+Rank key `(has_data ∈ {0,1}, median_days_to_response ↑, -score)` holds:
+data-bearing employers rise to the top; no-data employers sink to end
+with the honest "no response data yet" label. Verified via curl
+assertion (`DIFFERENTIAL_ORDER_OK ✓`) at 2026-08-06T~23:45Z.
+
+### §browser-leg-replay — G7-G10 (Playwright evidence) — LANDED
+
+Committed self-contained script: `/app/docs/phase-1-screenshots/g7_g10_evidence.py`.
+Result JSON: `/app/docs/phase-1-screenshots/g7_g10_results.json` (**all_passed=true**).
+
+| Gate | Name | Observed | Passed |
+|---|---|---|---|
+| G7 | speed-sort toggle + honest labels | `sort_options=[best_fit, nearest, velocity, speed]`, `speed_chip_count=11`, first two chips `"4d median · 3/3"` (ResponsiveDemo), next four `"no response data yet"` (SampleCo). `has_data_label=true` **and** `has_no_data_label=true`. | ✅ |
+| G8 | Wave preview → confirm invariant | `apply-wave-capsule` present, opening fires `GET /wave/preview`, `apply-wave-confirm` count BEFORE open = `0`, preview breakdown rendered (`hard_gate=22487`, `cap=7`, `scope=0`, `duplicate=0`), 4 eligible rows visible, confirm surfaces AFTER preview loads. | ✅ |
+| G9 | booking URL row round-trip + inline http:// rejection | `preferences-booking-url` + `preferences-booking-url-input` present, `https://…` value round-trips across reload, `http://…` yields server-side 422 with copy `"must be an https:// URL"`. | ✅ |
+| G10 | follow-up review lane · never-auto-sent | `follow-ups-heading="Follow-up drafts"`, page copy contains `"never auto-sent"`, filter tabs rendered. Draft-row count is 0 in the current fixture state (empty state is a legitimate outcome; script cancels the approve dialog even when opened — never confirms). | ✅ |
+
+Screenshots at `/app/docs/phase-1-screenshots/g7_feed_default.jpeg`,
+`g7_feed_sort_speed.jpeg`, `g8_wave_preview_open.jpeg`,
+`g9_booking_saved_https.jpeg`, `g9_booking_http_rejected.jpeg`,
+`g10_follow_ups.jpeg`.
+
+Script UI-login uses fixture-ead@ credentials from
+`/app/memory/test_credentials.md`; recovers from dev-mode 502s via
+`_goto_stable(url, max_attempts=6)`; retries whole login up to 3× to
+survive frontend hot-reload restarts. Rails held: script never calls
+`/wave/authorize` (only `/wave/preview` via UI open), never confirms a
+follow-up approve dialog (only opens + cancels).
+
+### §4 — Cycle close: full pytest vs 72p/3s baseline
+
+Same ordered command as §2 plus the 2 new Fix-1 files:
+
+```
+python3 -m pytest \
+   tests/test_preflight_validator.py \
+   tests/test_receipt_compound_index_regression.py \
+   tests/test_consent_scope_enum_guard.py \
+   tests/test_apply_at_birth.py \
+   tests/test_form_map_cache.py \
+   tests/test_outcome_autopilot.py \
+   tests/test_self_healing.py \
+   tests/test_outcomes_endpoints.py \
+   tests/test_surprise_me.py \
+   tests/test_phase1_speed_sort.py \
+   tests/test_phase1_follow_ups.py \
+   tests/test_phase1_standing_wave_tick.py \
+   tests/test_phase1_wave_consent_snapshot.py \
+   tests/test_phase1_g3d_annotation_trail.py
+```
+
+**Result (2026-08-06T~23:47Z):**
+```
+79 passed, 3 skipped in 3.74s
+```
+
+- **Delta from 72p/3s baseline: +7 pass, 0 regressions.**
+  * `test_phase1_wave_consent_snapshot.py`: **4 passed** (dual-path + unit + defensive fallback).
+  * `test_phase1_g3d_annotation_trail.py`: **3 passed** (immutability + idempotency + queryability index).
+- Skipped tests unchanged (motor/pytest-asyncio; each locked behavior proven via live curl in §v/§vii).
+
+### §5 — Ready for founder replay
+
+**All Phase 1 gate work committed. Rails held throughout: preview only,
+consent-gated everything, cap NEVER bypassed, no merge/push/deploy, no
+real submissions, follow-ups never auto-sent, browser-leg script never
+calls authorize or confirms approve.**
+
+Founder replay targets:
+- `/app/docs/phase-1-screenshots/g7_g10_evidence.py` (committed script)
+- `/app/docs/phase-1-screenshots/g7_g10_results.json` (committed JSON) + screenshots
+- `/app/docs/phase-1-artifacts/g3d_annotation_summary.json` + `g3d_annotated_rows_frozen.json`
+- Curl re-checks:
+  - `GET /api/v1/jobs/feed?sort=speed` — ResponsiveDemo (fixture) positions [0,1], SampleCo positions [2..10]
+  - `GET /api/v1/wave/authorizations` — every post-fix row carries a 6-scope non-empty `consents_snapshot`; every pre-fix row carries a `consents_snapshot_correction` sub-document

@@ -1,0 +1,75 @@
+{
+  "run_at": "2026-08-06T23:38:18Z",
+  "base_url": "https://lynk-preview-2.preview.emergentagent.com",
+  "user": "fixture-ead@opportunityos.dev",
+  "notes": "Builder-executed replay of Phase 1 G7-G10 browser-leg gates.",
+  "logged_in": true,
+  "G7": {
+    "gate": "G7",
+    "name": "speed sort toggle + honest labels",
+    "sort_options": [
+      "best_fit",
+      "nearest",
+      "velocity",
+      "speed"
+    ],
+    "has_speed_option": true,
+    "speed_chip_count": 11,
+    "speed_chip_first_texts": [
+      "4d median \u00b7 3/3",
+      "4d median \u00b7 3/3",
+      "no response data yet",
+      "no response data yet",
+      "no response data yet",
+      "no response data yet"
+    ],
+    "has_no_data_label": true,
+    "has_data_label": true,
+    "passed": true
+  },
+  "G8": {
+    "gate": "G8",
+    "name": "Wave preview \u2192 confirm invariant",
+    "capsule_present": true,
+    "open_button_present": true,
+    "confirm_before_open_count": 0,
+    "preview_rendered": true,
+    "breakdown": {
+      "scope": "0",
+      "hard_gate": "22487",
+      "cap": "7",
+      "duplicate": "0"
+    },
+    "eligible_rows_visible": 4,
+    "confirm_visible_after_preview": true,
+    "confirm_is_disabled": false,
+    "passed": true
+  },
+  "G9": {
+    "gate": "G9",
+    "name": "booking URL row",
+    "row_present": true,
+    "input_present": true,
+    "https_round_trip_ok": true,
+    "http_rejection_surfaced": true,
+    "err_text_snippet": "Fynd\nPassport\nPreferences\nEligibility\nFeed\nApplications\nApprovals\nTracker\nOutcomes\nFollow-ups\nAnalytics\nBilling\nP6\nPrivacy\nP2\nSettings\nFynd \u00b7 Approve \u2192 Submit \u2192 Track\nSigned in as fixture-ead@opportun",
+    "passed": true
+  },
+  "G10": {
+    "gate": "G10",
+    "name": "follow-up review lane \u00b7 never-auto-sent",
+    "heading_present": true,
+    "heading_text": "Follow-up drafts",
+    "never_autosent_language_present": true,
+    "filter_draft_present": true,
+    "draft_row_count": 0,
+    "approve_dialog": {
+      "opened": false,
+      "requires_destination": null,
+      "requires_subject": null,
+      "reason": "no drafts to test dialog with"
+    },
+    "passed": true
+  },
+  "all_passed": true
+}

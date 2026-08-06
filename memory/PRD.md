@@ -7,6 +7,35 @@
 
 ## 🌊 Phase 1 — CONVERSION LAYER — LANDED 2026-08-06 (evidence: `/app/docs/PHASE-1-EVIDENCE.md`)
 
+**Gate close-out (2026-08-06T~23:47Z):**
+- **G3d (Data Integrity)** — CLOSED. Root-cause CLASS: schema drift.
+  `_snapshot_consents` was addressing legacy field names never present in
+  the Phase-6-hardened `consent_records` shape (correct: `granted: bool`
+  + `ts`). Blast radius: **6 wave_authorizations rows** with empty
+  `consents_snapshot={}`, all belonging to `fixture-ead@opportunityos.dev`
+  (0 real users; preview has none); split evenly across both wave paths
+  (**3 × user_batch + 3 × standing_wave_aab_tick** — both were affected).
+  Would have shipped absent the gate. Fix + immutable annotation trail
+  (`consents_snapshot_correction` sub-document per row, never a silent
+  rewrite of the original) + dual-path regression test
+  (`tests/test_phase1_wave_consent_snapshot.py` — 4 passed) +
+  annotation invariance tests
+  (`tests/test_phase1_g3d_annotation_trail.py` — 3 passed).
+- **G1d (Data Gap)** — CLOSED. Seeded second SAMPLE employer
+  `ResponsiveDemo (fixture)` with 3 response outcomes (median 4.0d, 3/3
+  responded); `sort=speed` now differentially ranks it at positions
+  [0,1] above SampleCo [2..10] with the honest `"no response data yet"`
+  label on the tail bucket. Verified via curl + Playwright.
+- **G7-G10 (Frontend leg)** — CLOSED. Self-contained Playwright script
+  `/app/docs/phase-1-screenshots/g7_g10_evidence.py` executes headless
+  Chromium as fixture-ead@, drives all four surfaces, writes structured
+  JSON + screenshots. `all_passed=true`. UI-login used (survives
+  dev-mode 502s + hot-reload restarts via `_goto_stable` retry + 3-tier
+  login retry).
+- **Focused pytest**: **79 passed / 3 skipped** (baseline 72p/3s → **+7 pass,
+  0 regressions**). Skipped tests unchanged, each locked by live curl
+  evidence.
+
 Shipped in one atomic-reload cycle under the "Precision Protocol" (evidence gates, measured baselines, no zero-regression claims without proof):
 
 **§i — Backend rebrand ("OpportunityOS" → "Fynd")** — user-facing strings only across 8 backend files (server title/log, LLM system prompts, tool UA strings, seed admin/support display names, EEO consent copy, 4 policy scope descriptions). Dev-facing comments/docstrings retained by design. Frontend fallback `consentScopes.js` updated to note the backend rebrand is complete; helper stays as a defensive floor.
