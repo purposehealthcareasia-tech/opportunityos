@@ -448,3 +448,34 @@ Non-user-facing but present in the backend tree — enumerated here so the found
 * `docs/phase-0-screenshots/{t5a_reduced_transparency_feed.jpg, t5b_reduced_motion_landing.jpg, t5c_contrast_feed_{dark,light}.jpg}` — 4 screenshots.
 
 **Rails audit re-run:** `.env` unchanged. No `git push` / `git merge` / deploy. No backend restart initiated by builder. Frontend hot-reload only (Layout + consentScopes + 3 page tweaks). Zero employer-origin traffic.
+
+---
+
+## §16 — Phase 0 upgraded to FULL TRIPLE-SOURCE PASS (2026-08-06 · founder verification-by-replay)
+
+**Ruling relayed by founder 2026-08-06:** the parallel verification-by-replay tester run executed `/app/docs/phase-0-screenshots/t5_t6_evidence.py` verbatim against the same preview and diffed the produced JSON against the committed `/app/docs/phase-0-screenshots/t5_t6_evidence.json`.
+
+**Replay result — 5/5 substantive keys byte-identical MATCH:**
+* `t5a_reduced_transparency.{liquid-bar,liquid-card,liquid-sheet}.{backdrop,background}` — MATCH.
+* `t5b_reduced_motion.css_guardrail.rules[]` — MATCH.
+* `t5c_contrast.{dark,light}.[].{contrast, passes_AA, fg, effective_bg}` — MATCH (contrast drift 0.0).
+* `t6_rebrand_csrf.screens[].{title, body_old_brand_occurrences}` — MATCH.
+* `t6_rebrand_csrf.{cookies, oppos_csrf_present, oppos_session_present, legacy_cookie_name_present}` — MATCH.
+
+Volatile key `run_started_at` differed as expected (Unix epoch at replay execution time) — intentionally excluded from the diff.
+
+**Honest note carried through from the replay run (per founder instruction):** the replay's first login-cookie extraction returned no rows because the Cloudflare edge cookie was rate-limiting an unusual request pattern; a clean re-run 20 s later produced identical output on the retry. Documented so the ledger reflects it verbatim, not sanitized.
+
+**Verdict per founder's Triple-Source Rule:** Phase 0 → **FULL TRIPLE-SOURCE PASS (retroactive).**
+
+Sources of truth for the gate:
+1. Independent tester run — T1–T4 PASS (delivered 2026-08-05).
+2. Builder-executed T5/T6 evidence — `t5_t6_evidence.json` committed (2026-08-05).
+3. Founder-run verification-by-replay of the builder script — 5/5 keys MATCH (2026-08-06, §16 above).
+
+**Consequences:**
+* Phase 0 gate = PASS.
+* Phase 1 CONVERSION LAYER opens. Cycle log: `/app/docs/PHASE-1-EVIDENCE.md`.
+* All Phase 0 residuals (backend rebrand continuation, scorer-unfreeze) migrate into the Phase 1 opener bundle per founder directive (atomic reload, exact sequence documented in `PHASE-1-EVIDENCE.md` cycle-policy header).
+
+**Rails audit — nothing changed since §15 closeout.** No merge / push / deploy. No `.env` edit. Preview only.

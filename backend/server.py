@@ -90,7 +90,7 @@ def _assert_unique_operation_ids(app_: FastAPI) -> None:
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    log.info("OpportunityOS backend starting…")
+    log.info("Fynd backend starting…")
     await ensure_indexes()
     await ensure_session_indexes()
     await ensure_throttle_indexes()

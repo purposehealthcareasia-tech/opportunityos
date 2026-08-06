@@ -326,7 +326,7 @@ def refuse_instruction(instruction: str, approved_claims: list[dict]) -> dict | 
                     "reason": f"missing_claim:{entity}",
                     "message": (
                         f"Instruction asks to include \"{entity}\" but no approved claim on your "
-                        f"Passport supports it. OpportunityOS never fabricates. Add the claim on "
+                        f"Passport supports it. Fynd never fabricates. Add the claim on "
                         f"your Passport with evidence, get it approved, and try again."
                     ),
                 }

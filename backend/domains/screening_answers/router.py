@@ -120,7 +120,7 @@ async def answer_screener(
         raise HTTPException(
             status_code=400,
             detail={"error": "demographic_answers_never_stored",
-                    "message": "OpportunityOS never stores demographic answers. Answer these directly on the employer's form."},
+                    "message": "Fynd never stores demographic answers. Answer these directly on the employer's form."},
         )
     if req.provenance not in ("user", "library"):
         raise HTTPException(status_code=400, detail={"error": "invalid_provenance",

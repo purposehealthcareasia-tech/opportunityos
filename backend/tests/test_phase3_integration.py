@@ -314,7 +314,7 @@ def test_import_aggregator_hosts_return_409(user_zero_token, url, host):
     d = r.json()["detail"]
     assert d["error"] == "route_unavailable_platform_policy"
     assert d["host"] == host
-    assert "OpportunityOS never scrapes" in d["message"]
+    assert "Fynd never scrapes" in d["message"]
 
 
 def test_import_real_employer_url_returns_201_derived(user_zero_token):

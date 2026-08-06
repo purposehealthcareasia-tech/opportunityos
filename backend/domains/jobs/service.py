@@ -95,7 +95,7 @@ async def user_import(user_id: str, url: str, title: str | None, company_name: s
             detail={
                 "error": "route_unavailable_platform_policy",
                 "host": host,
-                "message": "OpportunityOS never scrapes or automates aggregator sites. Please find the employer's original posting on their careers page and paste that URL instead.",
+                "message": "Fynd never scrapes or automates aggregator sites. Please find the employer's original posting on their careers page and paste that URL instead.",
             },
         )
     if blocked:
