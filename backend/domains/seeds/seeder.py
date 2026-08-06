@@ -23,14 +23,14 @@ async def _upsert_taxonomy() -> int:
 
 async def _upsert_companies() -> int:
     db = get_db()
-    for row in [*seed_data.COMPANIES, seed_data.SAMPLE_COMPANY]:
+    for row in [*seed_data.COMPANIES, seed_data.SAMPLE_COMPANY, seed_data.SAMPLE_COMPANY_2]:
         await db.companies.update_one(
             {"domain": row["domain"]},
             {
                 "$set": {
                     "name": row["name"],
                     "ats_type": row["ats_type"],
-                    "verified_domain": row["domain"] != "sampleco.demo",
+                    "verified_domain": row["domain"] not in ("sampleco.demo", "responsivedemo.demo"),
                     "green_lane": False,
                 },
                 "$setOnInsert": {"id": str(uuid.uuid4()), "domain": row["domain"]},
@@ -38,6 +38,140 @@ async def _upsert_companies() -> int:
             upsert=True,
         )
     return await db.companies.count_documents({})
+
+
+async def _upsert_sample_jobs_responsive() -> int:
+    """Phase 1 §iv fix (2026-08-06) — upsert SAMPLE jobs attributed to
+    SAMPLE_COMPANY_2 (`responsivedemo.demo`). These exist so `sort=speed`
+    has a data-bearing employer to rank above the no-data bucket.
+
+    Kept minimal: 2 jobs, both PASS gates for `fixture-ead@` (Phoenix +
+    Remote US, sponsors, comp inside band). Requirements shape mirrors
+    `_upsert_sample_jobs` so the gate engine treats them the same.
+    """
+    db = get_db()
+    company = await db.companies.find_one({"domain": "responsivedemo.demo"})
+    company_id = company["id"] if company else None
+    for idx, j in enumerate(seed_data.SAMPLE_JOBS_RESPONSIVE, start=1):
+        canonical_key = f"responsivedemo.demo::sample-{idx:02d}"
+        req = {
+            "skills_required": ["matlab", "simulink", "systems"],
+            "licenses": [], "degree_level": "BS", "years_min": 2,
+        }
+        screener_questions = [
+            {"id": f"{canonical_key}#q-yoe", "kind": "normal",
+              "category": "years_of_experience",
+              "question_pattern": "years_of_experience:matlab",
+              "text": "How many years of MATLAB experience?", "order_hint": 1},
+            {"id": f"{canonical_key}#q-visa", "kind": "sensitive_visa",
+              "category": "work_authorization",
+              "question_pattern": "work_authorization_status",
+              "text": "Are you authorized to work in the US? Sponsorship needed?", "order_hint": 2},
+        ]
+        await db.jobs.update_one(
+            {"canonical_key": canonical_key},
+            {
+                "$set": {
+                    "company_id": company_id,
+                    "company_name": "ResponsiveDemo (fixture)",
+                    "company_domain": "responsivedemo.demo",
+                    "source": "seed",
+                    "origin_url": f"https://responsivedemo.demo/careers/sample-{idx:02d}",
+                    "title": j["title"],
+                    "taxonomy_family": j["family"],
+                    "geo": j["geo"],
+                    "comp": j["comp"],
+                    "jd_text": j["jd"],
+                    "apply_method": j["apply_method"],
+                    "eligibility_requirements": j.get("eligibility", {}),
+                    "requirements": req,
+                    "screener_questions": screener_questions,
+                    "first_seen": utc_now(),
+                    "last_verified": utc_now(),
+                    "status": "live",
+                    "also_seen": [],
+                    "is_sample": True,
+                    "lane": "career",
+                    "distance_from_phoenix_mi": 0.0 if "Phoenix" in (j.get("geo") or "") else None,
+                },
+                "$setOnInsert": {"id": str(uuid.uuid4()), "canonical_key": canonical_key},
+            },
+            upsert=True,
+        )
+    return await db.jobs.count_documents({"company_domain": "responsivedemo.demo"})
+
+
+async def _seed_fixture_speed_history(user_id: str, now) -> int:
+    """Phase 1 §iv fix (2026-08-06) — seed FIXTURE-only application history +
+    response outcomes against `SAMPLE_COMPANY_2` so `sort=speed` has a
+    real median-days-to-response to rank on for `fixture-ead@`.
+
+    Inserts three past applications submitted 45-90 days ago, each with
+    a `response` outcome 3-5 days after submission. Median = 4d.
+
+    Idempotent: wipes any prior `fixture=True` rows for this user against
+    the responsive-demo employer before inserting.
+    """
+    from datetime import timedelta
+    db = get_db()
+    responsive_key_prefix = "responsivedemo.demo"
+    # Wipe prior fixture rows for this user against this employer so this
+    # is safe to re-run on every rebase.
+    prior_apps = await db.applications.find(
+        {"user_id": user_id, "fixture": True,
+          "job_snapshot.company_domain": responsive_key_prefix},
+        {"id": 1},
+    ).to_list(length=None)
+    if prior_apps:
+        ids = [a["id"] for a in prior_apps]
+        await db.applications.delete_many({"id": {"$in": ids}})
+        await db.application_outcomes.delete_many({"application_id": {"$in": ids}})
+
+    inserted = 0
+    # 3 past applications with response outcomes @ known deltas so
+    # median_days_to_response = 4.0 (middle value).
+    entries = [
+        # (days_ago_submitted, days_delta_to_response)
+        (75, 3.0),
+        (60, 4.0),
+        (45, 5.0),
+    ]
+    for i, (submit_ago, delta_days) in enumerate(entries, start=1):
+        submitted_at = now - timedelta(days=submit_ago)
+        responded_at = submitted_at + timedelta(days=delta_days)
+        app_id = str(uuid.uuid4())
+        await db.applications.insert_one({
+            "id": app_id,
+            "user_id": user_id,
+            "job_id": f"fixture-responsive-{i}",
+            "state": "submitted",
+            # NOTE: omit `company_id` so `_load_application_meta` falls back
+            # to `canonical_key.split("::")[0]` == "responsivedemo.demo" —
+            # the same key derived on the feed side. Without this the two
+            # sides use different keys and speed-sort can't match rows.
+            "job_snapshot": {
+                "canonical_key": f"{responsive_key_prefix}::past-{i:02d}",
+                "company_name": "ResponsiveDemo (fixture)",
+                "company_domain": responsive_key_prefix,
+                "title": f"Past Application {i}",
+            },
+            "submitted_at": submitted_at,
+            "created_at": submitted_at,
+            "fixture": True,
+            "source": "fixture_rebase",
+        })
+        await db.application_outcomes.insert_one({
+            "id": str(uuid.uuid4()),
+            "application_id": app_id,
+            "user_id": user_id,
+            "kind": "response",
+            "at": responded_at,
+            "note": "fixture-seeded response outcome (demo data for sort=speed)",
+            "fixture": True,
+            "source": "fixture_rebase",
+        })
+        inserted += 1
+    return inserted
 
 
 async def _upsert_sample_jobs() -> int:
@@ -466,6 +600,7 @@ async def _rebase_fixture_user() -> str:
     # / 6-excluded gate geometry (feed reads jobs, not applications).
     await _seed_fixture_assisted_lane_row(user_id, now)
     await _seed_fixture_active_kill_list_row(user_id, now)
+    await _seed_fixture_speed_history(user_id, now)
     # Audit row.
     await db.audit_logs.insert_one({
         "id": str(uuid.uuid4()),
@@ -831,6 +966,7 @@ async def run_seeds() -> dict:
     counts["companies"] = await _upsert_companies()
     counts["purged_test_jobs"] = await _cleanup_non_sample_test_jobs()
     counts["sample_jobs"] = await _upsert_sample_jobs()
+    counts["sample_jobs_responsive"] = await _upsert_sample_jobs_responsive()
 
     admin_id = await _ensure_user(seed_data.ADMIN_USER["email"], seed_data.ADMIN_USER["password"], seed_data.ADMIN_USER["name"])
     await _ensure_admin_role(admin_id, "admin")

@@ -54,18 +54,35 @@ class WaveScope(BaseModel):
 # ------------------------------ Helpers ---------------------------------- #
 
 async def _snapshot_consents(user_id: str) -> dict:
-    """Return `{scope → status}` for the user AT authorization time.
-    Stored on the wave_authorizations row so audits can reconstruct what
-    the user had granted when they clicked."""
+    """Return `{scope → 'granted'|'revoked'}` for the user AT authorization
+    time. Stored on the wave_authorizations row so audits can reconstruct
+    what the user had granted when they clicked.
+
+    `consent_records` is append-only: every grant / revoke inserts a new
+    row with `{scope, granted: bool, ts: datetime}`. We sort by `ts`
+    ascending so the LATEST row per scope wins.
+
+    2026-08-06 bug fix (G3d): previous version read a non-existent
+    `status` field and a non-existent `granted_at`/`revoked_at` pair,
+    which caused every scope to fall through to "revoked" regardless of
+    actual state. Correct schema is `granted: bool` + `ts`.
+    """
     db = get_db()
     out: dict[str, str] = {}
     async for r in db.consent_records.find(
-        {"user_id": user_id}, {"_id": 0, "scope": 1, "status": 1, "granted_at": 1, "revoked_at": 1},
-    ):
-        # Latest wins — collection is append-only in Phase 5; we
-        # tolerate either shape.
-        out[r["scope"]] = r.get("status") or (
-            "granted" if r.get("granted_at") and not r.get("revoked_at") else "revoked")
+        {"user_id": user_id},
+        {"_id": 0, "scope": 1, "granted": 1, "ts": 1},
+    ).sort("ts", 1):  # ascending → latest overwrites earliest per scope
+        scope = r.get("scope")
+        if not scope:
+            continue
+        # Prefer the explicit `granted` bool; fall back to defensive
+        # legacy fields if a future row shape includes them.
+        granted = r.get("granted")
+        if granted is None:
+            # legacy fallback — never triggered on current preview data
+            granted = bool(r.get("granted_at") and not r.get("revoked_at"))
+        out[scope] = "granted" if granted else "revoked"
     return out
 
 

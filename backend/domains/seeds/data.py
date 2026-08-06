@@ -84,6 +84,27 @@ COMPANIES: list[dict] = [
 # ---------------------------------------------------------------------------
 SAMPLE_COMPANY = {"domain": "sampleco.demo", "name": "SampleCo (demo)", "ats_type": "sample"}
 
+# Phase 1 §iv fix (2026-08-06) — SECOND sample employer with response-outcome
+# history so `sort=speed` can differentially rank data-bearing employers first.
+# Clearly labeled as fixture/SAMPLE; never a real employer.
+SAMPLE_COMPANY_2 = {"domain": "responsivedemo.demo", "name": "ResponsiveDemo (fixture)", "ats_type": "sample"}
+
+# Extra SAMPLE jobs attributed to SAMPLE_COMPANY_2. These are FIXTURE-only —
+# their purpose is to give `sort=speed` a data-bearing employer so the ranking
+# is observably different from the no-data bucket.
+SAMPLE_JOBS_RESPONSIVE: list[dict] = [
+    # Passes gates for fixture-ead (Phoenix, sponsors, comp >= 90k, offers_sponsorship).
+    {"title": "Vehicle Systems Engineer — R", "family": "vehicle systems",
+      "geo": "Phoenix, AZ", "comp": "$118k-$150k", "apply_method": "internal",
+      "eligibility": {"requires_us_person": False, "offers_sponsorship": True},
+      "jd": "Responsive fixture role — Own vehicle-level requirements. This role is a fixture demo for the sort=speed data-bearing employer."},
+    # Remote US — passes for fixture-ead too.
+    {"title": "HIL Simulation Engineer — R", "family": "simulation (MIL/SIL/HIL)",
+      "geo": "Remote (US)", "comp": "$115k-$150k", "apply_method": "ats-workday",
+      "eligibility": {"requires_us_person": False, "offers_sponsorship": True},
+      "jd": "Responsive fixture role — HIL bench for a fixture demo. This role is fixture-only, used to visualize sort=speed."},
+]
+
 SAMPLE_JOBS: list[dict] = [
     # 1 — PASS for fixture-ead (Phoenix, AZ; offers_sponsorship True; comp ≥ 90k)
     {"title": "Vehicle Systems Engineer", "family": "vehicle systems",
