@@ -80,6 +80,22 @@ async def _throttle_check(user_id: str, destination: str) -> None:
         })
 
 
+async def _load_booking_url(user_id: str) -> str | None:
+    """Phase 1 §vi (1c) — read the user's most-recent saved `booking_url`
+    from their preferences payload. Returns None if not set or if the
+    stored value is empty. Validation on save already asserts https://.
+    """
+    row = await get_db().preferences.find_one(
+        {"user_id": user_id}, sort=[("version", -1)],
+        projection={"_id": 0, "payload": 1},
+    )
+    url = ((row or {}).get("payload") or {}).get("booking_url")
+    if not url:
+        return None
+    url = str(url).strip()
+    return url or None
+
+
 @router.post("/dispatch", status_code=status.HTTP_201_CREATED)
 async def dispatch(req: EmailDispatchRequest,
                     user: dict = Depends(require_consent("submit_applications"))):
@@ -134,6 +150,16 @@ async def dispatch(req: EmailDispatchRequest,
     # a stored verdict, not just blocks).
     await preflight.persist_verdict(verdict)
 
+    # Phase 1 §vi (1c) — instant-scheduling link. Append the user's saved
+    # booking URL to the outbound body when present. Runs AFTER preflight
+    # so validator claim-grounding is not muddied by user-supplied contact
+    # metadata (a URL is not a claim). Never invents placement — the line
+    # is appended verbatim as a signature-adjacent footer.
+    body_final = req.body
+    booking_url = await _load_booking_url(user["id"])
+    if booking_url:
+        body_final = f"{req.body.rstrip()}\n\nBook a time: {booking_url}"
+
     now = utc_now()
     outbox = {
         "id": str(uuid.uuid4()),
@@ -141,11 +167,12 @@ async def dispatch(req: EmailDispatchRequest,
         "application_id": req.application_id,
         "destination": req.destination.lower(),
         "subject": req.subject,
-        "body": req.body,
+        "body": body_final,
         "reply_to": req.reply_to,
         "dedup_key": dedup,
         "state": "dry_run",
         "sent_to_smtp": False,
+        "booking_url_attached": bool(booking_url),
         "created_at": now,
         "provider": "local_sink",
     }

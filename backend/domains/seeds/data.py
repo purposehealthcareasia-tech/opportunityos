@@ -216,14 +216,14 @@ USER_ZERO_SKILLS = ["MATLAB", "Simulink", "SolidWorks", "ANSYS", "embedded syste
 ADMIN_USER = {
     "email": "admin@opportunityos.dev",
     "password": "Admin!Console1",
-    "name": "OpportunityOS Admin",
+    "name": "Fynd Admin",
     "role": "admin",
 }
 
 SUPPORT_USER = {
     "email": "support@opportunityos.dev",
     "password": "Support!Console1",
-    "name": "OpportunityOS Support",
+    "name": "Fynd Support",
     "role": "support",
 }
 

@@ -1,0 +1,35 @@
+{
+  "runs": 3,
+  "base_url": "https://lynk-preview-2.preview.emergentagent.com",
+  "note": "dev-mode preview (react-scripts start + uvicorn --reload); production build will be faster",
+  "wall_time_median_s": 22.824,
+  "wall_time_min_s": 22.723,
+  "lcp_median_ms": 692,
+  "lcp_min_ms": 636,
+  "raw": [
+    {
+      "idx": 1,
+      "wall_time_s": 22.723,
+      "lcp_ms": 692,
+      "ttfb_ms": 103.4,
+      "dom_content_loaded_ms": 332.1,
+      "load_ms": 332.2
+    },
+    {
+      "idx": 2,
+      "wall_time_s": 23.465,
+      "lcp_ms": 740,
+      "ttfb_ms": 129.9,
+      "dom_content_loaded_ms": 364.3,
+      "load_ms": 364.4
+    },
+    {
+      "idx": 3,
+      "wall_time_s": 22.824,
+      "lcp_ms": 636,
+      "ttfb_ms": 123.3,
+      "dom_content_loaded_ms": 345.7,
+      "load_ms": 345.8
+    }
+  ]
+}

@@ -21,7 +21,7 @@ import time
 import httpx
 
 
-USER_AGENT = ("OpportunityOS-CatalogVerify/1.0 "
+USER_AGENT = ("Fynd-CatalogVerify/1.0 "
               "(contact: support@opportunityos.dev)")
 
 # Candidate additions — publicly-documented Greenhouse / Lever / Ashby boards

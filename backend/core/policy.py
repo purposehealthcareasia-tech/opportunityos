@@ -10,19 +10,19 @@ CONSENT_SCOPES = [
         "scope": "process_career_data",
         "required": True,
         "label": "Process my career information",
-        "description": "Let OpportunityOS process the résumé data, claims, and projects I approve so I can build a verified Career Passport.",
+        "description": "Let Fynd process the résumé data, claims, and projects I approve so I can build a verified Career Passport.",
     },
     {
         "scope": "discover_jobs",
         "required": False,
         "label": "Surface job opportunities",
-        "description": "Let OpportunityOS discover job openings that match my approved Career Passport.",
+        "description": "Let Fynd discover job openings that match my approved Career Passport.",
     },
     {
         "scope": "generate_materials",
         "required": False,
         "label": "Draft grounded application materials",
-        "description": "Let OpportunityOS help me draft résumés and cover letters grounded strictly in my approved Passport. Every draft is reviewed by me before it leaves my account.",
+        "description": "Let Fynd help me draft résumés and cover letters grounded strictly in my approved Passport. Every draft is reviewed by me before it leaves my account.",
     },
     {
         "scope": "track_applications",
@@ -43,7 +43,7 @@ CONSENT_SCOPES = [
         "scope": "submit_applications",
         "required": False,
         "label": "Submit applications on my behalf (dry-run in preview)",
-        "description": "Authorize OpportunityOS to submit applications you explicitly approve. In preview this is DRY-RUN only — nothing is sent to a real employer without a separate per-application confirmation. Revocable at any time.",
+        "description": "Authorize Fynd to submit applications you explicitly approve. In preview this is DRY-RUN only — nothing is sent to a real employer without a separate per-application confirmation. Revocable at any time.",
     },
 ]
 

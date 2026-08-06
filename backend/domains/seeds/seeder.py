@@ -117,7 +117,7 @@ async def _upsert_sample_jobs() -> int:
                 "question_pattern": "eeo_static_notice",
                 "text": (
                     "Employers may ask about gender, race/ethnicity, veteran status, and disability "
-                    "on their own forms. OpportunityOS never stores, generates, or suggests answers "
+                    "on their own forms. Fynd never stores, generates, or suggests answers "
                     "to these. Answer them directly on the employer's site if you choose to."
                 ),
                 "order_hint": 5,

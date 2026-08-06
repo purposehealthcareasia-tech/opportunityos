@@ -1,13 +1,39 @@
-# OpportunityOS — Product Requirements (living)
+# Fynd — Product Requirements (living)
 
 **Codename in repo:** LYNK.
 **Web-first.** Backend: FastAPI @ 8001. Frontend: React @ 3000. DB: MongoDB. Ingress: all backend under `/api/*`.
 
 ---
 
-## 🌊 Phase 0 — Fynd Liquid retheme + rebrand — READY FOR TESTER (2026-08-04)
+## 🌊 Phase 1 — CONVERSION LAYER — LANDED 2026-08-06 (evidence: `/app/docs/PHASE-1-EVIDENCE.md`)
 
-**Rebrand:** OpportunityOS → **Fynd** (user-visible strings only — code identifiers, env vars, DB name, and API paths unchanged). 15 frontend files touched, 31 occurrences replaced.
+Shipped in one atomic-reload cycle under the "Precision Protocol" (evidence gates, measured baselines, no zero-regression claims without proof):
+
+**§i — Backend rebrand ("OpportunityOS" → "Fynd")** — user-facing strings only across 8 backend files (server title/log, LLM system prompts, tool UA strings, seed admin/support display names, EEO consent copy, 4 policy scope descriptions). Dev-facing comments/docstrings retained by design. Frontend fallback `consentScopes.js` updated to note the backend rebrand is complete; helper stays as a defensive floor.
+
+**§ii — Scorer unfreeze** — new `services/scored_cache.py` (bounded LRU, key = `(ctx_sig, job_id, job.last_verified_iso, weights_version)`) memoizes `gate_engine.evaluate() + scoring.score()` per user × job so the 22k-job scoring loop is off the `/feed` hot path. **Byte-identical proven** over the stable pre/post intersection (`pre_stable_md5 = post_stable_md5 = acd2f89b7af6cb3041d1e005dd8c3a81`; 9 passing + 22,440 excluded jobs match exactly). Weights/gate/scoring code untouched — same functions run on miss; hit returns exact stored tuple. Byte-identity was the founder-mandated gate — passed.
+
+**§iii — Feed LCP re-measure** — `backend/tools/feed_lcp_probe.py` Playwright headless, 3 runs against preview `/feed` as `fixture-ead@`. **LCP median 692 ms · min 636 ms · max 740 ms** (Phase 0 closeout was 3.98 s). Dev-mode caveat cited (`react-scripts start` + `uvicorn --reload`).
+
+**§iv — 1a Speed-ranked feed sort** — additive `sort=speed` on `GET /api/v1/jobs/feed`. Rank key = `(has_data ∈ {0,1}, median_days_to_response ↑, -score)`. Data source: THIS USER's own `application_outcomes.compute_group_stats(group_by=employer, since_days=90)` — user-scoped, no cross-employer response-history sharing (privacy hard-stop preserved). No-data employers sink to end, labeled `"no response data yet"`. Default sort unchanged (`best_fit`).
+
+**§v — 1b Apply Wave + Spectrum Builder** — new `POST /api/v1/wave/authorize` batch-queues eligible spectrum jobs into Submit Sprint. Cap NEVER bypassed (rolling 30-day per-employer cap counts wave-queued rows against remaining slots). Consent-scope snapshot recorded on every `wave_authorizations` row. Standing Wave scope persisted to `standing_waves` and auto-runs on AAB ticks (hook: `run_standing_waves_after_aab_tick`). `GET /wave/authorizations`, `GET /wave/standing`, `DELETE /wave/standing`.
+
+**§vi — 1c Instant-scheduling link** — new persisted `booking_url` field on `PreferencesPayload` (https:// validated). If set, appended verbatim to outbound email body after preflight passes ("Book a time: <url>"). Never invents placement. Outbox row records `booking_url_attached: true`.
+
+**§vii — 1d Follow-up drafts** — new `follow_up_drafts` collection + endpoints (`POST /follow-ups`, `GET /follow-ups`, `POST /follow-ups/{id}/approve`, `POST /follow-ups/{id}/discard`). Schedules from user's own employer median-days-to-response (fallback 7d). **HARD INVARIANT (test-locked):** `test_no_dispatch_sweep_touches_drafts` static-grep test fails if any code path outside the follow-ups module writes to `follow_up_drafts`. Approve is the ONLY transition-to-send — creates a FRESH `email_outbox` row via existing `email_route.dispatch` pipeline (still dry-run in preview).
+
+**Fixed side quest — pre-existing 500 bug in `server.py::scrub_validation_error`** — pydantic v2 stuffs raw `ValueError` into `err["ctx"]["error"]` which broke `json.dumps`. Handler now coerces `ctx` values to strings, so all custom field validators return clean 422s.
+
+**Pytest baseline: 62 → 71 passed / 3 skipped / 0 regressions** (skipped tests locked by live curl evidence). Same ordered command as Phase 0 §14.1 + 2 new Phase-1 test files.
+
+**Rails held all pass**: preview only, no merge/push/deploy, no real submissions, no scraping, ONE supervisor restart never needed (uvicorn hot-reload picked up all changes atomically), byte-identical scoring proof committed BEFORE Step (iii), cap NEVER bypassed, follow-up drafts unreachable by any dispatch sweep.
+
+---
+
+## 🌊 Phase 0 — Fynd Liquid retheme + rebrand — PASSED 2026-08-04
+
+**Rebrand:** OpportunityOS → **Fynd** (user-visible strings only — code identifiers, env vars, DB name, and API paths unchanged).
 
 **Branch:** `feat/liquid-ui` @ HEAD `daf06b68…` (+ two sanctioned commits on top of `1f6009fc`). Founder confirmed rebase is NOT required (2026-08-04).
 

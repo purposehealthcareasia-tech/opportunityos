@@ -3,16 +3,14 @@
 export const POLICY_TEXT_VERSION_FALLBACK = '1.0';
 
 /**
- * Merge helper — backend `/api/v1/meta/policy` still ships four legacy scope
- * descriptions that reference the pre-rebrand name ("Let OpportunityOS…" /
- * "Authorize OpportunityOS…"). Fixing the backend copy is a Python edit
- * that would trigger uvicorn's --reload watchdog and interrupt the running
- * AAB observation window. Until the founder authorizes a backend touch,
- * this helper substitutes the correctly-branded copy from
- * CONSENT_SCOPES_FALLBACK on top of every backend scope by matching `scope`
- * key. Order is: backend row (label / required / scope) wins where present;
- * description falls back to the local fallback string when the backend
- * description contains the legacy brand. Frontend-only, zero backend risk.
+ * Merge helper — historically backend `/api/v1/meta/policy` shipped four
+ * legacy scope descriptions that referenced the pre-rebrand name
+ * ("Let OpportunityOS…" / "Authorize OpportunityOS…"). Phase 1 Step (i)
+ * (2026-08-06, PHASE-1-EVIDENCE §1) rebranded those strings in
+ * `backend/core/policy.py`, so this helper is now a defensive fallback:
+ * if any legacy string ever resurfaces (older cached policy, mixed
+ * deploy), the frontend still renders the correctly-branded copy.
+ * Frontend-only, zero backend risk.
  */
 export function rebrandScopeCatalog(backendScopes) {
   if (!Array.isArray(backendScopes)) return CONSENT_SCOPES_FALLBACK;
@@ -64,10 +62,11 @@ export const CONSENT_SCOPES_FALLBACK = [
     description: 'Send me periodic email updates about relevant opportunities and changes to my Passport.',
   },
   {
-    // Phase 4 dispatch-authorization scope. Fallback description mirrors the
-    // rebranded backend copy (source in `backend/core/policy.py` still says
-    // "OpportunityOS" — kept out of scope for Phase 0 to avoid a backend
-    // reload during the AAB observation window; see PHASE-0-EVIDENCE §15).
+    // Phase 4 dispatch-authorization scope. Fallback description mirrors
+    // the rebranded backend copy (source in `backend/core/policy.py` was
+    // rebranded to "Fynd" in Phase 1 Step (i), 2026-08-06 — see
+    // PHASE-1-EVIDENCE §1). The fallback stays here as a defensive floor
+    // so a stale cached policy payload never resurfaces the legacy brand.
     scope: 'submit_applications',
     required: false,
     label: 'Submit applications on my behalf (dry-run in preview)',

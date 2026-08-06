@@ -25,7 +25,7 @@ Rails:
     * Only GET. No POST. No JavaScript execution.
     * Polite: max 1 req/sec per host; ≤ 3 retries per URL with exponential
       backoff (2s, 5s, 12s); jitter added.
-    * User-Agent identifies us: "OpportunityOS-RouteCensus/1.0
+    * User-Agent identifies us: "Fynd-RouteCensus/1.0
       (contact: support@opportunityos.dev)"
     * Aborts if server returns 429 twice in a row: leaves classification
       as `portal-other` with `transient_failures = 2` for later review.
@@ -55,7 +55,7 @@ import os  # noqa: E402
 
 load_dotenv("/app/backend/.env")
 
-USER_AGENT = "OpportunityOS-RouteCensus/1.0 (contact: support@opportunityos.dev)"
+USER_AGENT = "Fynd-RouteCensus/1.0 (contact: support@opportunityos.dev)"
 
 
 def _classify(host: str, status: Optional[int]) -> str:

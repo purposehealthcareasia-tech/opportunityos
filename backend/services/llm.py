@@ -80,7 +80,7 @@ ALLOWED_TYPES = {
     "preference", "screener_answer", "link",
 }
 
-SYSTEM_PROMPT = """You are OpportunityOS's résumé extractor.
+SYSTEM_PROMPT = """You are Fynd's résumé extractor.
 
 Your job is to convert a résumé's plain text into an array of atomic "claims".
 
@@ -225,7 +225,7 @@ async def parse_resume_text(text: str, document_id: str, user_id: str | None = N
 TAILOR_PROVIDER = "anthropic"
 TAILOR_MODEL = "claude-sonnet-4-5-20250929"
 
-TAILOR_SYSTEM_PROMPT = """You are OpportunityOS's grounded résumé tailoring engine.
+TAILOR_SYSTEM_PROMPT = """You are Fynd's grounded résumé tailoring engine.
 
 You produce résumé bullet lines that are STRICTLY grounded in a candidate's APPROVED Career
 Passport claims. You never invent facts.

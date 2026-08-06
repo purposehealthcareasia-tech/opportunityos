@@ -141,11 +141,11 @@ async def lifespan(_app: FastAPI):
             _disc_stop()
         except Exception:
             pass
-    log.info("OpportunityOS backend shutting down…")
+    log.info("Fynd backend shutting down…")
 
 
 app = FastAPI(
-    title="OpportunityOS API",
+    title="Fynd API",
     version="0.1.0",
     openapi_url="/api/openapi.json",
     docs_url="/api/docs",
@@ -231,7 +231,21 @@ def _scrub_input(value):
 async def scrub_validation_error(request: Request, exc: RequestValidationError):
     """422 handler that never lets a submitted password, token, otp code,
     session id or refresh token leak back to the caller inside the error
-    body. Preserves loc / msg / type so schema debugging still works."""
+    body. Preserves loc / msg / type so schema debugging still works.
+
+    2026-08-06 fix: pydantic v2 sometimes stuffs a raw `Exception` object
+    into `err["ctx"]["error"]` (e.g. when a `@field_validator` raises
+    ValueError). That is not JSON-serializable and blew up the response
+    render as a 500. We now coerce `ctx` values to their string
+    representation so the loc/msg is preserved but the exception object
+    never reaches `json.dumps`.
+    """
+    def _safe_ctx(ctx: object) -> object:
+        if not isinstance(ctx, dict):
+            return str(ctx)
+        return {k: (v if isinstance(v, (str, int, float, bool, type(None)))
+                     else str(v)) for k, v in ctx.items()}
+
     scrubbed = []
     for err in exc.errors():
         item = {
@@ -242,7 +256,7 @@ async def scrub_validation_error(request: Request, exc: RequestValidationError):
         if "input" in err:
             item["input"] = _scrub_input(err.get("input"))
         if "ctx" in err:
-            item["ctx"] = err.get("ctx")
+            item["ctx"] = _safe_ctx(err.get("ctx"))
         scrubbed.append(item)
     return JSONResponse(status_code=422, content={"detail": scrubbed})
 
@@ -332,3 +346,9 @@ app.include_router(email_route_router)
 app.include_router(preflight_router)
 app.include_router(employer_intake_router)
 app.include_router(employer_intake_admin_router)
+
+# Phase 1 — Conversion Layer (§v Apply Wave, §vii Follow-up drafts)
+from domains.wave import router as wave_router  # noqa: E402
+from domains.follow_ups import router as follow_ups_router  # noqa: E402
+app.include_router(wave_router)
+app.include_router(follow_ups_router)

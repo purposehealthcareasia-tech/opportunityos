@@ -5,6 +5,7 @@ from core.deps import get_current_user, require_consent
 from core.db import get_db
 from services.gate_engine import build_context, evaluate
 from services.scoring import score as score_job, WEIGHTS_VERSION
+from services import scored_cache
 from domains.jobs.models import ImportRequest, ResolveOriginRequest, HideRequest
 from domains.jobs import service as jobs_svc, repository as jobs_repo
 from domains.applications import service as apps_svc
@@ -140,10 +141,15 @@ async def feed(user: dict = Depends(require_consent("discover_jobs")),
     from domains.match_scores import service as ms
     from domains.usage_meters import service as um
 
+    # Phase 1 Step (ii) scorer unfreeze — hash the ctx ONCE per request; the
+    # scored-tuple cache uses this signature as part of its key so byte-
+    # identical outputs are guaranteed by construction (same inputs → same
+    # cached (gate, score_row) tuple).
+    ctx_sig = scored_cache.ctx_signature(ctx)
+
     for job in jobs:
-        gate = evaluate(ctx, job)
+        gate, s = scored_cache.get_or_compute(ctx, job, ctx_sig=ctx_sig)
         if gate["pass_all"]:
-            s = score_job(ctx, job, gate)
             was_new = await ms.upsert(user_id=user["id"], job_id=job["id"], score=s, gates=gate)
             if was_new:
                 scored_new_count += 1
@@ -172,8 +178,11 @@ async def feed(user: dict = Depends(require_consent("discover_jobs")),
     if scored_new_count:
         await um.increment_jobs_processed(user["id"], scored_new_count)
 
-    # Sort choice — Phase 2 introduced 'nearest' for Lane B users; Phase 3 adds
-    # 'velocity' (soonest expected weekly income). Default remains best-fit score.
+    # Sort choice — Phase 2 introduced 'nearest' for Lane B users; Phase 3 added
+    # 'velocity' (soonest expected weekly income). Phase 1 §iv (1a) adds 'speed'
+    # (observed employer responsiveness — median days-to-response drawn from THIS
+    # USER's own application_outcomes; no cross-user data). Default remains
+    # best-fit score.
     if sort == "nearest":
         def _sort_key(x):
             d = x.get("distance_from_phoenix_mi")
@@ -190,6 +199,39 @@ async def feed(user: dict = Depends(require_consent("discover_jobs")),
             posted = x.get("posted_at") or ""
             return (-v, -len(posted))  # higher velocity first, more recent second
         passing.sort(key=_vel_key)
+    elif sort == "speed":
+        # Phase 1 §iv (1a) — Speed-ranked feed sort. Employer median days-to-response
+        # from THIS USER's `application_outcomes` (user-scoped by construction — cross-
+        # employer response history sharing is a hard-stop rail; see PHASE-1-EVIDENCE
+        # §iv). Employers with no data sink to the end labeled "no response data yet".
+        from services import outcome_autopilot as _oa
+        try:
+            stats = await _oa.compute_group_stats(user["id"], since_days=90, group_by="employer")
+        except Exception:
+            stats = {}
+        # Attach a `speed` block to every passing card so the UI can render
+        # the label + median honestly. Field is present only under sort=speed
+        # to avoid inflating the payload for other sorts.
+        for card in passing:
+            emp_key = (card.get("canonical_key") or "").split("::")[0] or "unknown"
+            row = stats.get(emp_key) or {}
+            median = row.get("median_days_to_response")
+            submitted = row.get("submitted") or 0
+            responded = (row.get("response") or 0) + (row.get("interview") or 0) + (row.get("rejection") or 0)
+            card["speed"] = {
+                "median_days_to_response": median,
+                "sample_size": submitted,
+                "responded_count": responded,
+                "note": ("no response data yet" if median is None else
+                          f"median {median}d to response · {responded}/{submitted} responded"),
+            }
+        def _speed_key(x):
+            md = (x.get("speed") or {}).get("median_days_to_response")
+            has_data = 0 if isinstance(md, (int, float)) else 1  # data-first, no-data last
+            md_val = md if isinstance(md, (int, float)) else 1e9
+            score_val = x.get("score") or 0
+            return (has_data, md_val, -score_val)
+        passing.sort(key=_speed_key)
     else:
         passing.sort(key=lambda x: (x.get("score") or 0), reverse=True)
     # Phase 5.1 — surface the last successful lifecycle-sweep timestamp so

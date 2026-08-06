@@ -42,8 +42,8 @@ FIXTURE_FILL: dict[str, str] = {
     "name":           "Fixture TestUser",
     "email":          "fixture-dryrun@opportunityos.dev",
     "phone":          "+1-555-0100",
-    "current_company":"OpportunityOS (fixture)",
-    "company":        "OpportunityOS (fixture)",
+    "current_company":"Fynd (fixture)",
+    "company":        "Fynd (fixture)",
     "linkedin":       "https://www.linkedin.com/in/fixture-testuser",
     "website":        "https://opportunityos.dev/fixture",
     "why_us":         "Fixture dry-run — DO NOT SUBMIT.",
@@ -127,7 +127,7 @@ async def _run(urls: list[str], out_dir: Path, evidence_md: Path, limit: int = 2
         browser = await pw.chromium.launch(headless=True)
         try:
             context = await browser.new_context(
-                user_agent=("OpportunityOS-DryRun/1.0 (fixture; contact: "
+                user_agent=("Fynd-DryRun/1.0 (fixture; contact: "
                             "support@opportunityos.dev)"),
                 viewport={"width": 1400, "height": 900},
             )
