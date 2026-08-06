@@ -12,6 +12,7 @@ import Input from '../components/ui/Input';
 import { LoadingBlock, ErrorBlock, ScopeRequiredPrompt } from '../lib/scope';
 import { safeExternalHref } from '../lib/utils';
 import SurpriseMeCapsule from '../components/SurpriseMeCapsule';
+import ApplyWaveCapsule from '../components/ApplyWaveCapsule';
 
 const REASON_LABELS = {
   requires_us_person: 'US-person required (ITAR)',
@@ -167,12 +168,15 @@ function LaneTabs({ value, onChange }) {
   );
 }
 
-// Phase 3 — Sort selector (best-fit / nearest / soonest money).
+// Phase 3 — Sort selector (best-fit / nearest / soonest money / speed).
 function SortSelector({ value, onChange, lane }) {
   const opts = [
     { id: 'best_fit', label: 'Best fit' },
     { id: 'nearest', label: 'Nearest Phoenix' },
     { id: 'velocity', label: 'Soonest money' },
+    // Phase 1 §iv — Speed: rank by employer median days-to-response (from
+    // THIS USER's own application_outcomes). No-data employers sink last.
+    { id: 'speed', label: 'Fastest to respond' },
   ];
   return (
     <div className="inline-flex items-center gap-2 text-xs muted" data-testid="feed-sort-selector">
@@ -321,6 +325,27 @@ function DistanceChip({ mi }) {
   if (typeof mi !== 'number') return null;
   const label = mi < 1 ? 'in Phoenix' : `${Math.round(mi)}mi from Phoenix`;
   return <span className="pill pill-neutral" data-testid="job-card-distance-chip"><MapPin className="h-3 w-3" /> {label}</span>;
+}
+
+// Phase 1 §iv — Speed chip. Rendered only when sort=speed and the backend
+// injects a `speed` block on the card. No-data employers show a plain
+// muted label so the tester can visually confirm the "no response data yet"
+// state; data-bearing employers show median + response ratio.
+function SpeedChip({ speed }) {
+  if (!speed) return null;
+  const hasData = typeof speed.median_days_to_response === 'number';
+  return (
+    <span
+      className={`pill ${hasData ? 'pill-neutral' : 'pill-muted'}`}
+      data-testid="job-card-speed-chip"
+      title={speed.note || ''}
+    >
+      <Zap className="h-3 w-3" />
+      {hasData
+        ? `${speed.median_days_to_response}d median · ${speed.responded_count || 0}/${speed.sample_size || 0}`
+        : 'no response data yet'}
+    </span>
+  );
 }
 
 function NotesList({ notes }) {
@@ -520,6 +545,7 @@ function JobCard({ job, onShortlist, onHide, onExplain, busy }) {
         <FreshnessChip ts={job.last_verified} />
         <DistanceChip mi={job.distance_from_phoenix_mi} />
         <VelocityChip velocity={job.velocity} />
+        <SpeedChip speed={job.speed} />
         {job.taxonomy_family && <span className="pill pill-neutral">{job.taxonomy_family}</span>}
         {(job.top_reasons || []).slice(0, 3).map((r) => (
           <span key={r.factor} className={`pill ${r.direction === 'positive' ? 'pill-accent' : 'pill-neutral'}`}>
@@ -885,6 +911,9 @@ export default function FeedPage() {
         <SortSelector value={sort} onChange={onSortChange} lane={lane} />
       </div>
 
+      {/* Phase 1 §v — Apply Wave (batch authorize with cap-respecting preview) */}
+      <ApplyWaveCapsule lane={lane} withinMi={null} onWaved={() => load()} />
+
       {state.loading && <LoadingBlock label="Scoring your feed…" />}
       {state.error && <ErrorBlock message={state.error} onRetry={load} />}
 
@@ -896,6 +925,7 @@ export default function FeedPage() {
               <span className="text-xs muted">
                 {sort === 'nearest' ? 'Sorted by proximity to Phoenix'
                   : sort === 'velocity' ? 'Sorted by soonest expected weekly income'
+                  : sort === 'speed' ? 'Sorted by fastest employer response · no-data last'
                   : 'Sorted by score'}
               </span>
             </div>

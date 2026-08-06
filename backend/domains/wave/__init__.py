@@ -166,6 +166,46 @@ async def _persist_authorization(user_id: str, scope: WaveScope,
 
 # ------------------------------ Endpoints -------------------------------- #
 
+@router.get("/preview")
+async def preview_wave(lane: Optional[str] = None,
+                          within_mi: Optional[int] = None,
+                          family: Optional[str] = None,
+                          cap: int = 25,
+                          user: dict = Depends(require_consent("submit_applications"))):
+    """Dry-run enumeration of what a wave WOULD queue right now.
+
+    Read-only. No `wave_authorizations` row, no shortlist writes, no
+    Standing Wave upsert. Same consent gate as `/authorize` so the
+    preview surface has zero privilege over the confirm surface — a user
+    who cannot authorize also cannot preview.
+
+    Returns:
+      * `eligible_job_ids`: ordered exactly like the wave would queue,
+        truncated at `cap`.
+      * `eligible_summary`: `[{"id","title","company_name","canonical_key"}]`
+        so the client can render the list without a second `/feed` call.
+      * `breakdown`: same accounting shape as the authorize response
+        (`total_scanned`, `blocked_scope`, `blocked_hard_gate`,
+        `blocked_cap`, `blocked_duplicate`).
+      * `scope`: echo of what was interpreted.
+    """
+    scope = WaveScope(lane=lane, within_mi=within_mi, family=family,
+                        cap=cap, standing_wave=False)
+    eligible, breakdown = await _enumerate_eligible(user["id"], scope)
+    return {
+        "scope": scope.model_dump(),
+        "breakdown": breakdown,
+        "eligible_count": len(eligible),
+        "eligible_job_ids": [j["id"] for j in eligible],
+        "eligible_summary": [{
+            "id": j["id"], "title": j.get("title"),
+            "company_name": j.get("company_name"),
+            "canonical_key": j.get("canonical_key"),
+        } for j in eligible],
+        "note": "read-only preview; nothing has been queued or authorized.",
+    }
+
+
 @router.post("/authorize", status_code=201)
 async def authorize_wave(scope: WaveScope,
                             user: dict = Depends(require_consent("submit_applications"))):

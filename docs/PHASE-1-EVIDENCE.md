@@ -61,11 +61,33 @@ Result: **62 passed, 0 failed** (measured pre-cycle, unchanged from Phase 0 clos
   * key includes `ctx_signature` derived from prefs/eligibility/claims/apps/hidden → any user-state change auto-invalidates the user's rows
   * bounded LRU (500k default) → evicts oldest on overflow, never unbounded
 
-### Step (iii) — Feed LCP re-measure · LANDED 2026-08-06T~13:25Z
-- Probe: `backend/tools/feed_lcp_probe.py` — Playwright headless, `fixture-ead@` cookie-authenticated, 3 runs against `${REACT_APP_BACKEND_URL}/feed`. Artifact: `docs/phase-1-artifacts/feed_lcp_post_unfreeze.json`.
-- **LCP median: 692 ms · min: 636 ms · max: 740 ms** (Phase 0 closeout Playwright LCP was **3.98 s**; the scorer-unfreeze removes the largest chunk of that time by keeping the 22k-job gate+score loop off the hot path via `services/scored_cache.py`).
-- Supporting nav timings: TTFB ~103–130 ms · DOMContentLoaded ~332–364 ms · load event ~332–364 ms · wall-time-to-networkidle 22–23 s (dominated by long-tail XHR polling from feed widgets, NOT LCP — LCP is unaffected by the tail).
-- **Dev-mode caveat cited honestly (Phase 0 §7 already documented):** preview runs `react-scripts start` + `uvicorn --reload`; a production build (CRA `build` + gunicorn) will be materially faster. This is a "direction is right" measurement, not a production number, and should be re-measured against a real prod build before merge.
+### Step (iii) — Feed LCP re-measure · LANDED 2026-08-06T~13:25Z (dev-mode) · 2026-08-06T~14:15Z (prod-build one-off)
+
+Two independent measurements — dev-mode and production-build — reported side-by-side without extrapolation:
+
+**Dev-mode (preview `react-scripts start` + `uvicorn --reload`, authenticated /feed as fixture-ead@):**
+- Probe: `backend/tools/feed_lcp_probe.py` — Playwright headless, 3 runs against `${REACT_APP_BACKEND_URL}/feed`. Artifact: `docs/phase-1-artifacts/feed_lcp_post_unfreeze.json`.
+- **LCP median: 692 ms · min: 636 ms · max: 740 ms** (Phase 0 closeout LCP was **3.98 s**; the scorer-unfreeze removes the biggest chunk by keeping the 22k-job gate+score loop off the hot path via `services/scored_cache.py`).
+- Supporting nav timings: TTFB ~103–130 ms · DOMContentLoaded ~332–364 ms · load event ~332–364 ms · wall-time-to-networkidle 22–23 s (long-tail widget XHR polling, NOT LCP).
+
+**Production-build one-off (CRA `yarn build` → `npx serve -s build -l 4173`, torn down after measurement):**
+- Probe: `backend/tools/prod_lcp_probe.py`. Artifact: `docs/phase-1-artifacts/feed_lcp_prod_build.json`.
+- Bundle sizes on disk: `main.3931d382.js = 276K` · `main.6d316e3f.css = 52K`.
+- **LCP median: 276 ms · min: 224 ms · max: 444 ms** — TTFB 3-5 ms (localhost) · DCL 32-35 ms · load 32-35 ms · wall 0.73-1.0 s.
+- **Honest caveat #1:** cookies from the preview backend origin (`lynk-preview-2.preview.emergentagent.com`) do NOT transfer to `127.0.0.1:4173` (cross-origin). So the prod-build `/feed` render likely resolved to the auth-gated shell (login redirect) rather than the fully-authenticated feed body. Direct apples-to-apples measurement on an authenticated `/feed` under prod-build would need a proxy layer that this cycle deliberately doesn't build.
+- **Honest caveat #2:** localhost TTFB is unrealistically low (no network). A real production hop adds ~50-100 ms.
+- Static server was **torn down** post-measurement (`pkill -f 'serve.*4173'` verified; `curl http://127.0.0.1:4173/ → 000`). Dev servers untouched.
+
+**Side-by-side (with caveats above):**
+
+| Metric | Dev-mode /feed (authenticated) | Prod-build /feed (shell-only, x-origin cookies) |
+|---|---|---|
+| LCP median | 692 ms | 276 ms |
+| LCP min | 636 ms | 224 ms |
+| TTFB | 103-130 ms | 3-5 ms (localhost) |
+| DCL | 332-364 ms | 32-35 ms |
+
+Never extrapolated. Prod-build number is a shell-load reference point, not a claim about authenticated feed perf.
 
 ### Step (iv) — 1a Speed-ranked feed sort · LANDED 2026-08-06T~13:35Z
 - New sort option `GET /api/v1/jobs/feed?sort=speed` — additive; `best_fit` remains default (per founder rail Q2 addendum). Existing sorts (`nearest`, `velocity`/`soonest_money`) untouched.
@@ -108,9 +130,30 @@ Result: **62 passed, 0 failed** (measured pre-cycle, unchanged from Phase 0 clos
   * approve→fresh outbox verified live — approve of a draft for fixture-ead@ passes through `email_route.dispatch` (same preflight+dedup+throttle path); a fresh outbox row is inserted and the draft is marked `approved_and_dispatched`.
   * approve refuses non-draft — verified live: `POST /follow-ups/{discarded_id}/approve` returns **409** `{"error":"follow_up_not_in_draft_state","current_state":"discarded"}` (raw payload copied into evidence).
 
+### Step (v-preview) — Wave Preview endpoint · LANDED 2026-08-06T~14:00Z
+- New route: `GET /api/v1/wave/preview?lane=&within_mi=&family=&cap=25` — consent-gated on `submit_applications` (identical to `/authorize` so the preview surface has zero privilege over the confirm surface).
+- Runs `_enumerate_eligible` in dry mode. Returns `eligible_count`, `eligible_job_ids`, `eligible_summary` (id/title/company_name/canonical_key), full `breakdown` (`total_scanned`, `blocked_scope`, `blocked_hard_gate`, `blocked_cap`, `blocked_duplicate`), plus the interpreted scope echo and a `note: "read-only preview; nothing has been queued or authorized."`.
+- Read-only proof: live smoke as `fixture-ead@` — `GET /wave/preview?cap=10` returned `eligible_count=2`, `breakdown.blocked_hard_gate=22436, blocked_cap=7`; **`GET /wave/authorizations` count remained at 1** (unchanged from the earlier authorize call) → preview writes nothing to `wave_authorizations` or `applications`.
+
+### Step (v-aab) — Standing Wave wired into apply-at-birth ingest · LANDED 2026-08-06T~14:20Z
+- Wiring in `backend/domains/discovery/service.py::refresh_all` — after each refresh completes and after the lifecycle-sweep runs, the newly-INSERTED job IDs (collected in `inserted_ids: list[str]`) are passed to `wave.run_standing_waves_after_aab_tick`. Every user with an active Standing Wave has their scope re-run over JUST the new arrivals, with cap enforced identically to the manual authorize path. The refresh summary now reports `standing_wave_auto_queue: {new_arrivals, users_processed, queued_total, error}`. Failure inside the hook is caught and logged — refresh_all NEVER fails because of Standing Wave.
+- Focused test `backend/tests/test_phase1_standing_wave_tick.py::test_standing_wave_tick_full_flow` — 3-user fake-DB scenario:
+  * User A (active Standing Wave, cap has room) → **queued 1** application; `wave_authorizations` row written with `triggered_by=standing_wave_aab_tick`, `queued_count=1`, `consents_snapshot.submit_applications=granted`.
+  * User B (active Standing Wave, cap FULL at Acme — 3 existing open apps) → **queued 0**; `wave_authorizations` row still written for audit with `queued_count=0` and `breakdown.blocked_cap >= 1` (NAMED reason).
+  * User C (`active=False`) → **skipped** — no wave_authorizations row for them.
+  * Test passes in isolation and in the full ordered suite. Uses fully-mocked DB + `gate_engine` + `cap_svc` for hermetic execution.
+
+### Step (§iv-vii frontend) — 1a/1b/1c/1d E2E surfaces on Fynd Liquid · LANDED 2026-08-06T~14:10Z
+Playwright E2E smoke against `${REACT_APP_BACKEND_URL}` as `fixture-ead@`:
+- **1a Speed sort toggle** (`frontend/src/pages/Feed.jsx`): `<SortSelector>` now includes `speed` option (data-testid=`feed-sort-select`). New `<SpeedChip>` component renders on every passing card only when `sort=speed`. Live smoke observed values: sort options `['best_fit','nearest','velocity','speed']`; after selecting speed → **9 speed chips visible, first chip text = `"no response data yet"`** (honest empty-state label; fixture-ead@ has no outcomes yet).
+- **1b Apply Wave dialog** (`frontend/src/components/ApplyWaveCapsule.jsx`): capsule renders at `data-testid=apply-wave-capsule` above the feed grid. Opening it fires `GET /wave/preview`; the confirm button (`data-testid=apply-wave-confirm`) is DISABLED until preview loads AND eligible_count > 0. Live smoke: preview rendered breakdown_cap=7, breakdown_hard=22439, eligible list visible. `apply-wave-standing-toggle` present for Standing Wave opt-in; success state at `apply-wave-success`; consent-revoked state at `apply-wave-consent-required`.
+- **1c Booking URL row** (`frontend/src/pages/Preferences.jsx`): new `<Card>` at `data-testid=preferences-booking-url` with `preferences-booking-url-input`. Save flow catches pydantic-shaped 422s with `loc.includes('booking_url')` and surfaces the honest server message (e.g. "Booking URL: booking_url must be an https:// URL"). Live smoke: row present.
+- **1d Follow-up review lane** (`frontend/src/pages/FollowUps.jsx`, route `/follow-ups`): new page under `data-testid=follow-ups-page`. Filter tabs (draft/approved/discarded) at `follow-ups-filter-{state}`. Draft rows expose `follow-up-draft-row` + body preview + median-source label. Approve dialog `follow-up-approve-dialog` REQUIRES explicit destination + subject before confirm enables — no auto-send code path. Success creates a FRESH email_outbox row via `email_route.dispatch` (dry-run). Consent-revoked → `follow-ups-consent-required`. Empty state → `follow-ups-empty`. Sidebar link added at `data-testid=sidenav-link-follow-ups`.
+- Frontend compiled cleanly (`webpack compiled with 1 warning` — an unused `AlertTriangle` import that was subsequently removed). Backend hot-reload picked up all changes. Full frontend E2E smoke script output: `ALL_OK`.
+
 ## §2 — Cycle close: full pytest vs 62 baseline (Phase 0 §14.1)
 
-Same ordered run as Phase 0 §14.1, plus the two new Phase-1 test files:
+Same ordered run as Phase 0 §14.1, plus the three new Phase-1 test files:
 
 ```
 python3 -m pytest \
@@ -124,17 +167,20 @@ python3 -m pytest \
    tests/test_outcomes_endpoints.py \
    tests/test_surprise_me.py \
    tests/test_phase1_speed_sort.py \
-   tests/test_phase1_follow_ups.py
+   tests/test_phase1_follow_ups.py \
+   tests/test_phase1_standing_wave_tick.py
 ```
 
-**Result (2026-08-06T13:57Z):**
+**Result (2026-08-06T14:25Z):**
 ```
-71 passed, 3 skipped in 18.80s
+72 passed, 3 skipped in 3.80s
 ```
 
-- **Delta from 62 baseline: +9 pass, +3 skip (with live smoke evidence in §v/§vii), 0 regressions.**
-  * `test_phase1_speed_sort.py`: **5 passed** (sort-key data-first, no-data score-order, note copy, empty compute, insert-outcome→median).
-  * `test_phase1_follow_ups.py`: **4 passed, 3 skipped** (wave-enum cap-respect, median-when-outcomes, fallback-when-none, static-grep hard-invariant PASS; 3 skipped due to motor 3.5.1 + pytest-asyncio 1.4.0 executor-state incompatibility — each locked behavior proven verbatim via live curl in §v/§vii above).
+- **Delta from 62 baseline: +10 pass, +3 skip (with live smoke evidence in §v/§vii above), 0 regressions.**
+  * `test_phase1_speed_sort.py`: **5 passed**.
+  * `test_phase1_follow_ups.py`: **4 passed, 3 skipped** (motor/pytest-asyncio; each locked behavior proven via live curl in §v/§vii).
+  * `test_phase1_standing_wave_tick.py`: **1 passed** (three-user fake-DB scenario locking cap-respect + inactive skip + wave_authorizations audit).
+
 - **Backend rebrand (§i) did not perturb any existing test.**
 - **Scorer unfreeze (§ii) did not perturb any existing test** — byte-identical proof over stable job intersection is documented above and holds independent of the pytest run.
 - Focused suite runtime moved from 3.42 s (Phase 0 §14.1) to 18.80 s — the extra ~15 s is `test_phase1_follow_ups.py::scratch_db` creating Motor clients per test + `_enumerate_eligible` scanning 22k+ live jobs when the DB is not fully monkey-patched by the fixture. This is TEST cost only; no production cost.

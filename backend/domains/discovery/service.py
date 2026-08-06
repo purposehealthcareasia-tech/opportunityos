@@ -160,6 +160,7 @@ async def refresh_all(actor: str = "discovery-scheduler") -> dict:
     per_company_report: list[dict] = []
     total_inserted = 0
     total_updated = 0
+    inserted_ids: list[str] = []
 
     for ats, name, token in ALL_BOARDS:
         fetcher = FETCHERS.get(ats)
@@ -201,6 +202,7 @@ async def refresh_all(actor: str = "discovery-scheduler") -> dict:
             else:
                 await db.jobs.insert_one(doc)
                 inserted_here += 1
+                inserted_ids.append(doc["id"])
 
         per_source_kept[ats] += 1
         per_source_postings[ats] += len(rows)
@@ -255,6 +257,7 @@ async def refresh_all(actor: str = "discovery-scheduler") -> dict:
             else:
                 await db.jobs.insert_one(doc)
                 ins += 1
+                inserted_ids.append(doc["id"])
         usajobs_report.update({"postings_seen": len(federal_rows),
                                 "inserted": ins, "updated": upd})
         total_inserted += ins
@@ -274,6 +277,20 @@ async def refresh_all(actor: str = "discovery-scheduler") -> dict:
     except Exception as e:
         log.warning("discovery.refresh_all: sweep failed %s", e)
         sweep_summary = {"error": f"{type(e).__name__}:{str(e)[:80]}"}
+
+    # Phase 1 §v — Standing Wave AAB hook. After each refresh_all completes,
+    # every user with an active Standing Wave scope has their scope re-run
+    # over the NEW arrivals only (inserted_ids). Cap is respected identically
+    # to the manual authorize path. Failure here NEVER breaks the refresh.
+    standing_wave_summary: dict = {"users_processed": 0, "queued_total": 0}
+    if inserted_ids:
+        try:
+            from domains.wave import run_standing_waves_after_aab_tick
+            standing_wave_summary = await run_standing_waves_after_aab_tick(inserted_ids)
+        except Exception:
+            log.exception("discovery.refresh_all: standing_wave hook failed")
+            standing_wave_summary = {"users_processed": 0, "queued_total": 0,
+                                       "error": "standing_wave_hook_failed"}
 
     # Recount lane totals so the report answers the founder's questions.
     db = get_db()
@@ -309,6 +326,13 @@ async def refresh_all(actor: str = "discovery-scheduler") -> dict:
             "closed_total": sweep_summary.get("closed_total"),
             "stamped_total": sweep_summary.get("stamped_total"),
             "error": sweep_summary.get("error"),
+        },
+        # Phase 1 §v — Standing Wave hook results for this refresh.
+        "standing_wave_auto_queue": {
+            "new_arrivals": len(inserted_ids),
+            "users_processed": standing_wave_summary.get("users_processed", 0),
+            "queued_total": standing_wave_summary.get("queued_total", 0),
+            "error": standing_wave_summary.get("error"),
         },
     }
     log.info("discovery.refresh_all: done %s", summary)

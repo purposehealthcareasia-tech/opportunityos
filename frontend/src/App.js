@@ -27,6 +27,7 @@ const Privacy          = lazy(() => import('./pages/Privacy'));
 const PrivacyPolicy    = lazy(() => import('./pages/PrivacyPolicy'));
 const EmployerIntake   = lazy(() => import('./pages/EmployerIntake'));
 const SubmitSprint     = lazy(() => import('./pages/SubmitSprint'));
+const FollowUps        = lazy(() => import('./pages/FollowUps'));
 const Settings         = lazy(() => import('./pages/Settings'));
 const Admin            = lazy(() => import('./pages/Admin'));
 
@@ -61,6 +62,7 @@ export default function App() {
           <Route path="/privacy" element={<Privacy />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/submit-sprint" element={<SubmitSprint />} />
+          <Route path="/follow-ups" element={<FollowUps />} />
           <Route
             path="/admin"
             element={<RoleRoute roles={["admin", "support"]}><Admin /></RoleRoute>}

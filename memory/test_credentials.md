@@ -1,6 +1,7 @@
-# Test Credentials — OpportunityOS
+# Test Credentials — Fynd
 
 > Read by testing agents and fork runs. Keep in sync with `domains/seeds/seeder.py`.
+> Codename in repo remains `opportunityos.dev` for the fixture email domain (data identifier, not branding).
 
 **Preview base URL:** `https://lynk-preview-2.preview.emergentagent.com`
 

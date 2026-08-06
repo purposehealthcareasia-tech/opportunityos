@@ -17,7 +17,7 @@ Shipped in one atomic-reload cycle under the "Precision Protocol" (evidence gate
 
 **§iv — 1a Speed-ranked feed sort** — additive `sort=speed` on `GET /api/v1/jobs/feed`. Rank key = `(has_data ∈ {0,1}, median_days_to_response ↑, -score)`. Data source: THIS USER's own `application_outcomes.compute_group_stats(group_by=employer, since_days=90)` — user-scoped, no cross-employer response-history sharing (privacy hard-stop preserved). No-data employers sink to end, labeled `"no response data yet"`. Default sort unchanged (`best_fit`).
 
-**§v — 1b Apply Wave + Spectrum Builder** — new `POST /api/v1/wave/authorize` batch-queues eligible spectrum jobs into Submit Sprint. Cap NEVER bypassed (rolling 30-day per-employer cap counts wave-queued rows against remaining slots). Consent-scope snapshot recorded on every `wave_authorizations` row. Standing Wave scope persisted to `standing_waves` and auto-runs on AAB ticks (hook: `run_standing_waves_after_aab_tick`). `GET /wave/authorizations`, `GET /wave/standing`, `DELETE /wave/standing`.
+**§v — 1b Apply Wave + Spectrum Builder** — new `POST /api/v1/wave/authorize` batch-queues eligible spectrum jobs into Submit Sprint. Cap NEVER bypassed (rolling 30-day per-employer cap counts wave-queued rows against remaining slots). Consent-scope snapshot recorded on every `wave_authorizations` row. **`GET /api/v1/wave/preview`** returns the exact dry-run breakdown + eligible_job_ids the wave WOULD queue, read-only, same consent gate. Standing Wave scope persisted to `standing_waves`; **wired into `discovery.refresh_all`** so new arrivals auto-queue matches on every refresh cycle, cap enforced identically (`services/wave.run_standing_waves_after_aab_tick`).
 
 **§vi — 1c Instant-scheduling link** — new persisted `booking_url` field on `PreferencesPayload` (https:// validated). If set, appended verbatim to outbound email body after preflight passes ("Book a time: <url>"). Never invents placement. Outbox row records `booking_url_attached: true`.
 
@@ -25,7 +25,15 @@ Shipped in one atomic-reload cycle under the "Precision Protocol" (evidence gate
 
 **Fixed side quest — pre-existing 500 bug in `server.py::scrub_validation_error`** — pydantic v2 stuffs raw `ValueError` into `err["ctx"]["error"]` which broke `json.dumps`. Handler now coerces `ctx` values to strings, so all custom field validators return clean 422s.
 
-**Pytest baseline: 62 → 71 passed / 3 skipped / 0 regressions** (skipped tests locked by live curl evidence). Same ordered command as Phase 0 §14.1 + 2 new Phase-1 test files.
+**Pytest baseline: 62 → 72 passed / 3 skipped / 0 regressions** (skipped tests locked by live curl evidence). Same ordered command as Phase 0 §14.1 + 3 new Phase-1 test files.
+
+**Frontend surfaces landed (E2E on Fynd Liquid, `fixture-ead@` verified via Playwright):**
+- Sort=speed toggle in `Feed.jsx` with `SpeedChip` component; honest empty-state label `"no response data yet"` verified (9 chips visible for fixture-ead@).
+- `ApplyWaveCapsule.jsx` — collapsible capsule → `GET /wave/preview` on open → renders breakdown + eligible list → confirm button DISABLED until preview loads AND eligible_count > 0 → Standing Wave toggle → success/consent-revoked/error states.
+- `Preferences.jsx` — new `booking_url` row with https validation feedback; server 422 with `loc.includes('booking_url')` surfaces the honest server message inline.
+- `FollowUps.jsx` at `/follow-ups` — draft list with filter tabs, per-draft body preview + median-source label, explicit approve dialog (destination + subject required) that creates a FRESH email_outbox row via `email_route.dispatch` (dry-run), discard is idempotent. Sidebar link added.
+
+**Production-build Lighthouse one-off:** CRA `yarn build` → `npx serve -s build -l 4173`, measured LCP median **276 ms** (bundle: 276K JS + 52K CSS), then torn down. Dev-mode LCP median **692 ms**. Reported side-by-side with x-origin cookie caveat — never extrapolated.
 
 **Rails held all pass**: preview only, no merge/push/deploy, no real submissions, no scraping, ONE supervisor restart never needed (uvicorn hot-reload picked up all changes atomically), byte-identical scoring proof committed BEFORE Step (iii), cap NEVER bypassed, follow-up drafts unreachable by any dispatch sweep.
 

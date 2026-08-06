@@ -1,0 +1,38 @@
+{
+  "runs": 3,
+  "target": "http://127.0.0.1:4173/feed",
+  "backend": "https://lynk-preview-2.preview.emergentagent.com",
+  "wall_time_median_s": 0.867,
+  "lcp_median_ms": 276,
+  "lcp_min_ms": 224,
+  "lcp_max_ms": 444,
+  "raw": [
+    {
+      "idx": 1,
+      "url": "http://127.0.0.1:4173/feed",
+      "wall_time_s": 0.867,
+      "lcp_ms": 276,
+      "ttfb_ms": 4.8,
+      "dom_content_loaded_ms": 34.8,
+      "load_ms": 34.8
+    },
+    {
+      "idx": 2,
+      "url": "http://127.0.0.1:4173/feed",
+      "wall_time_s": 1.007,
+      "lcp_ms": 444,
+      "ttfb_ms": 3.2,
+      "dom_content_loaded_ms": 31.6,
+      "load_ms": 31.6
+    },
+    {
+      "idx": 3,
+      "url": "http://127.0.0.1:4173/feed",
+      "wall_time_s": 0.731,
+      "lcp_ms": 224,
+      "ttfb_ms": 3.3,
+      "dom_content_loaded_ms": 33.2,
+      "load_ms": 33.2
+    }
+  ]
+}

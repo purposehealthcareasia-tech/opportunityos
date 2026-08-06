@@ -124,6 +124,7 @@ const DEFAULT_PREFS = {
   employer_include: [],
   employer_exclude: [],
   notes: '',
+  booking_url: '',
 };
 
 export default function PreferencesPage() {
@@ -165,13 +166,24 @@ export default function PreferencesPage() {
   const save = async () => {
     setSaving(true); setError('');
     try {
-      const { data } = await api.post('/api/v1/preferences', prefs, withIdempotency());
+      // Phase 1 §vi (1c) — normalize empty booking_url to null so the
+      // backend HttpUrl validator doesn't reject a bare "" value.
+      const payload = { ...prefs, booking_url: prefs.booking_url?.trim() || null };
+      const { data } = await api.post('/api/v1/preferences', payload, withIdempotency());
       setVersion(data.version);
       setSavedAt(data.updated_at);
     } catch (e) {
-      setError(e?.response?.data?.detail?.error === 'consent_required'
-        ? 'You need process_career_data consent to save preferences. Grant it in Settings.'
-        : 'Could not save preferences.');
+      // Explicit 422 for booking_url validation surfaces here as an array
+      // of pydantic error details — pick the first one and show it honestly.
+      const detail = e?.response?.data?.detail;
+      if (Array.isArray(detail) && detail.some((d) => (d?.loc || []).includes('booking_url'))) {
+        const first = detail.find((d) => (d?.loc || []).includes('booking_url'));
+        setError(`Booking URL: ${first?.msg || 'invalid'}`);
+      } else {
+        setError(detail?.error === 'consent_required'
+          ? 'You need process_career_data consent to save preferences. Grant it in Settings.'
+          : 'Could not save preferences.');
+      }
     } finally { setSaving(false); }
   };
 
@@ -248,8 +260,30 @@ export default function PreferencesPage() {
         </div>
       </Card>
 
+      <Card>
+        <CardHeader
+          title="Booking link (optional)"
+          subtitle="If you use a scheduling link (Calendly, Cal.com, SavvyCal…), we'll append it verbatim to outbound follow-up emails. Never invented placement — only appended when you've set it."
+        />
+        <div className="space-y-2" data-testid="preferences-booking-url">
+          <label className="text-xs muted">Public https URL</label>
+          <Input
+            type="url"
+            value={prefs.booking_url || ''}
+            onChange={(e) => patch({ booking_url: e.target.value })}
+            placeholder="https://calendly.com/your-name/interview"
+            data-testid="preferences-booking-url-input"
+          />
+          <div className="text-[11px] muted">
+            Must start with <code>https://</code>. Invalid URLs are rejected server-side with a message.
+          </div>
+        </div>
+      </Card>
+
       <div className="flex items-center justify-end gap-3">
-        <Button variant="accent" onClick={save} loading={saving}><Save className="h-4 w-4" /> Save preferences</Button>
+        <Button variant="accent" onClick={save} loading={saving} data-testid="preferences-save">
+          <Save className="h-4 w-4" /> Save preferences
+        </Button>
       </div>
     </div>
   );
