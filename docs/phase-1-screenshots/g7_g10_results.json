@@ -1,5 +1,5 @@
 {
-  "run_at": "2026-08-06T23:38:18Z",
+  "run_at": "2026-08-07T00:42:00Z",
   "base_url": "https://lynk-preview-2.preview.emergentagent.com",
   "user": "fixture-ead@opportunityos.dev",
   "notes": "Builder-executed replay of Phase 1 G7-G10 browser-leg gates.",
@@ -36,7 +36,7 @@
     "preview_rendered": true,
     "breakdown": {
       "scope": "0",
-      "hard_gate": "22487",
+      "hard_gate": "22486",
       "cap": "7",
       "duplicate": "0"
     },
