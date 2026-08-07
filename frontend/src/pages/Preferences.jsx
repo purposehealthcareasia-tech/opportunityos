@@ -5,6 +5,7 @@ import Card, { CardHeader } from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
 import { LoadingBlock, ErrorBlock } from '../lib/scope';
+import { EmployerConnectCard } from '../components/EmployerConnectCard';
 
 function ChipList({ items, onRemove }) {
   if (!items?.length) return <p className="text-xs muted">Nothing selected yet.</p>;
@@ -279,6 +280,9 @@ export default function PreferencesPage() {
           </div>
         </div>
       </Card>
+
+      {/* Phase 3 · SUPPLY ENGINE — self-serve employer request. */}
+      <EmployerConnectCard />
 
       <div className="flex items-center justify-end gap-3">
         <Button variant="accent" onClick={save} loading={saving} data-testid="preferences-save">
