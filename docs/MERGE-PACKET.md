@@ -12,78 +12,95 @@ commits. Publish click remains Arjun's physical action.
 
 ---
 
-## 1 · Merge dry-run (non-destructive, `git merge-tree`)
+## 1 · Merge dry-run (non-destructive, `git merge-tree`) — UPDATED 2026-08-07
 
-**Command run:**
+**Command run (at post-tester-leg-fix HEAD):**
 ```
-BASE=$(git merge-base HEAD main)   # → 26c12c978a6cccbe9d4e2d6da6959d3a63e2c588
-git merge-tree $BASE HEAD main | grep -E "^\+<<<<|^<<<<|CONFLICT"
+BASE=$(git merge-base HEAD origin/main)   # → 35032790 (previously-recorded main tip)
+git merge-tree $BASE HEAD origin/main | grep -E "^\+<<<<|^<<<<|CONFLICT"
 ```
 **Output:** empty (no conflict markers, no CONFLICT lines).
 
-**VERDICT: CLEAN.** Fast-forward feasible (main HEAD `26c12c97` is
-already the merge-base — feat/liquid-ui strictly extends it).
+**VERDICT: CLEAN.** Fast-forward feasible.
 
-**Files touched (main → feat/liquid-ui):** 226 files, 20,909 insertions,
-462 deletions. Notable adds:
-- New backend domains: `domains/wave/`, `domains/follow_ups/`
-- New backend services: `services/scored_cache.py`, `services/apply_at_birth.py` (modified)
-- New frontend: `src/pages/FollowUps.jsx`, `src/components/ApplyWaveCapsule.jsx`
-- Modified frontend: `src/pages/Feed.jsx`, `src/pages/Preferences.jsx`
-- New tests: `tests/test_phase1_*.py` (4 files, 20 new passing tests)
-- Migration tool: `backend/tools/phase1_g3d_annotate_wave_snapshots.py`
-- Evidence: `docs/PHASE-1-EVIDENCE.md`, `docs/phase-1-screenshots/`, `docs/phase-1-artifacts/`
-- Hygiene commits: `24615b52`, `c13bea0d` (untrack `.env` / `test_credentials.md` / `tmp_*`)
-
----
-
-## 2 · Proposed HEAD SHA + full commit list since `daf06b68`
-
-**Proposed HEAD (packet SHA):** `c13bea0dcfa23959d04d80791af710d9d74c2fe3`
-**main HEAD (merge base):** `26c12c978a6cccbe9d4e2d6da6959d3a63e2c588`
-
-**17 commits since `daf06b68`** (oldest → newest):
-
-```
-01bd9f53 auto-commit for c9987db3-e215-4c20-8826-b3a0dc27368f     (Phase 1 §i — backend rebrand OpportunityOS → Fynd, user-facing only)
-20482499 auto-commit for aa543294-5b07-4406-8539-5231e6d4d5d9     (Phase 1 §ii — scorer unfreeze + scored-cache scaffolding)
-8ad3447f auto-commit for ca1907ec-6963-4aa7-9593-e40c1cd24629     (Phase 1 §iii — feed LCP prod-build Lighthouse pass)
-744bd238 auto-commit for 79f14607-05ef-4bb4-94cf-ce75c27eb58d     (Phase 1 §1a — speed-ranked feed sort backend + UI toggle)
-8d849d0f auto-commit for fb07decf-a8bf-45dd-979d-02b46e14a47f     (Phase 1 §1b — Apply Wave backend endpoints + ApplyWaveCapsule.jsx)
-cb7819cc auto-commit for 671bc93a-1900-4658-b969-ae692ec130a5     (Phase 1 §1c — instant-scheduling booking URL backend + Preferences.jsx row)
-58523d4c auto-commit for cf2f3352-c357-4a26-8869-f39ffc345fc3     (Phase 1 §1d — follow-up engine drafts backend + FollowUps.jsx)
-5d66fefa auto-commit for 8d17e919-4292-4318-ae94-21fa2f0ac8b3     (pytest event-loop bugfix — scratch_db fixture isolation)
-ff6330c6 auto-commit for 218aa81b-4156-4650-bf48-3bfdd0929b7a     (Phase 1 test suite hardening)
-ef9a605a auto-commit for 519003fa-850f-4b93-82f9-7acd83bbadd2     (Fix 1a — initial consent snapshot correction)
-903af9e4 auto-commit for 9070d45d-7f34-4dca-a446-3ac4e027086a     (Fix 1b — schema-drift bug in _snapshot_consents SEALED)
-ff057952 auto-commit for 394c8e98-f0e5-417a-944a-67e9f2cc32d1     (Fix 2 — ResponsiveDemo fixture employer + response outcomes)
-7d390b72 auto-commit for c13c303e-07d3-451e-87e6-c94c9c549ab5     (Playwright script initial draft)
-0c1c68be auto-commit for 3f2b21b3-9d6e-4d5e-975e-63aa3cb43480     (Playwright script UI-login + 502-tolerance)
-6f69ce07 auto-commit for 53887373-b111-46bc-84fb-17faad66de2b     (G3d annotation migration + dual-path regression tests + PHASE-1-EVIDENCE §iv-fix/§v-fix/§browser-leg-replay)
-24615b52 chore(secrets): untrack memory/test_credentials.md + mobile/.env; extend .gitignore
-c13bea0d chore(secrets,cleanup): untrack tmp_*.json/tmp_cookies.txt/oa.json + record Phase 1 gate PASS
-```
+**Files touched:** 226 originally + 12 tester-leg-fix files = ~238 files.
+Notable adds since original packet SHA `31fb8d8b`:
+- Phase 2 · `backend/domains/outcomes/intelligence.py`,
+  `frontend/src/components/OutcomesIntelligence.jsx`
+- Phase 3 · `backend/domains/supply/{__init__,service,origin_resolver}.py`,
+  `backend/tests/test_phase3_supply_engine.py`,
+  `frontend/src/components/EmployerConnectCard.jsx`,
+  `docs/WORKDAY-SPEC.md`
+- Phase 4 · `backend/domains/eligibility/explain.py`,
+  `backend/domains/exports/{__init__,ghosting}.py`,
+  `backend/domains/standards/{__init__,service}.py`,
+  `frontend/src/pages/Standards.jsx`
+- Tester-leg fixes · `backend/tests/test_phase234_tester_leg_fixes.py`,
+  additions to `middleware/csrf.py` (verify-endpoint exempt),
+  additions to `service.py` (abuse log + origin resolver wire-in)
+- Evidence · `docs/PHASE-{2,3,4}-EVIDENCE.md` with tester-leg protocol
+  correction sections
 
 ---
 
-## 3 · Cumulative test state at packet SHA
+## 2 · Proposed HEAD SHA + full commit list since original packet — UPDATED
 
-**Focused Phase 1 suite** (14 test files, run at packet SHA `c13bea0d`):
+**New proposed HEAD (packet SHA):** `95bf94f1c49a4f1b02d6b1d02578789246495516`
+**Original packet SHA:** `31fb8d8bf94e87c8e58125121cf13bc2ce6c8289` (Phase 1 close-out)
+**Local `main` HEAD at time of last push attempt:** `95bf94f1` (8 commits ahead of `origin/main` which is at `35032790`)
+
+**8 commits between original packet SHA and this HEAD:**
 
 ```
-python3 -m pytest tests/test_preflight_validator.py \
+2121a727 docs(merge-packet): record post-merge main HEAD 31fb8d8b (fast-forward)
+27d902e2 docs(merge-packet): record push blocked on GitHub connection (external, continuing per rails)
+6617cd94 feat(phase2): INTELLIGENCE VISIBLE — 3 read-only outcome intelligence panels
+80834632 feat(phase3): SUPPLY ENGINE — self-serve URL ingestion + voting queue + WORKDAY-SPEC
+9e2939d2 feat(phase4): ELIGIBILITY ENGINE & EXPORTS — explain endpoint + signed ghosting export + public /standards page
+4eff451e docs(prd): Phase 0-4 sequence complete status header
+713c3064 auto-commit (platform-emitted checkpoint)
+95bf94f1 fix(phase234): tester-leg shortfalls — origin resolver, abuse log, per-datum labels, format=pdf 501, verify endpoint
+```
+
+**LOCAL MAIN FAST-FORWARD RE-VALIDATION:** every commit landed
+directly on `main` (Phase 1 merge was fast-forward; Phase 2-4 +
+tester-leg-fixes extended `main` directly, no branching). So no
+re-merge is needed — the fix commits are already on `main`. The
+"re-merge/fast-forward" step in the founder's directive is a no-op
+here: local main already contains all fix commits.
+
+**Suite green at packet SHA `95bf94f1`:** confirmed
+`111 passed / 3 skipped` (Phase 4 baseline 97p/3s → **+14 pass, 0 regressions**).
+
+---
+
+## 3 · Cumulative test state at packet SHA — UPDATED
+
+**Focused Phase 0-4 suite + tester-leg fixes** (18 test files, run at
+packet SHA `95bf94f1`):
+
+```
+python3 -m pytest \
+   tests/test_preflight_validator.py \
    tests/test_receipt_compound_index_regression.py \
    tests/test_consent_scope_enum_guard.py tests/test_apply_at_birth.py \
    tests/test_form_map_cache.py tests/test_outcome_autopilot.py \
    tests/test_self_healing.py tests/test_outcomes_endpoints.py \
    tests/test_surprise_me.py tests/test_phase1_speed_sort.py \
    tests/test_phase1_follow_ups.py tests/test_phase1_standing_wave_tick.py \
-   tests/test_phase1_wave_consent_snapshot.py tests/test_phase1_g3d_annotation_trail.py
+   tests/test_phase1_wave_consent_snapshot.py \
+   tests/test_phase1_g3d_annotation_trail.py \
+   tests/test_phase2_outcomes_intelligence.py \
+   tests/test_phase3_supply_engine.py \
+   tests/test_phase4_eligibility_exports_standards.py \
+   tests/test_phase234_tester_leg_fixes.py
 ```
 
-**Result:** **79 passed, 3 skipped in 5.61s** (baseline 72p/3s → **+7 pass, 0 regressions**).
+**Result:** **111 passed, 3 skipped in 4.22s** (Phase 1 baseline 72p/3s
+→ **+39 pass cumulative, 0 regressions**; Phase 4 baseline 97p/3s →
+**+14 pass from the tester-leg fixes**).
 
-**The 3 skipped tests + their live-curl locks:**
+**The 3 skipped tests + their live-curl locks (unchanged from Phase 1):**
 
 | Test | Skip reason | Live-curl lock reference |
 |---|---|---|
@@ -94,6 +111,11 @@ python3 -m pytest tests/test_preflight_validator.py \
 The dual-path Fix 1 regression is fully test-covered by
 `tests/test_phase1_wave_consent_snapshot.py` (4 pass, using fake-DB —
 not affected by the motor/pytest-asyncio issue).
+
+The 14 tester-leg fix tests in
+`tests/test_phase234_tester_leg_fixes.py` lock each of the 6 shortfalls
+that the founder-run tester leg surfaced (see Phase 3 §5 + Phase 4 §4
+in the evidence files).
 
 ---
 
