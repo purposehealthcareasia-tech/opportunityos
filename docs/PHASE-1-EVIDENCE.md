@@ -229,7 +229,10 @@ defective rows. Shape (verbatim):
 Invariants (test-locked in `tests/test_phase1_g3d_annotation_trail.py`):
 - **Never rewritten silently** — the row's top-level `consents_snapshot`
   keeps its original value verbatim (`{}` on all 6 rows). Only a NEW
-  field `consents_snapshot_correction` is added. Enforced by
+  field `consents_snapshot_correction` is added. **This is the deliberate
+  audit-honest choice — a silent rewrite of the top-level field would
+  destroy the historical evidence of the defect. Founder accepted this
+  design at the Phase 1 gate PASS (2026-08-06).** Enforced by
   `test_annotation_never_rewrites_original`.
 - **Idempotent** — re-running the migration is a no-op on already-annotated
   rows. Enforced by `test_annotation_migration_is_idempotent` (`s2.annotated_now == 0`).
@@ -345,3 +348,14 @@ Founder replay targets:
 - Curl re-checks:
   - `GET /api/v1/jobs/feed?sort=speed` — ResponsiveDemo (fixture) positions [0,1], SampleCo positions [2..10]
   - `GET /api/v1/wave/authorizations` — every post-fix row carries a 6-scope non-empty `consents_snapshot`; every pre-fix row carries a `consents_snapshot_correction` sub-document
+
+### §6 — Phase 1 gate VERDICT: PASS (2026-08-06, founder-attested)
+
+Triple-source independent replay outcome (founder's tester run, curl re-checks, script replay):
+
+- **G3d re-check: PASS.** Fresh authorize writes all-granted snapshot mirroring live consents; 13 recent rows correct; the 6 historical rows carry the immutable annotation. Founder explicitly accepted the audit-honest choice of leaving the top-level defective value intact and carrying the correction in the annotation blob.
+- **G1d re-check: PASS on a clean rebased fixture.** ResponsiveDemo at positions 1-2 with `median 4.0d · 3/3`, SampleCo below with `"no response data yet"`. The earlier transient FAIL was tester-contamination via `/wave/authorize` calls that queued apps to ResponsiveDemo; dedup correctly excluded them — dedup working as designed, noted in gate record.
+- **G7-G10 replay: 6/6 substantive keys MATCH.** The single `hard_gate 22487→22486` delta ruled EXPECTED-VOLATILE (live job-count drift from staleness sweep); every gate boolean reproduced exactly.
+- **Full gate tally:** G1-G10 all PASS. Both fixes verified independently. Pytest **79p/3s** (+7 pass vs 72p/3s, 0 regressions).
+
+Phase 2 auto-opens per the master directive.

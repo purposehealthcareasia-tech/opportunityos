@@ -19,6 +19,11 @@ memory/.*.secret
 # Test credentials are read by the local testing agent and MUST NOT be
 # tracked in the shared repo. Kept on disk, ignored from git.
 memory/test_credentials.md
+# Transient debug/curl artifacts — never merge to main.
+tmp_*.json
+tmp_cookies.txt
+tmp_*.txt
+oa.json
 
 # Python
 __pycache__/
