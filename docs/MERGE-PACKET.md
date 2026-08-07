@@ -289,6 +289,18 @@ Web-Push subscribe + test-send.
 - Local `main` is now at packet SHA. Pre-push hard check RE-VERIFIED
   clean immediately before push attempt.
 
+**PUSH STATUS (2026-08-07T~00:55Z):**
+- `git push origin main` **BLOCKED ON GITHUB CONNECTION AUTH.**
+  Exact error: `fatal: could not read Username for 'https://github.com':
+  No such device or address`. Expected per founder's rails — the git
+  remote was sanitized tokenless long ago and pushes require the
+  founder's native Emergent "Save to GitHub" connection. **Merge is
+  complete locally on `main`.** Push is deferred to Arjun's next
+  GitHub-connected session (single-click "Save to GitHub" from the chat
+  input). No credentials attempted or embedded.
+- Continuing Phase 2-4 auto-sequence per standing orders (push does not
+  block the sequence).
+
 ## Merge execution plan (auto-runs after this packet commits)
 
 Per founder's merge pre-authorization + rail check:
