@@ -211,3 +211,48 @@ signal ready and STOP.
 consent + role + rate-limit + dedup invariants; no scraping, no live
 probes at submission time.
 
+
+---
+
+## §6 · Independent tester-leg re-verdict + closeout item (2026-08-08)
+
+**Tester-leg re-verdict (founder-run, 2026-08-08):** Phase 3 fixes = **PASS**.
+
+- **Origin resolver:** bogus URL (`example.com/careers`) lands as
+  `unrecognized_host` with a triage note — no silent-accept ✓
+- **Verifiable board:** `https://boards.greenhouse.io/lucidmotors`
+  resolves to `{provider: "greenhouse", token: "lucidmotors",
+  verdict: "verifiable_board"}` and writes `status: "pending"` ✓
+- **429 rate-limit:** trips as expected; abuse-log route is wired
+  (403 as non-admin, as designed) ✓
+
+**Founder closeout item (this pass, 2026-08-08):** the tester leg could
+only prove the `/admin/supply/abuse-log` route exists (403 without an
+admin session). It could not prove the row actually persists in a
+shape the admin surface queries back. This session locks that gap:
+
+- New anti-regression test
+  `test_abuse_log_row_persists_and_is_queryable_via_admin_surface`
+  runs the full write→read round-trip against
+  `domains/supply/service.py::connect_employer` (429 path) →
+  `domains/supply/service.py::admin_abuse_log` (read path).
+- **Observed row (one-line shape, verbatim from the passing test):**
+  ```
+  {
+    "id": "<uuid>",
+    "user_id": "u-persist",
+    "kind": "connect_rate_limit_exceeded",
+    "attempted_url": "https://boards.greenhouse.io/x",
+    "canonical_host": "boards.greenhouse.io",
+    "recent_count_last_24h": 20,
+    "cap": 20,
+    "at": "<iso8601 utc>"
+  }
+  ```
+- Read-path serialization proven: `at` is ISO-encoded string (never
+  a raw datetime) on the admin surface.
+
+**Triple-source status:** SATISFIED — spec-write + agent-attested +
+founder-tester replay + persistence-lock all aligned. Phase 3 verdict
+is final PASS.
+

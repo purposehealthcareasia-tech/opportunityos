@@ -211,3 +211,71 @@ Local `main` HEAD carries all 5 gate close-outs.
 Push blocked externally on GitHub connection auth (recorded in
 `MERGE-PACKET.md`); Arjun's Save-to-GitHub click clears that whenever
 he's next connected. Publish is Arjun's physical action.
+
+---
+
+## §5 · Independent tester-leg re-verdict + closeout items (2026-08-08)
+
+**Tester-leg re-verdict (founder-run, 2026-08-08):** Phase 4 fixes = **PASS**.
+
+- **Eligibility explain per-datum labels:** every present known datum
+  carries `{value, source, as_of}` ✓
+- **Ghosting `?format=pdf`:** returns HTTP 501 `pdf_not_available`
+  with `formats_supported`/`formats_planned` capability block — no
+  silent-scope JSON fallback ✓
+- **Verify endpoint:** returns `{valid: true}` on the intact manifest
+  and `{valid: false}` on a tampered manifest; never surfaces the
+  signing key ✓
+
+**Founder closeout item (this pass, 2026-08-08) — null-envelope
+uniformity:** the tester leg noted that when `opt_end`,
+`earliest_start`, or `sealed_at` were absent from the profile, they
+came back as bare `null` — breaking the "every known datum carries
+labels" claim for consumers that iterate `known.items()`. This session
+seals that cosmetic gap:
+
+- `domains/eligibility/explain.py` — `_labelled(...)` now returns the
+  full envelope `{"value": null, "source": null, "as_of": null}` for
+  any missing value (opt_end, earliest_start). `sealed_at` also wears
+  the envelope now — `{value: <iso>, source: user_self_attested,
+  as_of: <iso>}` when the seal exists, uniform-null envelope when it
+  doesn't.
+- Anti-regression locks (2 new tests, both green):
+  - `test_eligibility_explain_null_valued_datums_carry_uniform_envelope`
+    — sparse profile → opt_end/earliest_start/sealed_at all
+    `{value:null, source:null, as_of:null}`.
+  - `test_eligibility_explain_all_known_entries_are_labelled_dicts`
+    — iterating `known` yields only labelled dicts; no bare scalars,
+    no bare Nones.
+- Docstring + response `note` field updated to match:
+  *"null values still wear the envelope `{value:null, source:null,
+  as_of:null}` so the shape is uniform."*
+
+**Triple-source status:** SATISFIED — spec-write + agent-attested +
+founder-tester replay + uniform-envelope-lock all aligned. Phase 4
+verdict is final PASS.
+
+
+---
+
+## §6 · Sequence FINAL (2026-08-08)
+
+Master directive fully honored, triple-sourced end-to-end:
+
+- Phase 0 · Fynd Liquid retheme + rebrand → **PASSED** (2026-08-04)
+- Phase 1 · CONVERSION LAYER → **PASSED** (2026-08-06, founder tester-leg)
+- Phase 2 · INTELLIGENCE VISIBLE → **PASSED** (2026-08-08, founder tester-leg)
+- Phase 3 · SUPPLY ENGINE → **PASSED** (2026-08-08, founder tester-leg + persistence lock)
+- Phase 4 · ELIGIBILITY ENGINE & EXPORTS → **PASSED** (2026-08-08, founder tester-leg + null-envelope lock)
+
+Suite at closeout: **114 passed / 3 skipped** (+3 pass over prior
+tester-leg-fix baseline, 0 regressions). The 3 skipped tests are
+motor/pytest-asyncio incompatibility skips, locked by live-curl
+evidence (see MERGE-PACKET §3 for the per-test lock reference).
+
+Local `main` HEAD carries all 5 gate close-outs + the 2026-08-08
+closeout commit. Push blocked externally on GitHub connection auth
+(recorded in `MERGE-PACKET.md`); Save-to-GitHub click clears that
+whenever founder is next connected. Publish is founder's physical
+action.
+

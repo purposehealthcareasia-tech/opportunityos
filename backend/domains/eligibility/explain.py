@@ -104,6 +104,13 @@ async def eligibility_explain(user: dict = Depends(get_current_user)):
     provenance. Sources: `user_self_attested` (from Passport →
     Eligibility) or `engine_derived` (a boolean flag derived from
     stored fields). READ-ONLY.
+
+    Fix 4b (2026-08-08, cosmetic uniformity) — null-valued datums
+    (opt_end, earliest_start, sealed_at when absent) also wear the
+    label envelope: `{"value": null, "source": null, "as_of": null}`.
+    The "every known datum carries labels" claim is now uniformly
+    true across present + missing values — no consumer needs a
+    special-case branch for `None`.
     """
     db = get_db()
     profile = await db.eligibility_profiles.find_one(
@@ -121,8 +128,15 @@ async def eligibility_explain(user: dict = Depends(get_current_user)):
                        if hasattr(sealed, "isoformat") else sealed)
 
         def _labelled(value, source, as_of=None):
+            # Fix 4b (2026-08-08, cosmetic uniformity) — a null-valued
+            # datum still carries the label envelope so the shape is
+            # uniform across every entry in `known`. Downstream
+            # consumers can now assume `known[<key>]` is ALWAYS
+            # `{value, source, as_of}` (never a bare `None`), which
+            # makes the "every known datum carries labels" claim
+            # literally true.
             if value is None or value == "":
-                return None
+                return {"value": None, "source": None, "as_of": None}
             return {"value": value, "source": source, "as_of": as_of}
 
         known = {
@@ -146,7 +160,14 @@ async def eligibility_explain(user: dict = Depends(get_current_user)):
                 k: {"value": v, "source": "engine_derived", "as_of": sealed_iso}
                 for k, v in (profile.get("derived_flags") or {}).items()
             },
-            "sealed_at": sealed_iso,
+            # sealed_at is itself a user-self-attested stamp — the
+            # `value` and `as_of` are the same ISO string; when absent
+            # the envelope is fully null (uniform shape).
+            "sealed_at": _labelled(
+                sealed_iso,
+                "user_self_attested",
+                sealed_iso,
+            ),
         }
     else:
         known = {
@@ -165,8 +186,10 @@ async def eligibility_explain(user: dict = Depends(get_current_user)):
             "READ-ONLY reflection of the stored profile + the public-data "
             "signals Fynd deliberately does NOT infer. Every 'known' datum "
             "carries `source` + `as_of` labels (source ∈ "
-            "{user_self_attested, engine_derived}). Every 'unknown' entry "
-            "names the public dataset we could reach but refuse to join "
-            "with your profile — honesty over convenience."
+            "{user_self_attested, engine_derived}); null values still wear "
+            "the envelope `{value:null, source:null, as_of:null}` so the "
+            "shape is uniform. Every 'unknown' entry names the public "
+            "dataset we could reach but refuse to join with your profile "
+            "— honesty over convenience."
         ),
     }

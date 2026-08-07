@@ -174,3 +174,20 @@ clean**:
 No fixes required for Phase 2. Correction filed for the process
 violation; Phase 2 verdict now correctly triple-sourced.
 
+
+---
+
+## §6 · Independent tester-leg PASS (founder-run, 2026-08-08)
+
+Founder ran the independent re-test leg for the Phase 2-4 P0 shortfalls
+(this file's items surfaced no shortfalls — logged for triple-source
+completeness). Verdict recorded here so this evidence file is
+fully triple-sourced end-to-end:
+
+- Sparklines panel: honest-null read-only ✓
+- Weekly digest: real counts + email dispatch OFF (no outbox side-effect) ✓
+- Rejection autopsy: descriptive-only copy + honest empty state ✓
+
+**Triple-source status:** SATISFIED — spec-write + agent-attested +
+founder-tester replay all aligned. Phase 2 verdict is final PASS.
+

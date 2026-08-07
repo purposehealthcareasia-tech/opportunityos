@@ -301,3 +301,158 @@ async def test_verify_endpoint_does_not_expose_signing_key(monkeypatch):
         )
         blob = json.dumps(r)
         assert "supersecret-signing-key-2026" not in blob, blob
+
+
+
+# ============================================================
+# FIX 4b · Null-envelope uniformity (cosmetic closeout, 2026-08-08)
+# ============================================================
+# Founder closeout item: the three known datums that can be missing
+# (opt_end, earliest_start, sealed_at) MUST wear the same
+# {value, source, as_of} envelope even when the value is null, so
+# consumers can iterate `known.items()` and rely on the shape.
+
+@pytest.mark.asyncio
+async def test_eligibility_explain_null_valued_datums_carry_uniform_envelope(monkeypatch):
+    """Profile with status only — opt_end/earliest_start/sealed_at
+    absent. Each MUST come back as `{value:null, source:null,
+    as_of:null}` (NOT bare None) so the shape is uniform."""
+    from domains.eligibility import explain
+
+    class _Coll:
+        async def find_one(self, *_a, **_kw):
+            # Deliberately sparse: only status is set; opt_end,
+            # earliest_start, sealed_at, created_at all absent.
+            return {"user_id": "u", "status": "us_citizen"}
+
+    class _DB:
+        eligibility_profiles = _Coll()
+
+    monkeypatch.setattr(explain, "get_db", lambda: _DB())
+    r = await explain.eligibility_explain(user={"id": "u"})
+    known = r["known"]
+
+    # status: present, labelled with source but as_of=null (no seal
+    # stamp available to anchor to — null is honest).
+    assert known["status"]["value"] == "us_citizen"
+    assert known["status"]["source"] == "user_self_attested"
+    assert known["status"]["as_of"] is None
+
+    # opt_end, earliest_start, sealed_at: null-envelope shape.
+    for k in ("opt_end", "earliest_start", "sealed_at"):
+        assert isinstance(known[k], dict), (k, known[k])
+        assert known[k] == {"value": None, "source": None, "as_of": None}, (
+            k, known[k])
+
+
+@pytest.mark.asyncio
+async def test_eligibility_explain_all_known_entries_are_labelled_dicts(monkeypatch):
+    """Uniformity lock: iterating `known` yields ONLY labelled dicts
+    (plus `derived_flags` which is a dict-of-labelled-dicts). No bare
+    scalars, no bare Nones. This is the shape guarantee the founder
+    asked for."""
+    from domains.eligibility import explain
+
+    class _Coll:
+        async def find_one(self, *_a, **_kw):
+            return {"user_id": "u", "status": "ead_opt"}
+
+    class _DB:
+        eligibility_profiles = _Coll()
+    monkeypatch.setattr(explain, "get_db", lambda: _DB())
+    r = await explain.eligibility_explain(user={"id": "u"})
+
+    for k, v in r["known"].items():
+        assert isinstance(v, dict), (k, v)
+        if k == "derived_flags":
+            # dict-of-labelled-dicts (empty in this case is fine).
+            for fk, fv in v.items():
+                assert set(fv.keys()) >= {"value", "source", "as_of"}, (fk, fv)
+        else:
+            assert set(v.keys()) == {"value", "source", "as_of"}, (k, v)
+
+
+# ============================================================
+# FIX 3b · Abuse-log PERSISTENCE (queryable-row shape check, 2026-08-08)
+# ============================================================
+# Founder closeout item: the tester leg proved the /admin/supply/abuse-log
+# route exists (403 as non-admin) but could not prove that a 429 event
+# actually persists a row queryable via that admin surface. This test
+# runs the 429 path AND then reads back through admin_abuse_log to
+# assert the row is present + shape-correct.
+
+@pytest.mark.asyncio
+async def test_abuse_log_row_persists_and_is_queryable_via_admin_surface(monkeypatch):
+    """End-to-end shape check: trip the 24h cap → assert a row lands
+    in `supply_abuse_log` → read via `admin_abuse_log` → assert the
+    observed row has the documented shape."""
+    from domains.supply import service as supply
+    from fastapi import HTTPException
+
+    # Shared in-memory abuse store so the writer (connect_employer)
+    # and the reader (admin_abuse_log) touch the same collection.
+    store: list = []
+
+    class _Subs:
+        async def count_documents(self, *_a, **_kw):
+            return supply._MAX_SUBMISSIONS_PER_24H
+
+    class _AbuseCursor:
+        def __init__(self, docs): self._docs = list(docs)
+        def sort(self, *_a, **_kw): return self
+        def limit(self, *_a, **_kw): return self
+        def __aiter__(self):
+            async def gen():
+                for d in self._docs:
+                    yield d
+            return gen()
+
+    class _AbuseLog:
+        async def insert_one(self, doc): store.append(doc)
+        def find(self, *_a, **_kw): return _AbuseCursor(store)
+
+    class _DB:
+        employer_submissions = _Subs()
+        supply_abuse_log = _AbuseLog()
+
+    monkeypatch.setattr(supply, "get_db", lambda: _DB())
+    async def _capture(*a, **kw): pass
+    monkeypatch.setattr(supply.audit, "write", _capture)
+
+    # 1) Trip the 24h cap on /employers/connect.
+    class _R: status_code = 200
+    from domains.supply.service import ConnectRequest
+    with pytest.raises(HTTPException) as ei:
+        await supply.connect_employer(
+            ConnectRequest(url="https://boards.greenhouse.io/x"),
+            _R(),
+            user={"id": "u-persist"},
+        )
+    assert ei.value.status_code == 429
+
+    # 2) Row landed in the store (write path proved).
+    assert len(store) == 1
+    row = store[0]
+
+    # 3) Read via the admin surface — same store, real handler code.
+    admin_out = await supply.admin_abuse_log(limit=100, user={"id": "admin-x",
+                                                                "role": "admin"})
+    assert admin_out["count"] == 1
+    observed = admin_out["abuse_events"][0]
+
+    # 4) Shape check — the founder-observed one-line row shape:
+    #    {id, user_id, kind, attempted_url, canonical_host,
+    #     recent_count_last_24h, cap, at}
+    expected_keys = {
+        "id", "user_id", "kind", "attempted_url", "canonical_host",
+        "recent_count_last_24h", "cap", "at",
+    }
+    assert expected_keys <= set(observed.keys()), (
+        expected_keys - set(observed.keys()), observed)
+    assert observed["kind"] == "connect_rate_limit_exceeded"
+    assert observed["user_id"] == "u-persist"
+    assert observed["canonical_host"] == "boards.greenhouse.io"
+    assert observed["cap"] == supply._MAX_SUBMISSIONS_PER_24H
+    assert observed["recent_count_last_24h"] >= supply._MAX_SUBMISSIONS_PER_24H
+    # `at` was ISO-serialized by admin_abuse_log for JSON transport.
+    assert isinstance(observed["at"], str) and "T" in observed["at"]
