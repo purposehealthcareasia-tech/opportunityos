@@ -282,6 +282,13 @@ Web-Push subscribe + test-send.
 
 ---
 
+**MERGE EXECUTED (2026-08-07T~00:55Z):**
+- Fast-forward merge of `feat/liquid-ui` → `main`. No merge commit
+  needed (main was strictly behind feat/liquid-ui).
+- **Post-merge `main` HEAD SHA:** `31fb8d8bf94e87c8e58125121cf13bc2ce6c8289`
+- Local `main` is now at packet SHA. Pre-push hard check RE-VERIFIED
+  clean immediately before push attempt.
+
 ## Merge execution plan (auto-runs after this packet commits)
 
 Per founder's merge pre-authorization + rail check:
