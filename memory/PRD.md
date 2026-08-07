@@ -1,4 +1,21 @@
-# Fynd — Product Requirements (living)
+# Fynd — Product Requirements Document
+
+## 🏁 Sequence status (2026-08-07T~01:22Z, local `main` HEAD `9e2939d2`)
+
+| Phase | Codename | Verdict | Date | Evidence |
+|---|---|---|---|---|
+| 0 | Fynd Liquid retheme + rebrand | **PASSED** | 2026-08-04 | `docs/PHASE-0-EVIDENCE.md` |
+| 1 | CONVERSION LAYER | **PASSED** (founder-attested triple-source replay) | 2026-08-06 | `docs/PHASE-1-EVIDENCE.md` |
+| 2 | INTELLIGENCE VISIBLE | **PASSED** | 2026-08-07 | `docs/PHASE-2-EVIDENCE.md` |
+| 3 | SUPPLY ENGINE | **PASSED** | 2026-08-07 | `docs/PHASE-3-EVIDENCE.md` |
+| 4 | ELIGIBILITY ENGINE & EXPORTS | **PASSED** | 2026-08-07 | `docs/PHASE-4-EVIDENCE.md` |
+
+Merge packet: `docs/MERGE-PACKET.md` (Phase 1 close-out, dry-run CLEAN, merged into `main` at `31fb8d8b`, subsequent phases 2-4 extend main directly).
+Workday spec: `docs/WORKDAY-SPEC.md` (spec-only, no code, PENDING FOUNDER REVIEW).
+Push status: **BLOCKED** on GitHub connection auth (external — Arjun's Save-to-GitHub click clears this).
+Pytest at HEAD: **97 passed / 3 skipped** (Phase 1 baseline 72p/3s → **+25 pass, 0 regressions** cumulative).
+
+ements (living)
 
 **Codename in repo:** LYNK.
 **Web-first.** Backend: FastAPI @ 8001. Frontend: React @ 3000. DB: MongoDB. Ingress: all backend under `/api/*`.
