@@ -11,6 +11,7 @@ import {
   Ban,
 } from 'lucide-react';
 import { api } from '../lib/api';
+import { IntelligencePanel } from '../components/OutcomesIntelligence';
 
 /**
  * Small readability helper — reallocation `group` may be an employer id
@@ -169,18 +170,24 @@ export default function OutcomesPage() {
           <button type="button" onClick={load} className="underline ml-2" data-testid="outcomes-retry">Retry</button>
         </div>
       ) : (
-        <div className="grid lg:grid-cols-2 gap-5">
-          <ReallocationPanel
-            reallocation={state.reallocation}
-            message={state.reallocationMessage}
-          />
-          <KillListPanel
-            active={state.active}
-            restored={state.restored}
-            onRestore={restore}
-            restoringEmployer={restoringEmployer}
-          />
-        </div>
+        <>
+          <div className="grid lg:grid-cols-2 gap-5">
+            <ReallocationPanel
+              reallocation={state.reallocation}
+              message={state.reallocationMessage}
+            />
+            <KillListPanel
+              active={state.active}
+              restored={state.restored}
+              onRestore={restore}
+              restoringEmployer={restoringEmployer}
+            />
+          </div>
+          {/* Phase 2 · INTELLIGENCE VISIBLE — read-only panels appended
+              below the existing v1 surface. Independently consent-gated;
+              renders its own consent-block message on 403. */}
+          <IntelligencePanel />
+        </>
       )}
     </div>
   );
