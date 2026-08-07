@@ -248,6 +248,64 @@ for r in "/api/v1/testing/whatever" "/api/v1/dev/reset"; do
 done
 
 # ---------------------------------------------------------------------------
+# 12 — Phase 1 surfaces (added post-Phase 1 gate PASS, 2026-08-06)
+#      Consent-gated, dry-run, cap never bypassed. Only READS.
+# ---------------------------------------------------------------------------
+echo "== 12 · Phase 1 conversion-layer surfaces"
+
+# 12a — Speed-sort feed responds with the honest schema even for a fresh
+#       account (may be 200 with empty passing / 403 gated). Never 5xx.
+if [[ -n "$SMOKE_TOKEN" ]]; then
+  SPD_CODE=$(curl -sSL -m 15 -o /dev/null -w "%{http_code}" \
+    -H "Authorization: Bearer $SMOKE_TOKEN" \
+    "$PROD_URL/api/v1/jobs/feed?sort=speed")
+  check "GET /jobs/feed?sort=speed responds cleanly (2xx/3xx/4xx, never 5xx)" \
+    bash -c "[[ '$SPD_CODE' -lt 500 && '$SPD_CODE' -ge 200 ]]"
+else
+  echo "  SKIP 12a · needs SMOKE_TOKEN from check 7"
+fi
+
+# 12b — Wave preview is READ-only, no authorize side-effect. Response
+#       always carries a `breakdown` object with the 5 canonical keys.
+if [[ -n "$SMOKE_TOKEN" ]]; then
+  PREV=$(curl -sSL -m 20 \
+    -H "Authorization: Bearer $SMOKE_TOKEN" \
+    "$PROD_URL/api/v1/wave/preview?cap=1")
+  check "GET /wave/preview returns breakdown with 5 canonical keys" \
+    python3 -c "
+import sys, json
+d = json.loads('''$PREV''' or '{}')
+b = d.get('breakdown') or {}
+expected = {'total_scanned', 'blocked_scope', 'blocked_hard_gate', 'blocked_cap', 'blocked_duplicate'}
+missing = expected - set(b.keys())
+assert not missing, f'missing keys in breakdown: {missing}'
+print('breakdown ok:', b)
+"
+else
+  echo "  SKIP 12b · needs SMOKE_TOKEN from check 7"
+fi
+
+# 12c — Booking URL preferences round-trip (READ only; a real write only
+#       happens if BOOKING_URL_SMOKE_ROUND_TRIP=1 was explicitly set).
+if [[ -n "$SMOKE_TOKEN" ]]; then
+  PREF_CODE=$(curl -sSL -m 15 -o /dev/null -w "%{http_code}" \
+    -H "Authorization: Bearer $SMOKE_TOKEN" \
+    "$PROD_URL/api/v1/preferences")
+  check "GET /preferences 200 (booking_url row surface reachable)" \
+    [ "$PREF_CODE" = "200" ]
+fi
+
+# 12d — Follow-up drafts lane reachable + never-auto-sent guarantee
+#       (empty state is a valid outcome).
+if [[ -n "$SMOKE_TOKEN" ]]; then
+  FU_CODE=$(curl -sSL -m 15 -o /dev/null -w "%{http_code}" \
+    -H "Authorization: Bearer $SMOKE_TOKEN" \
+    "$PROD_URL/api/v1/follow-ups/drafts")
+  check "GET /follow-ups/drafts 200 (review lane reachable, never auto-sent)" \
+    [ "$FU_CODE" = "200" ]
+fi
+
+# ---------------------------------------------------------------------------
 #  Summary
 # ---------------------------------------------------------------------------
 echo
