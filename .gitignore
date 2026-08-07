@@ -9,12 +9,16 @@
 # when unset), so a missing workspace .env would boot in safe not-prod mode.
 backend/.env
 frontend/.env
+mobile/.env
 .env.local
 .env.*.local
 # Candidate prod secrets are handed to the founder out-of-band and MUST
 # never enter git history.
 memory/.prod_secrets_DO_NOT_COMMIT
 memory/.*.secret
+# Test credentials are read by the local testing agent and MUST NOT be
+# tracked in the shared repo. Kept on disk, ignored from git.
+memory/test_credentials.md
 
 # Python
 __pycache__/
