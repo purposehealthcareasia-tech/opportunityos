@@ -25,6 +25,7 @@ const Outcomes         = lazy(() => import('./pages/Outcomes'));
 const Billing          = lazy(() => import('./pages/Billing'));
 const Privacy          = lazy(() => import('./pages/Privacy'));
 const PrivacyPolicy    = lazy(() => import('./pages/PrivacyPolicy'));
+const Standards        = lazy(() => import('./pages/Standards'));
 const EmployerIntake   = lazy(() => import('./pages/EmployerIntake'));
 const SubmitSprint     = lazy(() => import('./pages/SubmitSprint'));
 const FollowUps        = lazy(() => import('./pages/FollowUps'));
@@ -44,6 +45,7 @@ export default function App() {
         <Route path="/signup" element={<Signup />} />
         <Route path="/auth/callback" element={<GoogleCallback />} />
         <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+        <Route path="/standards" element={<Standards />} />
         <Route path="/employers" element={<EmployerIntake />} />
 
         <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>

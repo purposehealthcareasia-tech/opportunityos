@@ -43,6 +43,9 @@ from domains.screening_answers.router import router as screeners_router
 from domains.outcomes.service import router as outcomes_router
 from domains.outcomes.intelligence import router as outcomes_intel_router
 from domains.supply.service import router as supply_router
+from domains.eligibility.explain import router as eligibility_explain_router
+from domains.exports.ghosting import router as exports_ghosting_router
+from domains.standards.service import router as standards_router
 from domains.subscriptions.service import router as subscriptions_router
 from domains.inbound.internal_router import router as inbound_internal_router
 from domains.analytics.service import router as analytics_router
@@ -310,6 +313,9 @@ app.include_router(screeners_router)
 app.include_router(outcomes_router)
 app.include_router(outcomes_intel_router)
 app.include_router(supply_router)
+app.include_router(eligibility_explain_router)
+app.include_router(exports_ghosting_router)
+app.include_router(standards_router)
 app.include_router(subscriptions_router)
 app.include_router(inbound_internal_router)
 app.include_router(analytics_router)
