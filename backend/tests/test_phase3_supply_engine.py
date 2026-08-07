@@ -97,8 +97,11 @@ async def test_rate_limit_envelope_enforced(monkeypatch):
         async def count_documents(self, *_a, **_kw): return supply._MAX_SUBMISSIONS_PER_24H
         async def find_one(self, *_a, **_kw): return None
         async def insert_one(self, *_a, **_kw): return None
+    class _AbuseLogColl:
+        async def insert_one(self, *_a, **_kw): return None
     class _DB:
         employer_submissions = _Coll()
+        supply_abuse_log = _AbuseLogColl()
     monkeypatch.setattr(supply, "get_db", lambda: _DB())
     monkeypatch.setattr(supply.audit, "write", AsyncMock())
 

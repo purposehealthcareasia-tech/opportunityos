@@ -31,8 +31,9 @@ async def test_eligibility_explain_lists_all_public_data_unknowns(monkeypatch):
     monkeypatch.setattr(explain, "get_db", lambda: _DB())
 
     r = await explain.eligibility_explain(user={"id": "u"})
-    assert r["known"]["status"] == "ead_opt"
-    assert r["known"]["derived_flags"]["itar_excluded"] is True
+    # Fix 4 shape: each datum in `known` is now a labelled dict.
+    assert r["known"]["status"]["value"] == "ead_opt"
+    assert r["known"]["derived_flags"]["itar_excluded"]["value"] is True
     # Anti-regression: MUST enumerate at least these public-data unknowns.
     unknown_keys = {u["key"] for u in r["unknown"]}
     for required in (
@@ -94,7 +95,7 @@ async def test_ghosting_signature_verifies_and_is_hmac_sha256(monkeypatch):
     # Lock the signing key so the assertion is deterministic.
     monkeypatch.setenv("EVIDENCE_SIGNING_KEY", "unit-test-key-16b")
 
-    r = await ghosting.ghosting_evidence(user={"id": "u-42"})
+    r = await ghosting.ghosting_evidence(format="json", user={"id": "u-42"})
     body = r["manifest"]
     sig = r["signature"]
     canonical = json.dumps(body, sort_keys=True, separators=(",", ":"),
@@ -150,7 +151,7 @@ async def test_ghosting_only_flags_zero_response_after_threshold(monkeypatch):
         outcomes = _OutColl()
     monkeypatch.setattr(ghosting, "get_db", lambda: _DB())
 
-    r = await ghosting.ghosting_evidence(user={"id": "u"})
+    r = await ghosting.ghosting_evidence(format="json", user={"id": "u"})
     ids = [a["application_id"] for a in r["manifest"]["applications"]]
     assert ids == ["a-old-ghosted"], ids
 

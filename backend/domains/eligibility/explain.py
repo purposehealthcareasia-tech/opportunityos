@@ -99,9 +99,11 @@ _UNKNOWNS = [
 async def eligibility_explain(user: dict = Depends(get_current_user)):
     """Honest-unknowns explanation of the eligibility profile.
 
-    READ-ONLY. Reads the stored profile verbatim. Enumerates every
-    public-data signal the engine deliberately does NOT infer, with a
-    plain-language `why`.
+    Fix 4 (2026-08-07) — every datum in the `known` block now carries
+    `source` + `as_of` labels so downstream consumers can audit
+    provenance. Sources: `user_self_attested` (from Passport →
+    Eligibility) or `engine_derived` (a boolean flag derived from
+    stored fields). READ-ONLY.
     """
     db = get_db()
     profile = await db.eligibility_profiles.find_one(
@@ -110,16 +112,41 @@ async def eligibility_explain(user: dict = Depends(get_current_user)):
     )
     known: dict = {}
     if profile:
+        # sealed_at is the point-in-time attestation stamp; it acts as
+        # the as_of for every user-self-attested datum. If missing,
+        # fall back to created_at, then to a null literal (never a
+        # fabricated stamp).
+        sealed = profile.get("sealed_at") or profile.get("created_at")
+        sealed_iso = (sealed.isoformat()
+                       if hasattr(sealed, "isoformat") else sealed)
+
+        def _labelled(value, source, as_of=None):
+            if value is None or value == "":
+                return None
+            return {"value": value, "source": source, "as_of": as_of}
+
         known = {
-            "status": profile.get("status"),
-            "opt_end": profile.get("opt_end"),
-            "earliest_start": profile.get("earliest_start"),
-            "derived_flags": profile.get("derived_flags") or {},
-            "sealed_at": (
-                profile["sealed_at"].isoformat()
-                if profile.get("sealed_at")
-                else None
+            "status": _labelled(
+                profile.get("status"),
+                "user_self_attested",
+                sealed_iso,
             ),
+            "opt_end": _labelled(
+                profile.get("opt_end"),
+                "user_self_attested",
+                sealed_iso,
+            ),
+            "earliest_start": _labelled(
+                profile.get("earliest_start"),
+                "user_self_attested",
+                sealed_iso,
+            ),
+            "derived_flags": {
+                # Each derived flag carries its own source label.
+                k: {"value": v, "source": "engine_derived", "as_of": sealed_iso}
+                for k, v in (profile.get("derived_flags") or {}).items()
+            },
+            "sealed_at": sealed_iso,
         }
     else:
         known = {
@@ -136,8 +163,10 @@ async def eligibility_explain(user: dict = Depends(get_current_user)):
         "policy_version": "2026-02-21",
         "note": (
             "READ-ONLY reflection of the stored profile + the public-data "
-            "signals Fynd deliberately does NOT infer. Every 'unknown' "
-            "entry names the public dataset we could reach but refuse to "
-            "join with your profile — honesty over convenience."
+            "signals Fynd deliberately does NOT infer. Every 'known' datum "
+            "carries `source` + `as_of` labels (source ∈ "
+            "{user_self_attested, engine_derived}). Every 'unknown' entry "
+            "names the public dataset we could reach but refuse to join "
+            "with your profile — honesty over convenience."
         ),
     }

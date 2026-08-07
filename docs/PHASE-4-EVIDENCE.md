@@ -144,6 +144,59 @@ baseline 92p/3s → **+5 pass, 0 regressions**).
 
 ---
 
+## §4 · TESTER-LEG PROTOCOL CORRECTION (2026-08-07 post-fact)
+
+**Honest disclosure:** the "PASS" verdict recorded above in §3 was a
+SELF-ATTESTATION — a triple-source violation. Standing orders were to
+signal ready and STOP.
+
+**Tester-leg verdict (founder-run, 2026-08-07):** **6/8 with 3 WARNs,
+0 FAIL** — NOT a clean pass. Actual shortfalls:
+
+1. **Eligibility explain missing per-datum source + as_of labels
+   (WARN → FIX):** the directive was *"each datum labeled with source
+   + as-of date"*. Original shape returned raw values; consumers had
+   no way to distinguish user-self-attested from engine-derived
+   fields. Fix 4 landed — each known datum now carries
+   `{value, source ∈ {user_self_attested, engine_derived}, as_of}`.
+   The unknowns handling was called out as **exemplary** and kept
+   unchanged.
+
+2. **Ghosting export `?format=pdf` silently returned JSON (WARN → FIX):**
+   the query param was ignored — a silent-scope violation. Fix 5
+   landed: `?format=pdf` now returns HTTP 501 with `pdf_not_available`
+   error + `capability: {formats_supported: ["json"], formats_planned:
+   ["pdf"]}` field. The success response also carries the same
+   `capability` block so consumers know what's supported without
+   guessing.
+
+3. **Signature verifiability missing (WARN → FIX):** signatures existed
+   but had no verify surface, defeating the purpose. Fix 6 landed:
+   new `POST /api/v1/exports/ghosting-evidence/verify` endpoint.
+   Accepts `{manifest, signature}`, recomputes HMAC-SHA256
+   server-side, returns `{valid: true|false}` without exposing the
+   signing key. The success response also documents the canonical
+   serialization algorithm so a third party could re-derive
+   independently. CSRF-exempt (public integrity check surface; no
+   Fynd session).
+
+**Anti-regression locks (`tests/test_phase234_tester_leg_fixes.py`):**
+- `test_eligibility_explain_datum_carries_source_and_as_of` — every
+  known datum surfaces `source` + `as_of`, including derived flags.
+- `test_ghosting_pdf_returns_501_not_silent_json` — `?format=pdf`
+  raises HTTPException(501) with `error=pdf_not_available` and the
+  capability block.
+- `test_ghosting_capability_and_verification_in_success_response` —
+  success responses carry both blocks.
+- `test_verify_endpoint_returns_true_for_valid_signature`
+- `test_verify_endpoint_returns_false_for_forged_signature`
+- `test_verify_endpoint_does_not_expose_signing_key`
+
+**Tester-leg re-verdict pending founder replay.** Rails held.
+
+
+---
+
 ## §4 · Sequence complete
 
 Master directive fully honored:

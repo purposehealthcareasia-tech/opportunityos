@@ -2,24 +2,24 @@
 
 Endpoint
 --------
-GET /api/v1/exports/ghosting-evidence
+GET  /api/v1/exports/ghosting-evidence[?format=json]
+POST /api/v1/exports/ghosting-evidence/verify
 
-Returns a signed JSON manifest of every application the user submitted
-that has NO response outcome recorded after `GHOSTING_THRESHOLD_DAYS`
-(default 21).
+Fix 5 (2026-08-07) — silent-scope violation SEALED. `?format=pdf`
+now returns an EXPLICIT 501 with `pdf_not_available` + a `formats`
+capability field. `?format=json` (or no `format` param) returns the
+signed JSON manifest.
 
-The manifest is:
-  - Assembled from the immutable `applications` + `outcomes` ledgers.
-  - HMAC-SHA256 signed with `EVIDENCE_SIGNING_KEY` env var (or a
-    dev-only fallback). The signature covers a canonical JSON
-    serialization of the manifest body; the founder can later re-verify
-    the integrity of any exported bundle offline.
-  - Consent-gated (`track_applications`).
-  - READ-ONLY. Does NOT persist a copy of the export.
+Fix 6 (2026-08-07) — signature verifiability. `POST .../verify` accepts
+a manifest + signature and returns `{valid: true|false}`. No key is
+exposed; the endpoint recomputes the HMAC-SHA256 server-side. This
+makes signatures cross-verifiable by third parties WITHOUT ever
+handing them the signing key.
 
-We do NOT ship a PDF renderer in this phase — the JSON bundle is the
-authoritative signed artifact. A future phase can render a PDF that
-embeds this signed JSON verbatim.
+Contract
+--------
+Signature = HMAC-SHA256 over canonical JSON serialization of the
+manifest body (sort_keys=True, separators=(",",":"), default=str).
 """
 from __future__ import annotations
 import hashlib
@@ -27,8 +27,10 @@ import hmac
 import json
 import os
 from datetime import datetime, timedelta, timezone
+from typing import Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from core.db import get_db
 from core.deps import require_consent
 
@@ -39,6 +41,13 @@ router = APIRouter(prefix="/api/v1/exports", tags=["exports"])
 GHOSTING_THRESHOLD_DAYS = int(
     os.environ.get("GHOSTING_THRESHOLD_DAYS", "21") or "21"
 )
+
+
+# What formats we ACTUALLY ship right now. Cross-referenced by both the
+# GET endpoint (for the 501 branch) and the response capability field
+# (so consumers programmatically know what's supported without guessing).
+SUPPORTED_FORMATS = ("json",)
+PLANNED_FORMATS = ("pdf",)   # documented as not-yet-shipped
 
 
 def _signing_key() -> bytes:
@@ -53,15 +62,30 @@ def _signing_key() -> bytes:
     return b"dev-only-evidence-key-DO-NOT-USE-IN-PROD-2026"
 
 
-def _sign(payload: dict) -> str:
-    canonical = json.dumps(
+def canonical_serialize(payload: dict) -> bytes:
+    """Canonical JSON serialization used for both signing and
+    verification. sort_keys=True + no whitespace + default=str for
+    datetimes. Locked because a mismatched serializer breaks all
+    signature verification."""
+    return json.dumps(
         payload, sort_keys=True, separators=(",", ":"), default=str,
     ).encode("utf-8")
-    return hmac.new(_signing_key(), canonical, hashlib.sha256).hexdigest()
+
+
+def _sign(payload: dict) -> str:
+    return hmac.new(
+        _signing_key(), canonical_serialize(payload), hashlib.sha256
+    ).hexdigest()
+
+
+class VerifyRequest(BaseModel):
+    manifest: dict
+    signature: str
 
 
 @router.get("/ghosting-evidence")
 async def ghosting_evidence(
+    format: str = Query("json", description="Response format; `json` only supported today"),
     user: dict = Depends(require_consent("track_applications")),
 ):
     """Signed evidence bundle of ghosted applications.
@@ -71,6 +95,27 @@ async def ghosting_evidence(
          GHOSTING_THRESHOLD_DAYS).
       2. Zero `outcomes` rows exist for it with `event != "viewed"`.
     """
+    # Fix 5 — explicit format handling. Silent scope reduction is a
+    # rail violation.
+    fmt = (format or "json").lower().strip()
+    if fmt not in SUPPORTED_FORMATS:
+        raise HTTPException(
+            status_code=501,
+            detail={
+                "error": "pdf_not_available" if fmt == "pdf" else "format_not_available",
+                "message": (
+                    f"Format `{fmt}` is not shipped today. Supported: "
+                    f"{list(SUPPORTED_FORMATS)}. Planned but not-yet-"
+                    f"shipped: {list(PLANNED_FORMATS)}. The JSON bundle "
+                    "is the authoritative signed artifact."
+                ),
+                "capability": {
+                    "formats_supported": list(SUPPORTED_FORMATS),
+                    "formats_planned": list(PLANNED_FORMATS),
+                },
+            },
+        )
+
     db = get_db()
     now = datetime.now(timezone.utc)
     cutoff = now - timedelta(days=GHOSTING_THRESHOLD_DAYS)
@@ -97,7 +142,29 @@ async def ghosting_evidence(
                 f"activity. Nothing to attest."
             ),
         }
-        return {"manifest": body, "signature": _sign(body)}
+        return {
+            "manifest": body,
+            "signature": _sign(body),
+            "capability": {
+                "formats_supported": list(SUPPORTED_FORMATS),
+                "formats_planned": list(PLANNED_FORMATS),
+            },
+            "verification": {
+                "algorithm": "HMAC-SHA256",
+                "canonical_serialization": (
+                    'json.dumps(manifest, sort_keys=True, '
+                    'separators=(",",":"), default=str).encode()'
+                ),
+                "verify_endpoint": "POST /api/v1/exports/ghosting-evidence/verify",
+                "note": (
+                    "The verify endpoint recomputes the HMAC server-side "
+                    "and returns {valid: true|false} without exposing "
+                    "the signing key. Third-party verification without "
+                    "the key: send `{manifest, signature}` to the verify "
+                    "endpoint."
+                ),
+            },
+        }
 
     # 2) Filter by "zero non-viewed outcomes".
     ghosted: list[dict] = []
@@ -142,4 +209,61 @@ async def ghosting_evidence(
             "of the manifest body — never fabricated, always ledger-derived."
         ),
     }
-    return {"manifest": body, "signature": _sign(body)}
+    return {
+        "manifest": body,
+        "signature": _sign(body),
+        "capability": {
+            "formats_supported": list(SUPPORTED_FORMATS),
+            "formats_planned": list(PLANNED_FORMATS),
+        },
+        "verification": {
+            "algorithm": "HMAC-SHA256",
+            "canonical_serialization": (
+                'json.dumps(manifest, sort_keys=True, '
+                'separators=(",",":"), default=str).encode()'
+            ),
+            "verify_endpoint": "POST /api/v1/exports/ghosting-evidence/verify",
+            "note": (
+                "The verify endpoint recomputes the HMAC server-side "
+                "and returns {valid: true|false} without exposing the "
+                "signing key. Third-party verification without the key: "
+                "send `{manifest, signature}` to the verify endpoint."
+            ),
+        },
+    }
+
+
+@router.post("/ghosting-evidence/verify")
+async def ghosting_verify(req: VerifyRequest):
+    """Fix 6 — third-party signature verification without key exposure.
+
+    Anyone (auditor, partner, curious inspector) can POST a manifest +
+    signature and get a binary `valid` answer. The signing key is never
+    exposed; the endpoint recomputes HMAC-SHA256 server-side using the
+    canonical serialization defined above.
+
+    Not consent-gated — the manifest is either already in the caller's
+    hands (they downloaded it earlier under consent) or it's a forgery
+    attempt (in which case `valid=false` is the honest answer).
+    """
+    if not isinstance(req.manifest, dict) or not isinstance(req.signature, str):
+        return {"valid": False, "reason": "malformed_input"}
+    expected = _sign(req.manifest)
+    if hmac.compare_digest(expected.encode(), req.signature.encode()):
+        return {
+            "valid": True,
+            "algorithm": "HMAC-SHA256",
+            "note": (
+                "Signature matches the canonical serialization of the "
+                "manifest under the current EVIDENCE_SIGNING_KEY."
+            ),
+        }
+    return {
+        "valid": False,
+        "algorithm": "HMAC-SHA256",
+        "note": (
+            "Signature does not match. Either the manifest was mutated "
+            "after signing, the wrong signing key was used, or the "
+            "signature was forged."
+        ),
+    }

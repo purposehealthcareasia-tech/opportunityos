@@ -46,6 +46,12 @@ _BYPASS_PATHS = {
     # Phase 4 · Item 6 — Employer intake is a PUBLIC unauthenticated lead
     # capture form. It's rate-limited by IP + honeypot; no session exists.
     "/api/v1/employer-intake",
+    # Phase 4 Fix 6 — evidence-signature verification is a PUBLIC integrity
+    # check surface. It accepts a previously-issued manifest + signature
+    # and returns valid true/false without exposing the signing key.
+    # Third-party auditors have no Fynd session and no CSRF cookie; the
+    # endpoint mutates nothing.
+    "/api/v1/exports/ghosting-evidence/verify",
     # Legacy — some CI probes still POST /api/v1/consents while establishing a
     # signup flow; new signup path already covers this via the signup endpoint,
     # but keep the login/signup exempt only. Everything else state-changing MUST

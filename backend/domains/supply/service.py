@@ -47,7 +47,6 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 from urllib.parse import urlparse
-
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel, Field, field_validator
 
@@ -55,6 +54,7 @@ from core.db import get_db
 from core.deps import get_current_user, require_role
 from core.time_utils import utc_now
 from domains.audit import service as audit
+from domains.supply.origin_resolver import resolve as resolve_origin
 
 
 router = APIRouter(prefix="/api/v1", tags=["supply"])
@@ -147,12 +147,35 @@ async def connect_employer(
     canonical = canonicalize_host(req.url)
     db = get_db()
 
+    # Origin resolver — cross-reference against the same discovery-
+    # provider taxonomy the 157 verified boards use. Pattern-only
+    # (never hits the network); admin triage runs the live probe.
+    resolution = resolve_origin(req.url)
+
     # 24h rate limit — count is user-scoped, cheap query.
     since = utc_now() - timedelta(hours=24)
     recent_count = await db.employer_submissions.count_documents({
         "user_id": user["id"], "submitted_at": {"$gte": since},
     })
     if recent_count >= _MAX_SUBMISSIONS_PER_24H:
+        # Fix 3 — abuse logging: 429 events land in `supply_abuse_log`
+        # as queryable rows AND emit an `audit_logs` entry so the admin
+        # abuse surface can page through them.
+        await db.supply_abuse_log.insert_one({
+            "id": str(uuid.uuid4()),
+            "user_id": user["id"],
+            "kind": "connect_rate_limit_exceeded",
+            "attempted_url": req.url,
+            "canonical_host": canonical,
+            "recent_count_last_24h": recent_count,
+            "cap": _MAX_SUBMISSIONS_PER_24H,
+            "at": utc_now(),
+        })
+        await audit.write(user["id"], "supply.abuse.rate_limited",
+                           f"employer:{canonical}",
+                           {"kind": "connect_rate_limit_exceeded",
+                            "recent_count": recent_count,
+                            "cap": _MAX_SUBMISSIONS_PER_24H})
         raise HTTPException(
             status_code=429,
             detail={"error": "submission_rate_limit",
@@ -167,7 +190,16 @@ async def connect_employer(
     )
     if existing:
         response.status_code = 200
-        return {"submission": existing, "already_submitted": True}
+        return {"submission": existing, "already_submitted": True,
+                "resolution": resolution}
+
+    # Fix 2 — origin resolution feeds `status`:
+    #   verifiable_board → "pending" (default; admin triage promotes)
+    #   unrecognized_host → "unrecognized_host" (still stored; NOT silently
+    #                                             rejected; founder triage flag)
+    row_status = ("pending"
+                  if resolution["verdict"] == "verifiable_board"
+                  else "unrecognized_host")
 
     row = {
         "id": str(uuid.uuid4()),
@@ -176,17 +208,28 @@ async def connect_employer(
         "canonical_host": canonical,
         "employer_key": canonical,
         "submitted_at": utc_now(),
-        "status": "pending",
+        "status": row_status,
         "reject_reason": None,
         "notes": (req.notes or None),
+        # Origin-resolver output stored inline so the admin queue can
+        # jump straight to verification without re-parsing:
+        "origin_resolution": {
+            "provider": resolution["provider"],
+            "token": resolution["token"],
+            "verdict": resolution["verdict"],
+            "note": resolution["note"],
+        },
     }
     await db.employer_submissions.insert_one(row)
     await audit.write(user["id"], "supply.connect_submitted",
                        f"employer:{canonical}",
-                       {"submission_id": row["id"]})
+                       {"submission_id": row["id"],
+                        "origin_verdict": resolution["verdict"],
+                        "provider": resolution["provider"]})
     row.pop("_id", None)
     response.status_code = 201
-    return {"submission": row, "already_submitted": False}
+    return {"submission": row, "already_submitted": False,
+            "resolution": resolution}
 
 
 # ----------------------------------------------------------------------
@@ -249,17 +292,18 @@ async def admin_queue(
     vote_rows = await db.employer_votes.aggregate(pipeline).to_list(limit)
     vote_map = {r["_id"]: r["votes"] for r in vote_rows}
 
-    # Pull the *pending* submissions we care about; include every key
-    # that has votes even if there's no matching submission yet.
+    # Pull `pending` and `unrecognized_host` submissions — both go into
+    # founder triage, differentiated by status. `verified` / `rejected`
+    # rows fall out.
     keys_from_votes = set(vote_map.keys())
     keys_from_subs: set[str] = set()
 
-    # Read every pending submission (bounded by limit×3 for safety).
     subs: list[dict] = []
     async for s in db.employer_submissions.find(
-        {"status": "pending"},
+        {"status": {"$in": ["pending", "unrecognized_host"]}},
         {"_id": 0, "canonical_host": 1, "submitted_at": 1,
-          "submitted_url": 1, "id": 1},
+          "submitted_url": 1, "id": 1, "status": 1,
+          "origin_resolution": 1},
     ).sort("submitted_at", 1).limit(limit * 3):
         keys_from_subs.add(s["canonical_host"])
         subs.append(s)
@@ -277,6 +321,12 @@ async def admin_queue(
                 if matching else None
             ),
             "example_url": matching[0]["submitted_url"] if matching else None,
+            "origin_resolution": (
+                matching[0].get("origin_resolution") if matching else None
+            ),
+            "submission_status": (
+                matching[0].get("status") if matching else None
+            ),
         }
         queue.append(row)
 
@@ -289,3 +339,29 @@ async def admin_queue(
         )
     queue.sort(key=_sort_key)
     return {"queue": queue[:limit], "total_keys": len(queue)}
+
+
+# ----------------------------------------------------------------------
+# 4 · /admin/supply/abuse-log  (ADMIN-ONLY)
+# ----------------------------------------------------------------------
+
+@router.get("/admin/supply/abuse-log")
+async def admin_abuse_log(
+    limit: int = 100,
+    user: dict = Depends(require_role("admin")),
+):
+    """Read-only feed of supply-side abuse events (currently only
+    connect-rate-limit trips). Fix 3 gate — 429s are queryable both
+    here AND in `audit_logs` under kind `supply.abuse.*`."""
+    db = get_db()
+    if limit < 1 or limit > 500:
+        limit = 100
+    rows: list[dict] = []
+    async for r in db.supply_abuse_log.find(
+        {}, {"_id": 0}
+    ).sort("at", -1).limit(limit):
+        # Serialize datetime for JSON.
+        if isinstance(r.get("at"), datetime):
+            r["at"] = r["at"].isoformat()
+        rows.append(r)
+    return {"abuse_events": rows, "count": len(rows)}
