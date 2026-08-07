@@ -1,19 +1,37 @@
 # Fynd — Product Requirements Document
 
-## 🏁 Sequence status (2026-08-07T~01:22Z, local `main` HEAD `9e2939d2`)
+## 🏁 Sequence status (2026-08-08 CLOSEOUT, local `main` HEAD `b87d9c14`)
+
+**PHASE 0-4 SEQUENCE COMPLETE. TRIPLE-SOURCED. AWAITING FOUNDER PUSH + PUBLISH.**
 
 | Phase | Codename | Verdict | Date | Evidence |
 |---|---|---|---|---|
 | 0 | Fynd Liquid retheme + rebrand | **PASSED** | 2026-08-04 | `docs/PHASE-0-EVIDENCE.md` |
-| 1 | CONVERSION LAYER | **PASSED** (founder-attested triple-source replay) | 2026-08-06 | `docs/PHASE-1-EVIDENCE.md` |
-| 2 | INTELLIGENCE VISIBLE | **PASSED** | 2026-08-07 | `docs/PHASE-2-EVIDENCE.md` |
-| 3 | SUPPLY ENGINE | **PASSED** | 2026-08-07 | `docs/PHASE-3-EVIDENCE.md` |
-| 4 | ELIGIBILITY ENGINE & EXPORTS | **PASSED** | 2026-08-07 | `docs/PHASE-4-EVIDENCE.md` |
+| 1 | CONVERSION LAYER | **PASSED** (founder tester-leg) | 2026-08-06 | `docs/PHASE-1-EVIDENCE.md` |
+| 2 | INTELLIGENCE VISIBLE | **PASSED** (founder tester-leg) | 2026-08-08 | `docs/PHASE-2-EVIDENCE.md` §6 |
+| 3 | SUPPLY ENGINE | **PASSED** (founder tester-leg + abuse-log persistence lock) | 2026-08-08 | `docs/PHASE-3-EVIDENCE.md` §6 |
+| 4 | ELIGIBILITY ENGINE & EXPORTS | **PASSED** (founder tester-leg + null-envelope uniformity lock) | 2026-08-08 | `docs/PHASE-4-EVIDENCE.md` §5-§6 |
 
-Merge packet: `docs/MERGE-PACKET.md` (Phase 1 close-out, dry-run CLEAN, merged into `main` at `31fb8d8b`, subsequent phases 2-4 extend main directly).
-Workday spec: `docs/WORKDAY-SPEC.md` (spec-only, no code, PENDING FOUNDER REVIEW).
-Push status: **BLOCKED** on GitHub connection auth (external — Arjun's Save-to-GitHub click clears this).
-Pytest at HEAD: **97 passed / 3 skipped** (Phase 1 baseline 72p/3s → **+25 pass, 0 regressions** cumulative).
+**Founder independent tester-leg (2026-08-08) verdict on the 6 P0 fixes:** ALL PASS.
+- test_credentials.md restored + untracked ✓
+- Origin resolver: `unrecognized_host` for bogus / `verifiable_board`+`greenhouse`+`lucidmotors` for real ✓
+- 429 fires + admin abuse-log route wired (403 as non-admin, by design) ✓
+- Eligibility knowns carry `{value, source, as_of}` per datum ✓
+- `?format=pdf` returns explicit 501 `pdf_not_available` with `formats_supported`/`formats_planned` ✓
+- Signature verify: true on intact / false on tampered manifest ✓
+
+**2026-08-08 closeout items (this session, all shipped):**
+- Cosmetic uniformity: `opt_end`/`earliest_start`/`sealed_at` now wear the `{value, source, as_of}` envelope even when null. Consumers can iterate `known.items()` with a single shape assumption. 2 new anti-regression tests.
+- Abuse-log persistence lock: end-to-end write-then-read test proves the 429 row lands in `supply_abuse_log` AND is queryable via `GET /api/v1/admin/supply/abuse-log` with the exact documented shape. 1 new anti-regression test.
+
+Merge packet: `docs/MERGE-PACKET.md` (updated §1-§3 + §8 closeout addendum at FINAL SHA `b87d9c14`, dry-run RE-VERIFIED CLEAN, pre-push hard check CLEAN, main-fast-forward is a no-op — closeout commits already on `main`).
+Push status: **BLOCKED** on GitHub connection auth (external — founder's Save-to-GitHub click clears this).
+Publish click: **founder's physical action** in the Emergent dashboard.
+Pytest at closeout SHA `b87d9c14`: **114 passed / 3 skipped** (Phase 1 baseline 72p/3s → **+42 pass cumulative, 0 regressions**).
+
+The 3 skipped tests are motor/pytest-asyncio incompatibility skips, locked by live-curl evidence in `PHASE-1-EVIDENCE.md` §v and §vii. They are NOT feature gaps.
+
+---
 
 ements (living)
 

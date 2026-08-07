@@ -12,9 +12,9 @@ commits. Publish click remains Arjun's physical action.
 
 ---
 
-## 1 · Merge dry-run (non-destructive, `git merge-tree`) — UPDATED 2026-08-07
+## 1 · Merge dry-run (non-destructive, `git merge-tree`) — UPDATED 2026-08-08
 
-**Command run (at post-tester-leg-fix HEAD):**
+**Command run (at 2026-08-08 closeout HEAD):**
 ```
 BASE=$(git merge-base HEAD origin/main)   # → 35032790 (previously-recorded main tip)
 git merge-tree $BASE HEAD origin/main | grep -E "^\+<<<<|^<<<<|CONFLICT"
@@ -23,8 +23,8 @@ git merge-tree $BASE HEAD origin/main | grep -E "^\+<<<<|^<<<<|CONFLICT"
 
 **VERDICT: CLEAN.** Fast-forward feasible.
 
-**Files touched:** 226 originally + 12 tester-leg-fix files = ~238 files.
-Notable adds since original packet SHA `31fb8d8b`:
+**Files touched:** 238 through prior packet + 5 in 2026-08-08 closeout
+= ~243 files. Notable adds since original packet SHA `31fb8d8b`:
 - Phase 2 · `backend/domains/outcomes/intelligence.py`,
   `frontend/src/components/OutcomesIntelligence.jsx`
 - Phase 3 · `backend/domains/supply/{__init__,service,origin_resolver}.py`,
@@ -38,8 +38,11 @@ Notable adds since original packet SHA `31fb8d8b`:
 - Tester-leg fixes · `backend/tests/test_phase234_tester_leg_fixes.py`,
   additions to `middleware/csrf.py` (verify-endpoint exempt),
   additions to `service.py` (abuse log + origin resolver wire-in)
-- Evidence · `docs/PHASE-{2,3,4}-EVIDENCE.md` with tester-leg protocol
-  correction sections
+- 2026-08-08 closeout · `backend/domains/eligibility/explain.py`
+  (null-envelope uniformity), `backend/tests/test_phase234_tester_leg_fixes.py`
+  (+3 tests: 2 uniformity, 1 abuse-log persistence)
+- Evidence · `docs/PHASE-{2,3,4}-EVIDENCE.md` with tester-leg PASS
+  verdicts + 2026-08-08 closeout notes
 
 ---
 
@@ -74,10 +77,10 @@ here: local main already contains all fix commits.
 
 ---
 
-## 3 · Cumulative test state at packet SHA — UPDATED
+## 3 · Cumulative test state at packet SHA — UPDATED 2026-08-08
 
-**Focused Phase 0-4 suite + tester-leg fixes** (18 test files, run at
-packet SHA `95bf94f1`):
+**Focused Phase 0-4 suite + tester-leg fixes + 2026-08-08 closeout**
+(18 test files, run at FINAL packet SHA `b87d9c14`):
 
 ```
 python3 -m pytest \
@@ -96,11 +99,14 @@ python3 -m pytest \
    tests/test_phase234_tester_leg_fixes.py
 ```
 
-**Result:** **111 passed, 3 skipped in 4.22s** (Phase 1 baseline 72p/3s
-→ **+39 pass cumulative, 0 regressions**; Phase 4 baseline 97p/3s →
-**+14 pass from the tester-leg fixes**).
+**Result:** **114 passed, 3 skipped in 4.04s** (Phase 1 baseline
+72p/3s → **+42 pass cumulative, 0 regressions**; prior tester-leg-fix
+baseline 111p/3s → **+3 pass from 2026-08-08 closeout locks**).
 
-**The 3 skipped tests + their live-curl locks (unchanged from Phase 1):**
+**The 3 skipped tests + their live-curl locks (unchanged):** these are
+motor/pytest-asyncio incompatibility skips (executor-state issue, NOT
+a functional gap) — each locked by live-curl evidence in
+PHASE-1-EVIDENCE.md.
 
 | Test | Skip reason | Live-curl lock reference |
 |---|---|---|
@@ -112,10 +118,12 @@ The dual-path Fix 1 regression is fully test-covered by
 `tests/test_phase1_wave_consent_snapshot.py` (4 pass, using fake-DB —
 not affected by the motor/pytest-asyncio issue).
 
-The 14 tester-leg fix tests in
+The 17 tester-leg fix tests in
 `tests/test_phase234_tester_leg_fixes.py` lock each of the 6 shortfalls
-that the founder-run tester leg surfaced (see Phase 3 §5 + Phase 4 §4
-in the evidence files).
+that the founder-run tester leg surfaced (see Phase 3 §5-§6 + Phase 4
+§4-§5 in the evidence files), plus the 3 closeout locks:
+- 2 null-envelope uniformity tests (opt_end/earliest_start/sealed_at)
+- 1 abuse-log write-then-read persistence + shape lock
 
 ---
 
@@ -342,3 +350,54 @@ Per founder's merge pre-authorization + rail check:
    the Phase 2-4 auto-sequence per standing orders.
 7. **On push accepted** — notify founder that the Publish button in the
    Emergent dashboard is the single remaining step.
+
+---
+
+## 8 · Closeout addendum (2026-08-08)
+
+**Two founder closeout items completed on this packet SHA (`b87d9c14`):**
+
+1. **Null-envelope uniformity on `/eligibility/explain`.** The three
+   optionally-null known datums (`opt_end`, `earliest_start`,
+   `sealed_at`) now wear the same `{value, source, as_of}` envelope
+   even when the underlying value is missing. Consumers can iterate
+   `known.items()` and rely on the shape unconditionally. Locked by
+   `test_eligibility_explain_null_valued_datums_carry_uniform_envelope`
+   + `test_eligibility_explain_all_known_entries_are_labelled_dicts`.
+
+2. **Abuse-log queryable-row persistence lock.** The 429 rate-limit
+   write path (`connect_employer`) and the admin read path
+   (`admin_abuse_log`) are now covered by a shared-store end-to-end
+   test that trips the cap, then queries back and asserts the row's
+   shape verbatim. Observed row (one line, from the passing test):
+   ```
+   {id, user_id="u-persist", kind="connect_rate_limit_exceeded",
+    attempted_url="https://boards.greenhouse.io/x",
+    canonical_host="boards.greenhouse.io",
+    recent_count_last_24h=20, cap=20, at="<iso8601 utc>"}
+   ```
+   Locked by
+   `test_abuse_log_row_persists_and_is_queryable_via_admin_surface`.
+
+**Suite at closeout SHA `b87d9c14`:** **114 passed / 3 skipped** (0
+regressions vs prior baseline; +3 pass from the new closeout locks).
+
+**Pre-push hard check (RE-RUN 2026-08-08 at closeout SHA):**
+```
+git ls-files | grep -E "\.env$|test_credentials\.md$|tmp_"
+```
+Output: **empty**. Verdict: **CLEAN. Safe to push.**
+
+**Push status (2026-08-08):** Still blocked externally on GitHub
+connection auth (unchanged from prior packet — expected per founder
+rails; the git remote is intentionally tokenless). No credentials
+attempted or embedded. Save-to-GitHub click from founder's
+GitHub-connected session clears this whenever they're next connected.
+
+**Publish click:** remains founder's physical action in the Emergent
+dashboard once Save-to-GitHub has landed the branch upstream (or via
+the internal deploy pipeline that reads workspace filesystem env
+values directly, independent of git).
+
+**Phase 0-4 sequence: SEQUENCE COMPLETE, TRIPLE-SOURCED.**
+
