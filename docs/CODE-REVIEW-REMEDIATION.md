@@ -149,3 +149,39 @@
 - **Pre-push hard check RE-RUN:** `git ls-files | grep -E "\.env$|test_credentials\.md$|tmp_"` → empty → **CLEAN. Safe to push.**
 
 **Ready for remediation re-test.** Standing by for founder's independent tester replay. Rails held: preview-only, no push (still founder-blocked on GitHub connection), Publish remains founder's.
+
+---
+
+## Independent tester REPLAY verdict (2026-08-09)
+
+**Verdict: PASS — full triple-source across the remediation.**
+
+- **Curl leg (founder-run):** 6/6 green.
+- **Builder R3 evidence (this commit):** PASS on all three gates (see §Verification above).
+- **Independent replay of `docs/remediation-artifacts/r3_evidence.py`:** run-script-and-diff against the committed `r3_results.json` — **21/21 substantive keys MATCH**. Confirmed independently:
+  - localStorage theme-only (single key `oppos.theme`, value `light`, 5 chars).
+  - `oppos_session` cookie present + `HttpOnly=true`.
+  - `oppos_csrf` cookie present.
+  - Zero console errors + zero React key warnings on `/applications`, `/eligibility`, `/passport`, `/feed`.
+  - Surprise Me capsule mounts on `/feed`.
+  - 41 job cards render on `/feed`.
+
+Rails held: preview-only, no state mutations, no push (still founder-blocked on GitHub connection), Publish remains founder's.
+
+### Replay observations (recorded honestly; not gate items)
+
+**Observation 1 · Missing page-root `data-testid` on `/eligibility` and `/passport`.** Both pages render successfully and produce zero console errors, but the outer page-level `data-testid` is absent (baseline `root_present=false` for both `eligibility-page` and — since I passed `None` to skip the check — for `/passport`). This is **pre-existing** (not caused by the remediation) and is a testability gap rather than a functional bug. **Added to backlog** as a low-priority follow-up (see Tier 2 addendum below).
+
+**Observation 2 · Login-flow transients captured in session transcript.** The replay captured 4 network errors in the session console transcript, all originating during the initial login handshake before the session cookie is established:
+- 2× `HTTP 503` on `/api/v1/auth/apple/status` (Apple Sign-in status check; Apple is `CONFIGURATION_REQUIRED` in preview → 503 is the honest response per the deploy runbook §7c).
+- 2× `HTTP 401` on `/api/v1/auth/me` (pre-session poll before the session cookie is set).
+
+Both are **benign and expected** in the preview environment. They are captured in the session transcript for auditability, but they do NOT count against any R3 gate because gates use per-page deltas after login is established — those deltas are 0/0/0/0.
+
+### Tier 2 addendum (backlog · added 2026-08-09)
+
+| Location | Item | Priority | Rec. fix |
+|---|---|---|---|
+| `frontend/src/pages/Eligibility.jsx` (page root) | Missing `data-testid="eligibility-page"` on the outer container | Low | Add page-root testid alongside the existing feature-specific testids to make Playwright anchor navigation stable. |
+| `frontend/src/pages/Passport.jsx` (page root) | Missing `data-testid="passport-page"` on the outer container | Low | Same. |
+

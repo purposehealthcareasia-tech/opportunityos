@@ -150,3 +150,39 @@ Mobile: **`EXPO_PUBLIC_API_URL`** (per MERGE-PACKET §4a). **`mobile/.env` is mi
 | 9c-9f | Push / click-throughs / history / deferred | ⚠ KNOWN, DOCUMENTED, NON-BLOCKING |
 
 **Overall: NOT-READY** — resolve §9a (create `mobile/.env` on disk with `EXPO_PUBLIC_API_URL` at minimum) then retry deploy. Every other check is green at HEAD `db142a0b` / closeout SHA `b87d9c14`.
+
+---
+
+## Remediation-complete addendum (2026-08-09)
+
+**Post-remediation verdict:** Tier 1 code-review remediation is COMPLETE and TRIPLE-SOURCED.
+
+- **Curl leg:** 6/6 green (founder-run).
+- **Builder R3 browser-leg:** PASS on all three gates (committed at `404b226f`).
+- **Independent tester REPLAY:** 21/21 substantive keys MATCH (script `docs/remediation-artifacts/r3_evidence.py`).
+
+**Byte-identical feed content proof for `fixture-ead@opportunityos.dev`** re-verified stable across the entire remediation pass: normalized-blob sha256 = `c2c5b3368e5d82a863e97e29f9aa182593e812b4278d5fde7843f477e28826e0` (see `docs/CODE-REVIEW-REMEDIATION.md §3`).
+
+**Recorded honestly** (not deploy-blocking):
+- `/eligibility` and `/passport` page-root `data-testid` anchors are missing — added to the Tier 2 backlog. Pages render clean, zero errors.
+- 4 login-flow transient errors (2× 503 apple/status + 2× 401 auth/me pre-session) captured in the session transcript. Benign, expected in preview per deploy runbook §7c.
+
+### Updated verdict summary (2026-08-09)
+
+| # | Item | Status |
+|---|---|---|
+| 1 | Services | ✓ GREEN |
+| 2 | Data | ✓ GREEN |
+| 3 | Build | ✓ GREEN (yarn build 6.21s, 856K, no bundle delta) |
+| 4 | Tests | ✓ GREEN (114 passed / 3 skipped at HEAD) |
+| 5 | Git | ✓ GREEN (tree clean, pre-push clean, remediation committed) |
+| 6 | Config readiness | ✓ GREEN |
+| 7 | First-boot expectations | ✓ GREEN |
+| 8 | Smoke plan | ✓ GREEN |
+| 9a | `mobile/.env` missing on disk | **✗ STILL BLOCKING (founder-external, unchanged)** |
+| 9b | MERGE-PACKET.md §2 SHA drift | ⚠ NON-BLOCKING (docs-only, unchanged) |
+| 9c-9f | Push / click-throughs / history / deferred | ⚠ KNOWN, DOCUMENTED, NON-BLOCKING |
+| 10 | Code-review Tier 1 remediation | ✓ **NEW: TRIPLE-SOURCED PASS** |
+
+**Overall: NOT-READY** — the sole remaining blocker is §9a (founder must create `mobile/.env` on disk with `EXPO_PUBLIC_API_URL` before Emergent's deploy pipeline can complete the build context read). Every other check is green at the new HEAD (see below). No agent action can resolve §9a — it's a workspace-filesystem step owned by the founder.
+
