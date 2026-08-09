@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "Fynd Capture",
+  "version": "0.1.0",
+  "description": "Capture the CURRENT job URL for Fynd's connect queue. URL-only. Never reads page content. Never bypasses the site's cookie or CAPTCHA. Never submits anything.",
+  "action": {
+    "default_popup": "src/popup/popup.html",
+    "default_title": "Capture URL for Fynd"
+  },
+  "background": {
+    "service_worker": "src/background/service_worker.js",
+    "type": "module"
+  },
+  "permissions": [
+    "activeTab",
+    "storage"
+  ],
+  "host_permissions": []
+}

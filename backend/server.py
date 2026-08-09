@@ -46,6 +46,15 @@ from domains.supply.service import router as supply_router
 from domains.eligibility.explain import router as eligibility_explain_router
 from domains.exports.ghosting import router as exports_ghosting_router
 from domains.standards.service import router as standards_router
+from domains.share.service import router as share_router
+from domains.materials_ab.service import router as materials_ab_router
+from domains.interview_prep.service import router as interview_prep_router
+from domains.badges.service import router as badges_router
+from domains.interview_receipts.service import router as interview_receipts_router
+from domains.employer_dashboard.service import router as employer_dashboard_router
+from domains.layoff_day.service import router as layoff_day_router
+from domains.passport_api.service import router as passport_api_router
+from domains.cohort_intel.service import router as cohort_intel_router
 from domains.subscriptions.service import router as subscriptions_router
 from domains.inbound.internal_router import router as inbound_internal_router
 from domains.analytics.service import router as analytics_router
@@ -316,6 +325,15 @@ app.include_router(supply_router)
 app.include_router(eligibility_explain_router)
 app.include_router(exports_ghosting_router)
 app.include_router(standards_router)
+app.include_router(share_router)
+app.include_router(materials_ab_router)
+app.include_router(interview_prep_router)
+app.include_router(badges_router)
+app.include_router(interview_receipts_router)
+app.include_router(employer_dashboard_router)
+app.include_router(layoff_day_router)
+app.include_router(passport_api_router)
+app.include_router(cohort_intel_router)
 app.include_router(subscriptions_router)
 app.include_router(inbound_internal_router)
 app.include_router(analytics_router)
