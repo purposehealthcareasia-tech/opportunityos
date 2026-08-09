@@ -68,7 +68,11 @@ def ctx_signature(ctx: dict) -> str:
         _stringify(ctx.get("existing_applications") or set()),
         _stringify(ctx.get("hidden_job_ids") or set()),
     ]
-    return hashlib.md5("::".join(parts).encode()).hexdigest()
+    # Non-cryptographic use — the hash is a stable content-signature
+    # for cache-key derivation. SHA-256 is used instead of MD5 to
+    # satisfy the code-review "no legacy hash" invariant; behavior
+    # (cache invalidation on any ctx change) is unchanged.
+    return hashlib.sha256("::".join(parts).encode()).hexdigest()
 
 
 def _job_lv_iso(job: dict) -> str:

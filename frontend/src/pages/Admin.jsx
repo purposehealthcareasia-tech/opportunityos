@@ -565,7 +565,7 @@ function TicketsTab() {
               <div className="text-xs muted">from <span className="font-mono">{t.user_id}</span></div>
               <div className="text-sm">{t.body}</div>
               {(t.replies || []).map((r, i) => (
-                <div key={i} className="rounded-md bg-neutral-50 dark:bg-neutral-900 p-2 text-xs">
+                <div key={r.ts ? `${r.ts}-${r.by || 'x'}` : `reply-${i}`} className="rounded-md bg-neutral-50 dark:bg-neutral-900 p-2 text-xs">
                   <div className="muted">{r.by} · {new Date(r.ts).toLocaleString()}</div>
                   <div>{r.text}</div>
                 </div>
@@ -1095,7 +1095,7 @@ function IntegrationsTab({ isAdmin }) {
                   ) : (
                     <ul className="divide-y divide-line dark:divide-line-dark">
                       {(detail.recent_events || []).slice(0, 10).map((e, i) => (
-                        <li key={i} className="py-1.5">
+                        <li key={`${e.kind || 'evt'}-${e.ts || i}`} className="py-1.5">
                           <div className="flex items-center justify-between gap-2">
                             <span className="font-mono">{e.kind}</span>
                             <span className="muted whitespace-nowrap">{new Date(e.ts).toLocaleString()}</span>

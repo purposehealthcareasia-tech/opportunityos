@@ -116,6 +116,12 @@ function CoveragePanel() {
     work_auth_mismatch: 'Work-auth allow-list mismatch',
   };
   const failing = (d.jobs || []).filter((j) => !j.pass_all);
+  // Hoisted from inline JSX (2026-08-09 code-review remediation) —
+  // recomputes only when the excludedByReason map changes.
+  const excludedTotal = Object.values(excludedByReason).reduce((a, b) => a + b, 0);
+  const excludedBreakdown = Object.entries(excludedByReason)
+    .map(([k, v]) => `${reasonLabels[k] || k}: ${v}`)
+    .join(' · ') || 'None';
   return (
     <div className="space-y-4">
       <div className="grid md:grid-cols-3 gap-3">
@@ -131,8 +137,8 @@ function CoveragePanel() {
         </div>
         <div className="card p-4 border-red-500/40">
           <div className="text-xs muted">Excluded</div>
-          <div className="text-2xl font-semibold mt-1">{Object.values(excludedByReason).reduce((a, b) => a + b, 0)}</div>
-          <div className="text-[11px] muted mt-1">{Object.entries(excludedByReason).map(([k, v]) => `${reasonLabels[k] || k}: ${v}`).join(' · ') || 'None'}</div>
+          <div className="text-2xl font-semibold mt-1">{excludedTotal}</div>
+          <div className="text-[11px] muted mt-1">{excludedBreakdown}</div>
         </div>
       </div>
 

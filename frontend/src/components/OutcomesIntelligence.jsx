@@ -133,7 +133,7 @@ function Sparkline({ values, width = 220, height = 44, label }) {
       <path d={path} fill="none" stroke="currentColor" strokeWidth="1.5" />
       {/* dots on real samples so gaps read clearly */}
       {numeric.map((v, i) => v == null ? null : (
-        <circle key={i} cx={i * stepX} cy={y(v)} r="2" fill="currentColor" />
+        <circle key={`sparkline-dot-${i}`} cx={i * stepX} cy={y(v)} r="2" fill="currentColor" />
       ))}
     </svg>
   );

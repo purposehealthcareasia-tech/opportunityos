@@ -354,7 +354,7 @@ function NotesList({ notes }) {
     <div className="mt-2 rounded-md border border-amber-500/25 bg-amber-500/5 p-2.5 text-xs space-y-1"
          data-testid="job-card-notes">
       {notes.map((n, i) => (
-        <div key={i} className="flex items-start gap-1.5">
+        <div key={`note-${i}-${(n.note || '').slice(0, 32)}`} className="flex items-start gap-1.5">
           <Info className="h-3.5 w-3.5 mt-0.5 flex-shrink-0 text-amber-700 dark:text-amber-400" />
           <span className="text-amber-800 dark:text-amber-300 leading-snug">{n.note}</span>
         </div>

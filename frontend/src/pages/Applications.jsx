@@ -104,9 +104,13 @@ function AssistedLaneReason({ app }) {
 
 function TimelinePreview({ state }) {
   const key = STATE_ORDER.indexOf(state);
+  // Hoisted from inline JSX (2026-08-09 code-review remediation) —
+  // the filtered array is derived from a module-level constant, so
+  // useMemo with an empty deps hoists it out of the render path.
+  const visible = useMemo(() => STATE_ORDER.filter((s) => s !== 'closed'), []);
   return (
     <div className="flex items-center gap-1 mt-2">
-      {STATE_ORDER.filter((s) => s !== 'closed').map((s, i) => (
+      {visible.map((s, i) => (
         <div
           key={s}
           title={STATE_LABEL[s]}

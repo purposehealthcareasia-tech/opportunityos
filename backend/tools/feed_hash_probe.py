@@ -52,9 +52,11 @@ def main():
     feed = fetch_feed()
     norm = normalize(feed)
     blob = json.dumps(norm, sort_keys=True, separators=(",",":"), default=str).encode()
-    md5 = hashlib.md5(blob).hexdigest()
+    # Non-cryptographic use — SHA-256 (was MD5). The hash label
+    # changes across the switch; the CONTENT hashed does not.
+    sha256 = hashlib.sha256(blob).hexdigest()
     passing_ids = [(p.get("id","")[:8], p.get("score")) for p in norm.get("passing",[])]
-    print(f"md5={md5}")
+    print(f"sha256={sha256}")
     print(f"passing_count={len(norm.get('passing',[]))}")
     print(f"excluded_count={len(norm.get('excluded',[]))}")
     print("passing_scores=")

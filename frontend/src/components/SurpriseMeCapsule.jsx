@@ -123,7 +123,7 @@ export default function SurpriseMeCapsule() {
                   </div>
                   <ul className="space-y-1" data-testid="surprise-me-why">
                     {result.why_you_qualify.map((reason, i) => (
-                      <li key={i} className="text-sm text-ink dark:text-ink-dark leading-snug">
+                      <li key={`why-${i}-${reason.slice(0, 40)}`} className="text-sm text-ink dark:text-ink-dark leading-snug">
                         · {reason}
                       </li>
                     ))}

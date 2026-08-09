@@ -1,4 +1,5 @@
 import logging
+import os
 import uuid
 from core.config import settings
 from core.db import get_db
@@ -635,7 +636,16 @@ async def _rebase_fixture_user() -> str:
 # --------------------------------------------------------------------- #
 
 FIXTURE_BROAD_EMAIL = "fixture-broad@opportunityos.dev"
-FIXTURE_BROAD_PASSWORD = "Fixture!Broad1"
+# FIXTURE-ONLY password (preview / development only). Never runs in
+# production because `run_seeds()` short-circuits when `PROD_MODE=true`
+# (see lines 949-964 below) — this fixture user is not provisioned
+# there. Parameterizable via env for local overrides; the literal
+# below is the documented preview-invariant default so
+# `/app/memory/test_credentials.md` and the seeder stay in sync
+# without requiring an env var to be set in every preview pod.
+FIXTURE_BROAD_PASSWORD = os.environ.get(
+    "FIXTURE_BROAD_PASSWORD", "Fixture!Broad1"  # FIXTURE-ONLY default
+)
 FIXTURE_BROAD_NAME = "Fixture Broad-Prefs Tester"
 
 _BROAD_PREFERENCES = {

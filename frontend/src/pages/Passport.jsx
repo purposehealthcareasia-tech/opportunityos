@@ -21,6 +21,33 @@ const STAGE_LABELS = {
   failed: 'Parse failed',
 };
 
+// Hoisted from an inline JSX literal (2026-08-09 code-review remediation).
+// The stage order is a module-level constant and the 4-bar progress
+// derivation is memoized against `stage`. Deduping via `indexOf(s) === i`
+// is not needed since the source is already unique.
+const STAGE_ORDER = ['uploading', 'queued', 'extracting', 'parsing', 'completed'];
+const STAGE_BARS = STAGE_ORDER.slice(0, 4);
+
+function StageProgressBars({ stage }) {
+  const bars = React.useMemo(() => {
+    const curIdx = STAGE_ORDER.indexOf(stage);
+    return STAGE_BARS.map((s) => ({
+      key: s,
+      filled: curIdx >= STAGE_ORDER.indexOf(s),
+    }));
+  }, [stage]);
+  return (
+    <div className="mt-3 grid grid-cols-4 gap-1">
+      {bars.map((b) => (
+        <div
+          key={b.key}
+          className={`h-1 rounded-full ${b.filled ? 'bg-accent' : 'bg-neutral-200 dark:bg-neutral-800'}`}
+        />
+      ))}
+    </div>
+  );
+}
+
 function UploadPanel({ onCompleted }) {
   const fileRef = useRef(null);
   const [file, setFile] = useState(null);
@@ -132,11 +159,7 @@ function UploadPanel({ onCompleted }) {
               )}
               <div className="text-sm font-medium">{STAGE_LABELS[stage] || stage}</div>
             </div>
-            <div className="mt-3 grid grid-cols-4 gap-1">
-              {['uploading','queued','extracting','parsing','completed'].filter((s, i, arr) => arr.indexOf(s) === i).slice(0, 4).map((s) => (
-                <div key={s} className={`h-1 rounded-full ${['uploading','queued','extracting','parsing','completed'].indexOf(stage) >= ['uploading','queued','extracting','parsing','completed'].indexOf(s) ? 'bg-accent' : 'bg-neutral-200 dark:bg-neutral-800'}`} />
-              ))}
-            </div>
+            <StageProgressBars stage={stage} />
             {stage === 'completed' && meta && (
               <p className="text-xs muted mt-3">Model used: <span className="font-mono">{meta.model_used}</span> · {meta.inserted_claim_count} draft claims created (all pending your approval).</p>
             )}
