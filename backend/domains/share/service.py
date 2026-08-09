@@ -81,7 +81,7 @@ async def _load_filtered_passport(user_id: str, scope: str) -> dict:
     if scope not in _SCOPES:
         raise HTTPException(status_code=400, detail="bad_scope")
     db = get_db()
-    profile = await db.users.find_one({"id": user_id}, {"name": 1, "email": 0})
+    profile = await db.users.find_one({"id": user_id}, {"name": 1, "_id": 0})
     claims_cursor = db.claims.find(
         {"user_id": user_id, "state": "approved"}
     )

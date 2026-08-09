@@ -312,3 +312,86 @@ async def test_cohort_intel_reveals_only_k_anonymous_buckets(monkeypatch):
     assert "ead_opt" in kinds
     # 5 members in sponsorship_needed → below 10 → omitted (k-anonymity)
     assert "sponsorship_needed" not in kinds
+
+
+# =========================================================== Gate A · BLOCKER 2c
+@pytest.mark.asyncio
+async def test_passport_api_bearer_projection_valid_and_access_count_increments(monkeypatch):
+    """Founder gate ask 5i-C: `passport_api_via_token` Bearer path
+    routes through `_load_filtered_passport`. Verify (i) the same
+    projection fix locks it, (ii) access_count increments across
+    successive calls, (iii) a receipt row is written per access."""
+    from domains.passport_api import service as pa
+    from domains.share import service as share
+    from datetime import datetime, timedelta, timezone
+
+    exp = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+    plain = "sample-pa-token-000001"
+    tok_hash = pa._hash_token(plain)
+    db = _DB(
+        passport_api_tokens=[{
+            "id": "tid-9", "user_id": "u1", "scope": "moderate",
+            "token_hash": tok_hash, "expires_at": exp,
+            "revoked_at": None, "access_count": 0,
+        }],
+        passport_api_receipts=[],
+    )
+
+    # Projection-recording users fake — raises if code emits a mixed
+    # inclusion/exclusion projection (the pre-fix bug).
+    projections_seen: list[dict] = []
+    class _StrictUsers:
+        async def find_one(self, filt, projection=None):
+            if projection is not None:
+                projections_seen.append(dict(projection))
+                non_id = {k: v for k, v in projection.items() if k != "_id"}
+                values = set(non_id.values())
+                if len(values) > 1:
+                    raise Exception(
+                        "OperationFailure: Cannot do mixed inclusion+exclusion")
+            return {"id": "u1", "name": "Alice"}
+
+    share_db = type("_S", (), {})()
+    share_db.users = _StrictUsers()
+    share_db.eligibility_profiles = type("_E", (), {
+        "find_one": staticmethod(lambda *a, **k: _async_return(
+            {"user_id": "u1", "status": "us_citizen"}))
+    })()
+    share_db.claims = type("_C", (), {
+        "find": staticmethod(lambda *a, **k: _Cursor([]))
+    })()
+
+    monkeypatch.setattr(pa, "get_db", lambda: db)
+    monkeypatch.setattr(share, "get_db", lambda: share_db)
+
+    # First access.
+    out1 = await pa.passport_via_token(
+        _FakeReq(), authorization=f"Bearer {plain}",
+    )
+    assert out1["scope"] == "moderate"
+    assert "name" in out1["passport"]
+    # Second access.
+    out2 = await pa.passport_via_token(
+        _FakeReq(), authorization=f"Bearer {plain}",
+    )
+    assert out2["scope"] == "moderate"
+
+    # Access count increments.
+    row = db.passport_api_tokens.docs[0]
+    assert row["access_count"] == 2
+
+    # Two receipt rows.
+    assert len(db.passport_api_receipts.docs) == 2
+    r = db.passport_api_receipts.docs[-1]
+    assert r["token_id"] == "tid-9"
+    assert r["user_id"] == "u1"
+    assert r["scope"] == "moderate"
+    assert r["ip_network"].endswith("/24")
+
+    # Projection invariant.
+    for proj in projections_seen:
+        non_id = {k: v for k, v in proj.items() if k != "_id"}
+        values = set(non_id.values())
+        assert len(values) <= 1, (
+            f"Mixed projection detected on passport-api Bearer path: {proj}")
+

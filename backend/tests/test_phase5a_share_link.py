@@ -362,3 +362,146 @@ async def test_public_view_never_leaks_sealed_or_itar_fields(monkeypatch):
     # Widest scope shape lock.
     allowed_keys = _SCOPES["full"]
     assert set(out["passport"].keys()) <= allowed_keys
+
+
+# ============================================================
+# Phase 5 Gate A · BLOCKER 1 regression — mixed projection invariant
+# ============================================================
+# The pre-fix version of `_load_filtered_passport` called
+# `users.find_one({"id": user_id}, {"name": 1, "email": 0})` — a MIXED
+# inclusion/exclusion projection which pymongo rejects with an
+# OperationFailure at query time. Real Mongo raised; the previous
+# fake DB didn't, which is why the bug slipped past unit tests.
+#
+# This regression LOCKS the invariant: whatever projection the code
+# passes to `users.find_one`, it MUST be either purely inclusive
+# (all values 1) OR purely exclusive (all values 0), except that
+# `_id` may appear on either side. This is the exact rule pymongo
+# enforces.
+
+class _ProjectionRecordingUsers:
+    def __init__(self, doc):
+        self.d = doc
+        self.projections_seen: list[dict] = []
+    async def find_one(self, filt, projection=None):
+        # Record whatever projection was passed and enforce the rule.
+        if projection is not None:
+            self.projections_seen.append(dict(projection))
+            non_id = {k: v for k, v in projection.items() if k != "_id"}
+            values = set(non_id.values())
+            # Mixed inclusion+exclusion (non-_id) is illegal in pymongo.
+            if len(values) > 1:
+                raise Exception(
+                    "OperationFailure: Cannot do exclusion on field "
+                    f"in inclusion projection: {projection}"
+                )
+        return self.d
+
+
+class _StrictDB:
+    def __init__(self, users_doc, elp_doc):
+        self.users = _ProjectionRecordingUsers(users_doc)
+        self.eligibility_profiles = _FakeELP(elp_doc)
+        self.claims = _FakeClaims([])
+
+
+@pytest.mark.asyncio
+async def test_load_filtered_passport_uses_valid_projection(monkeypatch):
+    """A pymongo-shaped fake raises OperationFailure on the pre-fix
+    mixed projection `{name:1, email:0}`. Post-fix should pass."""
+    from domains.share import service as share
+    from domains.share.service import _sign_share
+    from datetime import datetime, timedelta, timezone
+    exp = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+    sig = _sign_share("s-proj", "u1", "moderate", exp)
+    strict_db = _StrictDB(
+        users_doc={"id": "u1", "name": "Alice"},
+        elp_doc={"user_id": "u1", "status": "us_citizen"},
+    )
+    # Wrap in a full DB that also has share collections.
+    class _MixedDB:
+        passport_shares = _FakeShareColl([{
+            "id": "s-proj", "user_id": "u1", "scope": "moderate",
+            "expires_at": exp, "revoked_at": None,
+        }])
+        users = strict_db.users
+        eligibility_profiles = strict_db.eligibility_profiles
+        claims = strict_db.claims
+        share_view_receipts = _FakeViewReceipts()
+    monkeypatch.setattr(share, "get_db", lambda: _MixedDB())
+
+    out = await share.public_view(_FakeReq(), share_id="s-proj", t=sig)
+    # No exception → projection is valid.
+    assert out["passport"]["name"] == "Alice"
+    # Confirm the projection actually recorded is purely inclusive
+    # (all values 1) or purely exclusive (all values 0) modulo `_id`.
+    for proj in strict_db.users.projections_seen:
+        non_id = {k: v for k, v in proj.items() if k != "_id"}
+        values = set(non_id.values())
+        assert len(values) <= 1, (
+            f"Mixed inclusion+exclusion projection detected: {proj} — "
+            "pymongo would raise OperationFailure at query time."
+        )
+
+
+@pytest.mark.asyncio
+async def test_public_view_scope_filter_no_sealed_no_itar_no_salary_no_visa(monkeypatch):
+    """Founder gate ask 5a-A: moderate-scope payload must not contain
+    any sealed / ITAR / salary / visa fields. Case-insensitive body
+    scan + explicit key-allowlist check."""
+    from domains.share import service as share
+    from domains.share.service import _sign_share, _SCOPES
+    from datetime import datetime, timedelta, timezone
+    exp = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+    sig = _sign_share("s-moderate", "u1", "moderate", exp)
+    fake = _FakeDB(
+        shares=[{"id": "s-moderate", "user_id": "u1", "scope": "moderate",
+                 "expires_at": exp, "revoked_at": None}],
+        users={"id": "u1", "name": "Alice",
+               "salary_history": ["never surface"], "sealed_claims": [1]},
+        elp={"user_id": "u1", "status": "us_citizen",
+             "itar_cleared": True, "visa_type": "H-1B"},
+        claims=[],
+    )
+    monkeypatch.setattr(share, "get_db", lambda: fake)
+    out = await share.public_view(_FakeReq(), share_id="s-moderate", t=sig)
+    payload = out["passport"]
+    # Shape lock: only moderate-scope keys visible.
+    assert set(payload.keys()) <= _SCOPES["moderate"]
+    # Content lock: no forbidden field name / value present.
+    body = str(payload).lower()
+    for f in ("itar", "salary", "sealed", "visa", "h-1b", "h1b"):
+        assert f not in body, f"leak: '{f}' appeared in moderate-scope payload"
+
+
+@pytest.mark.asyncio
+async def test_public_view_writes_receipt_and_increments_view_count(monkeypatch):
+    """Founder gate ask 5a-B: view receipt must be written on every
+    public GET. Also asserts the parent share row's view_count
+    incremented."""
+    from domains.share import service as share
+    from domains.share.service import _sign_share
+    from datetime import datetime, timedelta, timezone
+    exp = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+    sig = _sign_share("s-view", "u1", "minimum", exp)
+    fake = _FakeDB(
+        shares=[{"id": "s-view", "user_id": "u1", "scope": "minimum",
+                 "expires_at": exp, "revoked_at": None, "view_count": 0}],
+        users={"id": "u1", "name": "Alice"}, elp={}, claims=[],
+    )
+    monkeypatch.setattr(share, "get_db", lambda: fake)
+    # First view.
+    await share.public_view(_FakeReq(), share_id="s-view", t=sig)
+    assert len(fake.share_view_receipts.docs) == 1
+    assert fake.passport_shares.docs[0]["view_count"] == 1
+    # Second view.
+    await share.public_view(_FakeReq(), share_id="s-view", t=sig)
+    assert len(fake.share_view_receipts.docs) == 2
+    assert fake.passport_shares.docs[0]["view_count"] == 2
+    # Receipt shape lock (per Gate A ask).
+    r = fake.share_view_receipts.docs[-1]
+    assert r["share_id"] == "s-view"
+    assert r["user_id"] == "u1"
+    assert r["ip_network"].endswith("/24")
+    assert len(r["ua_hash"]) == 16
+
