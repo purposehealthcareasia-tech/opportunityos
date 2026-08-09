@@ -1,0 +1,220 @@
+{
+  "run_at": "2026-08-09T17:44:02Z",
+  "base_url": "https://lynk-preview-2.preview.emergentagent.com",
+  "user": "fixture-ead@opportunityos.dev",
+  "notes": "R3 \u00b7 Code-Review Remediation browser-leg replay. Independent tester runs this same script and diffs against the committed r3_results.json.",
+  "logged_in": true,
+  "R3_A": {
+    "gate": "R3-A",
+    "name": "post-login storage + cookie hygiene",
+    "localstorage_keys": [
+      "oppos.theme"
+    ],
+    "localstorage_snapshot": {
+      "oppos.theme": {
+        "length": 5,
+        "redacted_preview": "light"
+      }
+    },
+    "localstorage_theme_only": true,
+    "forbidden_key_hits": [],
+    "our_cookies": [
+      {
+        "name": "oppos_session",
+        "httpOnly": true,
+        "secure": false,
+        "sameSite": "Lax",
+        "domain": "lynk-preview-2.preview.emergentagent.com",
+        "path": "/"
+      },
+      {
+        "name": "oppos_csrf",
+        "httpOnly": false,
+        "secure": false,
+        "sameSite": "Lax",
+        "domain": "lynk-preview-2.preview.emergentagent.com",
+        "path": "/"
+      }
+    ],
+    "oppos_session_present": true,
+    "oppos_session_httponly": true,
+    "oppos_csrf_present": true,
+    "passed": true
+  },
+  "R3_B": {
+    "gate": "R3-B",
+    "name": "/applications /eligibility /passport render clean",
+    "per_page": [
+      {
+        "path": "/applications",
+        "root_testid": "applications-page",
+        "root_present": true,
+        "console_error_count": 0,
+        "console_errors_verbatim": [],
+        "console_warning_count": 2,
+        "react_key_warning_count": 0,
+        "react_key_warnings_verbatim": [],
+        "page_error_count": 0,
+        "page_errors_verbatim": []
+      },
+      {
+        "path": "/eligibility",
+        "root_testid": "eligibility-page",
+        "root_present": false,
+        "console_error_count": 0,
+        "console_errors_verbatim": [],
+        "console_warning_count": 2,
+        "react_key_warning_count": 0,
+        "react_key_warnings_verbatim": [],
+        "page_error_count": 0,
+        "page_errors_verbatim": []
+      },
+      {
+        "path": "/passport",
+        "root_testid": null,
+        "root_present": false,
+        "console_error_count": 0,
+        "console_errors_verbatim": [],
+        "console_warning_count": 2,
+        "react_key_warning_count": 0,
+        "react_key_warnings_verbatim": [],
+        "page_error_count": 0,
+        "page_errors_verbatim": []
+      }
+    ],
+    "total_console_errors": 0,
+    "total_page_errors": 0,
+    "total_react_key_warnings": 0,
+    "passed": true
+  },
+  "R3_C": {
+    "gate": "R3-C",
+    "name": "/feed cards + Surprise Me capsule, zero warnings/errors",
+    "job_card_count": 41,
+    "surprise_me_root_present": true,
+    "console_error_count": 0,
+    "console_errors_verbatim": [],
+    "console_warning_count": 2,
+    "react_key_warning_count": 0,
+    "react_key_warnings_verbatim": [],
+    "page_error_count": 0,
+    "page_errors_verbatim": [],
+    "passed": true
+  },
+  "session_console_message_count": 22,
+  "session_page_error_count": 0,
+  "session_console_transcript": [
+    {
+      "type": "info",
+      "text": "%cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold",
+      "location": "{'url': 'https://lynk-preview-2.preview.emergentagent.com/static/js/bundle.js', 'line': 38396, 'column': 20, 'lineNumber': 38396, 'columnNumber': 20}"
+    },
+    {
+      "type": "warning",
+      "text": "\u26a0\ufe0f React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition.",
+      "location": "{'url': 'https://lynk-preview-2.preview.emergentagent.com/static/js/bundle.js', 'line': 41671, 'column': 12, 'lineNumber': 41671, 'columnNumber': 12}"
+    },
+    {
+      "type": "warning",
+      "text": "\u26a0\ufe0f React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath.",
+      "location": "{'url': 'https://lynk-preview-2.preview.emergentagent.com/static/js/bundle.js', 'line': 41671, 'column': 12, 'lineNumber': 41671, 'columnNumber': 12}"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 503 ()",
+      "location": "{'url': 'https://lynk-preview-2.preview.emergentagent.com/api/v1/auth/apple/start', 'line': 0, 'column': 0, 'lineNumber': 0, 'columnNumber': 0}"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 ()",
+      "location": "{'url': 'https://lynk-preview-2.preview.emergentagent.com/api/v1/auth/me', 'line': 0, 'column': 0, 'lineNumber': 0, 'columnNumber': 0}"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 503 ()",
+      "location": "{'url': 'https://lynk-preview-2.preview.emergentagent.com/api/v1/auth/apple/start', 'line': 0, 'column': 0, 'lineNumber': 0, 'columnNumber': 0}"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 ()",
+      "location": "{'url': 'https://lynk-preview-2.preview.emergentagent.com/api/v1/auth/me', 'line': 0, 'column': 0, 'lineNumber': 0, 'columnNumber': 0}"
+    },
+    {
+      "type": "info",
+      "text": "%cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold",
+      "location": "{'url': 'https://lynk-preview-2.preview.emergentagent.com/static/js/bundle.js', 'line': 38396, 'column': 20, 'lineNumber': 38396, 'columnNumber': 20}"
+    },
+    {
+      "type": "warning",
+      "text": "\u26a0\ufe0f React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition.",
+      "location": "{'url': 'https://lynk-preview-2.preview.emergentagent.com/static/js/bundle.js', 'line': 41671, 'column': 12, 'lineNumber': 41671, 'columnNumber': 12}"
+    },
+    {
+      "type": "warning",
+      "text": "\u26a0\ufe0f React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath.",
+      "location": "{'url': 'https://lynk-preview-2.preview.emergentagent.com/static/js/bundle.js', 'line': 41671, 'column': 12, 'lineNumber': 41671, 'columnNumber': 12}"
+    },
+    {
+      "type": "info",
+      "text": "%cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold",
+      "location": "{'url': 'https://lynk-preview-2.preview.emergentagent.com/static/js/bundle.js', 'line': 38396, 'column': 20, 'lineNumber': 38396, 'columnNumber': 20}"
+    },
+    {
+      "type": "warning",
+      "text": "\u26a0\ufe0f React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition.",
+      "location": "{'url': 'https://lynk-preview-2.preview.emergentagent.com/static/js/bundle.js', 'line': 41671, 'column': 12, 'lineNumber': 41671, 'columnNumber': 12}"
+    },
+    {
+      "type": "warning",
+      "text": "\u26a0\ufe0f React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath.",
+      "location": "{'url': 'https://lynk-preview-2.preview.emergentagent.com/static/js/bundle.js', 'line': 41671, 'column': 12, 'lineNumber': 41671, 'columnNumber': 12}"
+    },
+    {
+      "type": "info",
+      "text": "%cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold",
+      "location": "{'url': 'https://lynk-preview-2.preview.emergentagent.com/static/js/bundle.js', 'line': 38396, 'column': 20, 'lineNumber': 38396, 'columnNumber': 20}"
+    },
+    {
+      "type": "warning",
+      "text": "\u26a0\ufe0f React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition.",
+      "location": "{'url': 'https://lynk-preview-2.preview.emergentagent.com/static/js/bundle.js', 'line': 41671, 'column': 12, 'lineNumber': 41671, 'columnNumber': 12}"
+    },
+    {
+      "type": "warning",
+      "text": "\u26a0\ufe0f React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath.",
+      "location": "{'url': 'https://lynk-preview-2.preview.emergentagent.com/static/js/bundle.js', 'line': 41671, 'column': 12, 'lineNumber': 41671, 'columnNumber': 12}"
+    },
+    {
+      "type": "info",
+      "text": "%cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold",
+      "location": "{'url': 'https://lynk-preview-2.preview.emergentagent.com/static/js/bundle.js', 'line': 38396, 'column': 20, 'lineNumber': 38396, 'columnNumber': 20}"
+    },
+    {
+      "type": "warning",
+      "text": "\u26a0\ufe0f React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition.",
+      "location": "{'url': 'https://lynk-preview-2.preview.emergentagent.com/static/js/bundle.js', 'line': 41671, 'column': 12, 'lineNumber': 41671, 'columnNumber': 12}"
+    },
+    {
+      "type": "warning",
+      "text": "\u26a0\ufe0f React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath.",
+      "location": "{'url': 'https://lynk-preview-2.preview.emergentagent.com/static/js/bundle.js', 'line': 41671, 'column': 12, 'lineNumber': 41671, 'columnNumber': 12}"
+    },
+    {
+      "type": "info",
+      "text": "%cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold",
+      "location": "{'url': 'https://lynk-preview-2.preview.emergentagent.com/static/js/bundle.js', 'line': 38396, 'column': 20, 'lineNumber': 38396, 'columnNumber': 20}"
+    },
+    {
+      "type": "warning",
+      "text": "\u26a0\ufe0f React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition.",
+      "location": "{'url': 'https://lynk-preview-2.preview.emergentagent.com/static/js/bundle.js', 'line': 41671, 'column': 12, 'lineNumber': 41671, 'columnNumber': 12}"
+    },
+    {
+      "type": "warning",
+      "text": "\u26a0\ufe0f React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath.",
+      "location": "{'url': 'https://lynk-preview-2.preview.emergentagent.com/static/js/bundle.js', 'line': 41671, 'column': 12, 'lineNumber': 41671, 'columnNumber': 12}"
+    }
+  ],
+  "session_page_errors_verbatim": [],
+  "all_passed": true
+}
