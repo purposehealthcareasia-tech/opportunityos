@@ -143,27 +143,37 @@ class TestJobDetail:
 # ---------- shortlist employer cap ----------
 class TestEmployerCap:
     def test_shortlist_3_sampleco_then_4th_429(self, client):
+        """Assisted-lane fixture pre-consumes 1 SampleCo slot of the
+        30-day employer cap (see FIXTURE_EAD_SAMPLECO_APPS_PRE_CONSUMED).
+        So the FIRST fresh shortlist that hits 429 is index
+        EMPLOYER_CAP_FIRST_429_SAMPLECO_INDEX (2 when cap=3 and 1 slot
+        pre-consumed). Derived from the seeder + service constants."""
+        from tests._fixture_expectations import (
+            EMPLOYER_CAP_MAX_PER_30_DAYS,
+            EMPLOYER_CAP_FIRST_429_SAMPLECO_INDEX,
+        )
         r = client.get(f"{BASE_URL}/api/v1/jobs/feed", timeout=30)
         assert r.status_code == 200
         b = r.json()
         sampleco_ids = [x["id"] for x in b["passing"]
                         if "sampleco" in (x.get("company_name") or "").lower()]
-        if len(sampleco_ids) < 4:
-            pytest.skip(f"Only {len(sampleco_ids)} passing SampleCo jobs; need 4")
+        need = EMPLOYER_CAP_FIRST_429_SAMPLECO_INDEX + 1
+        if len(sampleco_ids) < need:
+            pytest.skip(f"Only {len(sampleco_ids)} passing SampleCo jobs; need {need}")
         codes = []
-        for jid in sampleco_ids[:4]:
+        for jid in sampleco_ids[:need]:
             rr = client.post(f"{BASE_URL}/api/v1/jobs/{jid}/shortlist", json={}, timeout=30)
             codes.append((jid, rr.status_code, rr.text if rr.status_code != 200 else ""))
-        # first 3 should succeed, 4th → 429
-        assert codes[0][1] in (200, 201), codes
-        assert codes[1][1] in (200, 201), codes
-        assert codes[2][1] in (200, 201), codes
-        assert codes[3][1] == 429, f"expected 429, got {codes[3]}"
+        # Indices [0..first_429-1] should succeed, [first_429] should 429.
+        for i in range(EMPLOYER_CAP_FIRST_429_SAMPLECO_INDEX):
+            assert codes[i][1] in (200, 201), (i, codes)
+        i429 = EMPLOYER_CAP_FIRST_429_SAMPLECO_INDEX
+        assert codes[i429][1] == 429, f"expected 429 at index {i429}, got {codes[i429]}"
         import json as _json
-        body = _json.loads(codes[3][2]) if codes[3][2] else {}
+        body = _json.loads(codes[i429][2]) if codes[i429][2] else {}
         det = body.get("detail") or body
         assert det.get("error") == "employer_cap_reached", det
-        assert det.get("cap") == 3, det
+        assert det.get("cap") == EMPLOYER_CAP_MAX_PER_30_DAYS, det
         assert det.get("window_days") == 30, det
 
 

@@ -86,14 +86,19 @@ class TestFixtureRebaseline:
         assert r.status_code == 200
         body = r.json()
         apps = body.get("applications", body) if isinstance(body, dict) else body
-        # If pre-existing rows from a prior test run, they will be cleared later,
-        # but on a fresh startup we expect zero. Assert <=0 or 0 depending on
-        # whether previous suite already ran (in which case we auto-cleanup
-        # inside TestShortlistFlow.teardown).
+        # Structural derivation (P2a.3): assert exactly the count the seeder
+        # actually seeds for fixture-ead@. Previously hardcoded to `< 2` which
+        # broke once the seeder grew the assisted-lane + speed-history demo rows.
+        # If the seeder adds/removes rows, tests/_fixture_expectations.py
+        # updates ONCE and this assertion tracks it.
+        from tests._fixture_expectations import FIXTURE_EAD_TOTAL_APPS
         assert isinstance(apps, list)
-        # We accept 0 or 1 (leftover shortlisted from a prior test that we
-        # will transition to 'closed'). Hard requirement is <2.
-        assert len(apps) < 2, f"unexpected applications: {apps}"
+        # Allow +1 leftover from a `TestShortlistFlow` in-flight run of the
+        # same suite (its teardown may not have fired yet).
+        assert FIXTURE_EAD_TOTAL_APPS <= len(apps) <= FIXTURE_EAD_TOTAL_APPS + 1, (
+            f"expected {FIXTURE_EAD_TOTAL_APPS} (± 1 leftover) seed-fixture apps, "
+            f"got {len(apps)}: {[a.get('id') for a in apps]}"
+        )
 
     def test_usage_meter_starts_at_zero(self, fixture_client):
         r = fixture_client.get(f"{API}/usage/me")
@@ -161,20 +166,41 @@ class TestFixtureRebaseline:
 # --------------------------------------------------------------------------- #
 class TestAcceptanceGeometry:
     def test_feed_weights_and_totals_exact(self, initial_feed):
+        """Sample-slice geometry — derived from seeder constants via
+        `tests._fixture_expectations`. Previously hardcoded 9/6, which
+        drifted once the seeder grew SAMPLE_JOBS_RESPONSIVE + the
+        assisted-lane seed. Now DERIVED from SAMPLE_JOBS +
+        SAMPLE_JOBS_RESPONSIVE + FIXTURE_EAD_ASSISTED_APP_COUNT so any
+        future seed change updates ONE helper module and this assertion
+        tracks it.
+        """
+        from tests._fixture_expectations import (
+            SAMPLE_FEED_PASSING,
+            SAMPLE_FEED_EXCLUDED_BY_REASON,
+            SAMPLE_JOB_FAIL_SPONSOR,
+            SAMPLE_JOB_FAIL_US_PERSON,
+        )
         d = initial_feed
         assert d.get("weights_version") == "v0.1"
         totals = d.get("totals") or {}
         # Founder Fix Round-2 · P0 #2 expanded the totals shape to include
         # live_jobs / hidden / excluded_by_reason / unknown_by_reason for parity
-        # with /eligibility/coverage-preview. We assert the core acceptance keys.
-        assert totals.get("passing") == 9, f"passing mismatch: {totals}"
-        assert totals.get("excluded") == 6, f"excluded mismatch: {totals}"
+        # with /eligibility/coverage-preview. We assert the sample-relevant
+        # sub-counts (real-world jobs contribute other keys like
+        # location_mismatch which we don't lock).
+        assert totals.get("passing") == SAMPLE_FEED_PASSING, f"passing mismatch: {totals}"
         assert totals.get("hidden") == 0, f"hidden mismatch: {totals}"
-        assert totals.get("excluded_by_reason") == {"no_sponsorship_offered": 4, "requires_us_person": 2}
-        assert len(d["passing"]) == 9
-        assert len(d["excluded"]) == 6
+        ebr = totals.get("excluded_by_reason") or {}
+        assert ebr.get("no_sponsorship_offered") == SAMPLE_JOB_FAIL_SPONSOR, ebr
+        assert ebr.get("requires_us_person") == SAMPLE_JOB_FAIL_US_PERSON, ebr
+        if "duplicate_application" in SAMPLE_FEED_EXCLUDED_BY_REASON:
+            assert ebr.get("duplicate_application") == SAMPLE_FEED_EXCLUDED_BY_REASON["duplicate_application"], ebr
+        assert len(d["passing"]) == SAMPLE_FEED_PASSING
 
     def test_feed_fail_reason_counts_exact(self, initial_feed):
+        from tests._fixture_expectations import (
+            SAMPLE_JOB_FAIL_SPONSOR, SAMPLE_JOB_FAIL_US_PERSON,
+        )
         no_sp = 0
         us_person = 0
         for row in initial_feed["excluded"]:
@@ -183,18 +209,23 @@ class TestAcceptanceGeometry:
                 no_sp += 1
             if "requires_us_person" in reasons:
                 us_person += 1
-        assert no_sp == 4, f"no_sponsorship_offered count = {no_sp}"
-        assert us_person == 2, f"requires_us_person count = {us_person}"
+        # Only the sample-slice rows carry these specific fail reasons; real-world
+        # jobs contribute `location_mismatch` etc.
+        assert no_sp == SAMPLE_JOB_FAIL_SPONSOR, f"no_sponsorship_offered count = {no_sp}"
+        assert us_person == SAMPLE_JOB_FAIL_US_PERSON, f"requires_us_person count = {us_person}"
 
     def test_coverage_preview_parity(self, fixture_client):
+        from tests._fixture_expectations import (
+            SAMPLE_FEED_PASSING, SAMPLE_JOB_FAIL_SPONSOR, SAMPLE_JOB_FAIL_US_PERSON,
+        )
         r = fixture_client.get(f"{API}/eligibility/coverage-preview")
         assert r.status_code == 200
         cp = r.json()
         totals = cp.get("totals") or {}
-        assert totals.get("passing") == 9
+        assert totals.get("passing") == SAMPLE_FEED_PASSING
         ebr = totals.get("excluded_by_reason") or {}
-        assert ebr.get("no_sponsorship_offered") == 4
-        assert ebr.get("requires_us_person") == 2
+        assert ebr.get("no_sponsorship_offered") == SAMPLE_JOB_FAIL_SPONSOR
+        assert ebr.get("requires_us_person") == SAMPLE_JOB_FAIL_US_PERSON
 
 
 # --------------------------------------------------------------------------- #
@@ -202,8 +233,9 @@ class TestAcceptanceGeometry:
 # --------------------------------------------------------------------------- #
 class TestPassingJobsDetail:
     def test_passing_jobs_have_score_and_top_reasons(self, initial_feed):
+        from tests._fixture_expectations import SAMPLE_FEED_PASSING
         passing = initial_feed["passing"]
-        assert len(passing) == 9
+        assert len(passing) == SAMPLE_FEED_PASSING
         # Pick 3 (highest, mid, lowest) and check
         picks = [passing[0], passing[len(passing) // 2], passing[-1]]
         for row in picks:
@@ -256,13 +288,18 @@ class TestShortlistFlow:
 
     def test_01_shortlist_happy_path(self, fixture_client, initial_feed):
         import time
-        # pre-existing cleanup (in case a prior test-run left an open app)
+        from tests._fixture_expectations import FIXTURE_EAD_TOTAL_APPS
+        # pre-existing cleanup (in case a prior test-run left an open TEST-owned app).
+        # SEED-owned rows (assisted-lane, speed-history submitted) are NOT closed
+        # here — they are re-baselined on every backend startup and don't belong
+        # to this test. We only close apps in states this test creates.
+        _TEST_OWNED_STATES = {"shortlisted"}
         pre = fixture_client.get(f"{API}/applications").json()
         pre_apps = pre.get("applications", pre) if isinstance(pre, dict) else pre
         for a in pre_apps or []:
             aid = a.get("id")
             state = a.get("state")
-            if state and state != "closed":
+            if state in _TEST_OWNED_STATES:
                 fixture_client.patch(
                     f"{API}/applications/{aid}/state",
                     json={"expected_state": state, "new_state": "closed"},
@@ -287,17 +324,26 @@ class TestShortlistFlow:
         TestShortlistFlow.app_id = body.get("id")
 
         time.sleep(0.3)
-        # Verify applications length and snapshot has is_sample=true
+        # Verify applications length and snapshot has is_sample=true. Expected open
+        # apps = FIXTURE_EAD_TOTAL_APPS (assisted-lane + speed-history seeds) + 1
+        # (this test's shortlist). The +1 is what this test contributed.
         apps_resp = fixture_client.get(f"{API}/applications").json()
         apps = apps_resp.get("applications", apps_resp) if isinstance(apps_resp, dict) else apps_resp
         open_apps = [a for a in apps if a.get("state") != "closed"]
-        assert len(open_apps) == 1, f"expected 1 open app, got {len(open_apps)}: {open_apps}"
-        app = open_apps[0]
+        test_owned = [a for a in open_apps if a.get("state") in _TEST_OWNED_STATES]
+        assert len(test_owned) == 1, f"expected 1 test-owned open app, got {len(test_owned)}"
+        # And the total open count matches the seed-count + 1 exactly.
+        assert len(open_apps) == FIXTURE_EAD_TOTAL_APPS + 1, (
+            f"expected {FIXTURE_EAD_TOTAL_APPS + 1} open apps "
+            f"(seed={FIXTURE_EAD_TOTAL_APPS} + shortlist=1), got {len(open_apps)}"
+        )
+        app = test_owned[0]
         assert app.get("state") == "shortlisted"
         snap = app.get("job_snapshot") or {}
         assert snap.get("is_sample") is True
 
     def test_02_shortlist_duplicate_409(self, fixture_client):
+        from tests._fixture_expectations import FIXTURE_EAD_TOTAL_APPS
         r = fixture_client.post(
             f"{API}/jobs/{TestShortlistFlow.passing_job_id}/shortlist",
             headers={"Idempotency-Key": TestShortlistFlow.idem_key_alt},
@@ -314,9 +360,11 @@ class TestShortlistFlow:
         apps_resp = fixture_client.get(f"{API}/applications").json()
         apps = apps_resp.get("applications", apps_resp) if isinstance(apps_resp, dict) else apps_resp
         open_apps = [a for a in apps if a.get("state") != "closed"]
-        assert len(open_apps) == 1
+        # Same expected size as after test_01: seed + this test's 1 shortlist.
+        assert len(open_apps) == FIXTURE_EAD_TOTAL_APPS + 1
 
     def test_03_shortlist_idempotency_replay(self, fixture_client):
+        from tests._fixture_expectations import FIXTURE_EAD_TOTAL_APPS
         r = fixture_client.post(
             f"{API}/jobs/{TestShortlistFlow.passing_job_id}/shortlist",
             headers={"Idempotency-Key": TestShortlistFlow.idem_key},
@@ -328,7 +376,7 @@ class TestShortlistFlow:
         apps_resp = fixture_client.get(f"{API}/applications").json()
         apps = apps_resp.get("applications", apps_resp) if isinstance(apps_resp, dict) else apps_resp
         open_apps = [a for a in apps if a.get("state") != "closed"]
-        assert len(open_apps) == 1
+        assert len(open_apps) == FIXTURE_EAD_TOTAL_APPS + 1
 
 
 # --------------------------------------------------------------------------- #
@@ -350,14 +398,26 @@ class TestHideFlow:
         assert b.get("job_id") == job_id
         assert b.get("reason") == "not_interested"
 
-        # Re-fetch feed — passing should now be 7 (9 - 1 shortlisted - 1 hidden)
-        feed = fixture_client.get(f"{API}/jobs/feed").json()
+        # Re-fetch feed — passing should now be SAMPLE_FEED_PASSING - 2
+        # (1 shortlisted-by-TestShortlistFlow, 1 hidden-just-now). Derived
+        # from tests._fixture_expectations so any seed change updates cleanly.
+        # NOTE: /jobs/feed has a 60s per-(user, lane, within_mi, sort) cache.
+        # `initial_feed` populated the default cache key at module start. To
+        # observe the mutation without waiting the TTL out, we request a
+        # DIFFERENT cache key here (`sort=speed`) which forces a fresh
+        # compute that reflects the newly-hidden row.
+        from tests._fixture_expectations import SAMPLE_FEED_PASSING
+        feed = fixture_client.get(f"{API}/jobs/feed?sort=speed").json()
         pass_ids = [
             (row.get("job", {}).get("id") or row.get("job_id") or row.get("id"))
             for row in feed["passing"]
         ]
         assert TestShortlistFlow.second_passing_job_id not in pass_ids, "hidden job still in passing"
-        assert len(feed["passing"]) == 7, f"expected 7 passing after shortlist+hide, got {len(feed['passing'])}"
+        expected_passing = SAMPLE_FEED_PASSING - 2
+        assert len(feed["passing"]) == expected_passing, (
+            f"expected {expected_passing} passing after shortlist+hide, "
+            f"got {len(feed['passing'])}"
+        )
 
         # Shortlisted job should be in excluded[] with duplicate_application fail_reason
         excl = feed["excluded"]
@@ -537,12 +597,18 @@ class TestSampleCoIntegrity:
 # --------------------------------------------------------------------------- #
 class TestZZCleanup:
     def test_close_shortlisted_application(self, fixture_client):
+        """Close only TEST-owned apps. SEED-owned rows (assisted-lane,
+        speed-history) do not transition to `closed` from their seeded
+        states (e.g. `assisted` → `closed` is not a valid transition)
+        AND are re-baselined on every startup — so they don't need
+        cleanup. Only close states this test suite creates."""
+        _TEST_OWNED_STATES = {"shortlisted"}
         apps_resp = fixture_client.get(f"{API}/applications").json()
         apps = apps_resp.get("applications", apps_resp) if isinstance(apps_resp, dict) else apps_resp
         for a in apps or []:
             aid = a.get("id")
             state = a.get("state")
-            if state and state != "closed":
+            if state in _TEST_OWNED_STATES:
                 r = fixture_client.patch(
                     f"{API}/applications/{aid}/state",
                     json={"expected_state": state, "new_state": "closed"},

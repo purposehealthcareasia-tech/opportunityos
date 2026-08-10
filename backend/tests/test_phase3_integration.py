@@ -550,8 +550,10 @@ def test_idempotency_replay_on_state_transition(user_zero_token, sample_job_ids,
 
 # =============== 15. SAMPLE badge integrity ===========================
 def test_sample_seed_integrity(mongo):
+    from domains.seeds import data as _seed_data
+    expected_count = len(_seed_data.SAMPLE_JOBS)
     cur = list(mongo.jobs.find({"is_sample": True, "canonical_key": {"$regex": "^sampleco.demo::sample-"}}, {"_id": 0}))
-    assert len(cur) == 15, f"Expected exactly 15 SampleCo sample_jobs, got {len(cur)}"
+    assert len(cur) == expected_count, f"Expected exactly {expected_count} SampleCo sample_jobs, got {len(cur)}"
     for j in cur:
         assert j.get("is_sample") is True
         # Requirements payload populated

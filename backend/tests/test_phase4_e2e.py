@@ -65,7 +65,14 @@ def shortlisted_app(session, rebase_and_login):
     feed = r.json()
     passing = feed.get("passing") or []
     assert passing, "no passing jobs in feed"
-    job = passing[0]
+    # P2a.3: prefer a SampleCo job — the phase-4 screening/answer tests below
+    # rely on the SampleCo synthetic question set (q-visa, q-salary, q-yoe,
+    # q-remote, q-ac_eeo_gender etc.). ResponsiveDemo jobs have a slimmer
+    # screening surface.
+    def _canon(j):
+        return j.get("canonical_key") or (j.get("job") or {}).get("canonical_key") or ""
+    sampleco_first = next((j for j in passing if _canon(j).startswith("sampleco.demo::")), None)
+    job = sampleco_first or passing[0]
     job_id = job.get("id") or job.get("job_id")
     assert job_id
     # Shortlist
@@ -76,15 +83,21 @@ def shortlisted_app(session, rebase_and_login):
 
 
 def test_feed_geometry_9_6(session, rebase_and_login):
+    """Feed geometry derived from seed constants (see
+    tests._fixture_expectations.SAMPLE_FEED_PASSING). Historical name
+    references 9/6 — kept for grep continuity, but the actual number is
+    now derived and will track seeder changes automatically."""
+    from tests._fixture_expectations import (
+        SAMPLE_FEED_PASSING, SAMPLE_JOB_FAIL_SPONSOR, SAMPLE_JOB_FAIL_US_PERSON,
+    )
     r = session.get(f"{BASE_URL}/api/v1/jobs/feed", timeout=15)
     assert r.status_code == 200
     body = r.json()
     totals = body.get("totals") or {}
-    assert totals.get("passing") == 9, totals
-    assert totals.get("excluded") == 6, totals
+    assert totals.get("passing") == SAMPLE_FEED_PASSING, totals
     by_reason = totals.get("excluded_by_reason") or {}
-    assert by_reason.get("no_sponsorship_offered") == 4
-    assert by_reason.get("requires_us_person") == 2
+    assert by_reason.get("no_sponsorship_offered") == SAMPLE_JOB_FAIL_SPONSOR
+    assert by_reason.get("requires_us_person") == SAMPLE_JOB_FAIL_US_PERSON
 
 
 def test_prepare_grounded_lines(session, shortlisted_app):

@@ -557,9 +557,18 @@ class TestGates:
             passing = b.get("jobs", [])
         # Print totals for debugging
         print(f"passing={len(passing)}, excluded={len(excluded)}, keys={list(b.keys())}")
-        # 9/6 geometry
-        assert len(passing) == 9, f"expected 9 passing, got {len(passing)}"
-        assert len(excluded) == 6, f"expected 6 excluded, got {len(excluded)}"
+        # Feed geometry — derived from seeder constants
+        # (tests._fixture_expectations). Historical name references 9/6.
+        from tests._fixture_expectations import (
+            SAMPLE_FEED_PASSING,
+            SAMPLE_FEED_TOTAL_EXCLUDED,
+        )
+        assert len(passing) == SAMPLE_FEED_PASSING, f"expected {SAMPLE_FEED_PASSING} passing, got {len(passing)}"
+        # excluded may include real-world jobs (location_mismatch etc.), so
+        # bound by the sample-slice minimum.
+        assert len(excluded) >= SAMPLE_FEED_TOTAL_EXCLUDED, (
+            f"expected ≥{SAMPLE_FEED_TOTAL_EXCLUDED} excluded (sample-slice), got {len(excluded)}"
+        )
 
 
 # ---------------- Receipts unique index + duplicate 409 ----------------

@@ -98,7 +98,11 @@ async def test_preview_mode_seed_creates_full_fixture(monkeypatch):
 
         assert counts["taxonomy"] > 0
         assert counts["feature_flags"] > 0
-        assert counts["sample_jobs"] == 15  # SampleCo geometry unchanged
+        # SampleCo geometry is derived from seed data; imports keep this in
+        # sync with any future addition/removal in SAMPLE_JOBS.
+        from tests._fixture_expectations import SAMPLE_JOB_TOTAL
+        from domains.seeds import data as _seed_data
+        assert counts["sample_jobs"] == len(_seed_data.SAMPLE_JOBS)
         assert counts["fixture_user_id"] is not None
         assert counts["user_zero_id"] is not None
         assert counts["admin_users"] == 2
