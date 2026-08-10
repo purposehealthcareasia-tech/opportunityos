@@ -648,6 +648,18 @@ FIXTURE_BROAD_PASSWORD = os.environ.get(
 )
 FIXTURE_BROAD_NAME = "Fixture Broad-Prefs Tester"
 
+# --- Phase 5g fixture: verified employer-member ---
+# FIXTURE-ONLY (same prod-gate rails as FIXTURE_BROAD above). Provides
+# the /api/v1/employer-dashboard/summary member-path with a real
+# employer_memberships row so the 5g surface is independently testable
+# without human-side employer onboarding flow. See test_credentials.md.
+FIXTURE_EMPLOYER_MEMBER_EMAIL = "fixture-employer-member@opportunityos.dev"
+FIXTURE_EMPLOYER_MEMBER_PASSWORD = os.environ.get(
+    "FIXTURE_EMPLOYER_MEMBER_PASSWORD", "Fixture!Emp1"
+)
+FIXTURE_EMPLOYER_MEMBER_NAME = "Fixture Employer Member"
+FIXTURE_EMPLOYER_CANONICAL_KEY = "fixture-employer-corp"
+
 _BROAD_PREFERENCES = {
     # No role_families filter → every taxonomy_family is in play.
     "role_families": [],
@@ -802,6 +814,74 @@ async def _rebase_fixture_broad_user() -> str:
     log.info("FIXTURE BROAD user re-baselined: %s (%s)",
               FIXTURE_BROAD_EMAIL, user_id)
     return user_id
+
+
+async def _rebase_fixture_employer_member_user() -> str:
+    """Phase 5g fixture — verified employer-member for the /5g member
+    path. Rebaselines on every startup:
+      * user account with FIXTURE_EMPLOYER_MEMBER_EMAIL
+      * `employer_memberships` row `{user_id, employer_canonical_key,
+        verified: True}` so `_resolve_employer` returns the key.
+      * minimal `applications` seed (2 rows) + one response outcome
+        so the summary endpoint returns non-null response_rate + a
+        median_days_to_response value the tester can eyeball.
+
+    FIXTURE-ONLY. Prod-gated by `run_seeds()` (line 949+).
+    """
+    db = get_db()
+    user_id = await _ensure_user(
+        FIXTURE_EMPLOYER_MEMBER_EMAIL,
+        FIXTURE_EMPLOYER_MEMBER_PASSWORD,
+        FIXTURE_EMPLOYER_MEMBER_NAME,
+    )
+    now = utc_now()
+    # Idempotent membership row.
+    await db.employer_memberships.update_one(
+        {"user_id": user_id,
+         "employer_canonical_key": FIXTURE_EMPLOYER_CANONICAL_KEY},
+        {"$set": {
+            "user_id": user_id,
+            "employer_canonical_key": FIXTURE_EMPLOYER_CANONICAL_KEY,
+            "verified": True,
+            "verified_at": now,
+            "role": "hiring_manager",
+            "source": "seed:fixture-employer-member",
+        }},
+        upsert=True,
+    )
+    # Minimal apps + one response for a non-null dashboard readout.
+    demo_apps = [
+        {"id": f"fx-emp-app-{i}",
+         "user_id": "fixture-emp-applicant-1",  # cross-user is fine — 5g surface aggregates by employer key, not user
+         "employer_canonical_key": FIXTURE_EMPLOYER_CANONICAL_KEY,
+         "score": 72 if i == 0 else 55,   # one passes gate (≥60), one below
+         "created_at": now}
+        for i in range(2)
+    ]
+    for app in demo_apps:
+        await db.applications.update_one(
+            {"id": app["id"]}, {"$set": app}, upsert=True,
+        )
+    # One responded event → drives response_rate + median_days_to_response.
+    await db.application_outcomes.update_one(
+        {"id": "fx-emp-outcome-1"},
+        {"$set": {
+            "id": "fx-emp-outcome-1",
+            "application_id": "fx-emp-app-0",
+            "employer_canonical_key": FIXTURE_EMPLOYER_CANONICAL_KEY,
+            "event": "response_received",
+            "lag_days": 4,
+            "at": now,
+            "source": "seed:fixture-employer-member",
+        }},
+        upsert=True,
+    )
+    log.info("FIXTURE employer-member re-baselined: %s (%s) → %s",
+             FIXTURE_EMPLOYER_MEMBER_EMAIL, user_id,
+             FIXTURE_EMPLOYER_CANONICAL_KEY)
+    return user_id
+
+
 
 
 # --------------------------------------------------------------------- #
@@ -994,6 +1074,8 @@ async def run_seeds() -> dict:
     fx_id = await _rebase_fixture_user()
     # Wider-prefs FIXTURE user for Surprise Me real-draw path (2026-08-04).
     fx_broad_id = await _rebase_fixture_broad_user()
+    # Verified employer-member FIXTURE for 5g dashboard path (2026-08-09).
+    await _rebase_fixture_employer_member_user()
 
     counts.update({"admin_users": 2, "user_zero_id": uz_id,
                      "fixture_user_id": fx_id,
