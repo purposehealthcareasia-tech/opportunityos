@@ -557,7 +557,7 @@ export default function PassportPage() {
   );
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6 animate-fadeIn">
+    <div className="max-w-5xl mx-auto space-y-6 animate-fadeIn" data-testid="passport-page">
       <div>
         <h1 className="text-2xl font-semibold">Career Passport</h1>
         <p className="muted mt-1 text-sm max-w-2xl">Every fact about you lives here. Nothing draft ever leaves your account. Approve what’s true, edit what needs fixing, reject what isn’t you.</p>

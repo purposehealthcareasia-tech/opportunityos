@@ -203,10 +203,10 @@ export default function EligibilityPage() {
     } finally { setSaving(false); }
   };
 
-  if (loading) return <div className="max-w-3xl mx-auto"><LoadingBlock label="Loading eligibility…" /></div>;
+  if (loading) return <div className="max-w-3xl mx-auto" data-testid="eligibility-page-loading"><LoadingBlock label="Loading eligibility…" /></div>;
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6 animate-fadeIn">
+    <div className="max-w-4xl mx-auto space-y-6 animate-fadeIn" data-testid="eligibility-page">
       <div className="flex items-baseline justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold flex items-center gap-2"><Lock className="h-5 w-5 text-accent" /> Eligibility</h1>
