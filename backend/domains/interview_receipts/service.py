@@ -6,7 +6,7 @@ Extends the receipt chain past application to interview lifecycle:
 
 Each event is HMAC-SHA256 signed with the same `EVIDENCE_SIGNING_KEY`
 as the ghosting export, so third-party verifiers can validate all
-receipts through ONE verify endpoint. `POST /api/v1/exports/verify-signature`
+receipts through ONE verify endpoint. `POST /api/v1/exports/ghosting-evidence/verify`
 already exists (Phase 4); it accepts any canonical-serialized manifest.
 
 Rails:
@@ -86,7 +86,7 @@ async def record_event(
         "outcome_id": outcome_id,
         "event": req.event,
         "signature": row["signature"],
-        "verify_endpoint": "POST /api/v1/exports/verify-signature",
+        "verify_endpoint": "POST /api/v1/exports/ghosting-evidence/verify",
     }
 
 
@@ -138,7 +138,7 @@ async def list_events_for_application(
         "events": rows,
         "count": len(rows),
         "derived_ghosting_signal": derived_ghost,
-        "verify_endpoint": "POST /api/v1/exports/verify-signature",
+        "verify_endpoint": "POST /api/v1/exports/ghosting-evidence/verify",
     }
 
 
@@ -193,7 +193,7 @@ async def confirm_ghost(
         "recorded": True,
         "outcome_id": outcome_id,
         "signature": row["signature"],
-        "verify_endpoint": "POST /api/v1/exports/verify-signature",
+        "verify_endpoint": "POST /api/v1/exports/ghosting-evidence/verify",
     }
 
 

@@ -113,7 +113,7 @@ async def test_record_event_persists_signed_row(monkeypatch):
     assert out["recorded"] is True
     assert out["event"] == "interview_scheduled"
     assert len(out["signature"]) == 64  # HMAC-SHA256 hex
-    assert out["verify_endpoint"].endswith("/exports/verify-signature")
+    assert out["verify_endpoint"].endswith("/exports/ghosting-evidence/verify")
     # Row persisted with signature
     assert len(db.application_outcomes.docs) == 1
     r = db.application_outcomes.docs[0]
