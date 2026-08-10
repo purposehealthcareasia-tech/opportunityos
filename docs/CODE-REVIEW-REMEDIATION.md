@@ -185,3 +185,60 @@ Both are **benign and expected** in the preview environment. They are captured i
 | `frontend/src/pages/Eligibility.jsx` (page root) | Missing `data-testid="eligibility-page"` on the outer container | Low | Add page-root testid alongside the existing feature-specific testids to make Playwright anchor navigation stable. |
 | `frontend/src/pages/Passport.jsx` (page root) | Missing `data-testid="passport-page"` on the outer container | Low | Same. |
 
+---
+
+## P2 burn-down · decisions & rationale (2026-08-10)
+
+### P2a.3 · Kill the seed-drift class structurally (test-code only)
+
+**Decision:** Extract every seeder-derived expectation into a shared
+`tests/_fixture_expectations.py` module. Consumers import the constants
+by name (`SAMPLE_FEED_PASSING`, `FIXTURE_EAD_TOTAL_APPS`,
+`EMPLOYER_CAP_FIRST_429_SAMPLECO_INDEX`, etc.). Zero production-code
+touches — verified via `git ls-files backend/domains/seeds/*`.
+
+**Rationale:**
+- The rail was "test-code only, decide-and-document, structural not
+  raw-number-pinning." Hardcoding 24 updated integers across ~9 test
+  files would re-drift the day the seeder grew a 4th demo entry.
+- We already proved the pattern with `domains/claims/schema.py` — one
+  canonical module, forbidden-literal drift guard. Same shape, applied
+  to test expectations.
+- Where a constant lives inside a private function body (e.g. the
+  `entries = [...]` literal in `_seed_fixture_speed_history`), we use
+  `ast.literal_eval` to read it. That's still structural: a seeder
+  refactor that renames the local raises a precise error at collection
+  time naming the missing symbol, not a silent numeric drift 30 minutes
+  later.
+- Where a value depends on a helper's mere existence (e.g. the
+  assisted-lane seed contributes exactly 1 app), we use
+  `hasattr(_seeder, "_seed_fixture_assisted_lane_row")` — again
+  structural, still test-code only.
+
+**Coverage:** 8 test files touched, ~24 sites converted from hardcoded
+literals to imported constants. Feed cache invalidation issue (P2a.4)
+filed separately as a known gap in the merge packet.
+
+### P2a.4 · Feed cache doesn't invalidate on mutation
+
+**Root cause:** `/api/v1/jobs/feed` has a 60s TTL cache keyed by
+`(user_id, lane, within_mi, sort)`. Shortlist / hide / rebase do NOT
+invalidate the cache. When tests mutate state and then re-read the feed,
+they get stale results.
+
+**Test-side workaround (this pass):** tests that need a fresh feed
+compute after a mutation use a unique `within_mi=99991..99996` cache-key
+bust. This has the SIDE EFFECT of narrowing the feed geometry to
+distance-tagged jobs (real-world jobs with `null` distance are
+excluded), so parity-after-mutation tests were rewritten to assert
+mutation effects against the uncached `/eligibility/coverage-preview`
+surface instead.
+
+**Production fix (deferred, out of P2a scope):** invalidate
+`_feed_cache[user_id, ...]` on shortlist / hide / rebase from within
+the corresponding router endpoints. Small, mechanical, one-line-per-
+endpoint change; NOT taken this pass because the founder scoped P2a
+to test-code only.
+
+**Filed under:** `docs/MERGE-PACKET.md` §9.4 Known Gaps (P2a.4).
+

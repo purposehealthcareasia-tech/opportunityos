@@ -87,6 +87,13 @@ def test_supersedes_chain_keeps_original_row():
     # Original row still present.
     original = db.submission_receipts.find_one({"id": r1_id})
     assert original is not None, "original receipt must NOT be removed by a correction"
+    # P2a.2: reset core.db._client / _db so `find_effective`'s asyncio.run
+    # creates a fresh Motor client inside its own event loop. Otherwise
+    # a cached Motor client bound to a previously-closed loop raises
+    # `RuntimeError: Event loop is closed`.
+    from core import db as _core_db
+    _core_db._client = None
+    _core_db._db = None
     # Application-layer helper picks the latest non-superseded row.
     from domains.submission_receipts import service as receipts
     effective = asyncio.run(receipts.find_effective(user_id=key, application_id="app-1"))
