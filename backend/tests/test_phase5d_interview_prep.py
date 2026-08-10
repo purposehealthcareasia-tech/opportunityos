@@ -42,18 +42,20 @@ def test_build_claim_block_filters_approved_only():
     from domains.interview_prep.service import _build_claim_block
     claims = [
         {"type": "education", "status": "approved",
-         "data": {"school": "State U", "degree": "BSc", "field": "CS", "graduation_year": 2018}},
-        {"type": "education", "state": "pending",
-         "data": {"school": "Never Approved"}},
+         "value": {"institution": "State U", "degree": "BSc", "field": "CS",
+                   "start": "2014-08", "end": "2018-05"}},
+        {"type": "education", "status": "pending",
+         "value": {"institution": "Never Approved"}},
         {"type": "employment", "status": "approved",
-         "data": {"title": "Eng", "company": "Acme"}},
+         "value": {"role": "Eng", "company": "Acme"}},
     ]
     block, tokens = _build_claim_block(claims, "education")
     assert len(block) == 1
-    assert block[0]["school"] == "State U"
-    assert "state" in tokens and "2018" in tokens
+    assert block[0]["institution"] == "State U"
+    assert "state" in tokens          # "State U" tokenizes to {state, ...}
+    assert "2018" in tokens           # from "2018-05" ISO-month end
     # employment claim not included when category=education
-    assert not any(b.get("title") for b in block)
+    assert not any(b.get("role") for b in block)
 
 
 def test_validation_firewall_drops_ungrounded_answers():
@@ -77,7 +79,7 @@ async def test_generate_prep_empty_state_when_no_approved_claims_in_category(mon
     from domains.interview_prep.service import PrepRequest
     db = _DB(claims=[
         # user has other-category claims but none approved for `education`
-        {"type": "employment", "status": "approved", "data": {"title": "Eng"}},
+        {"type": "employment", "status": "approved", "value": {"role": "Eng"}},
     ])
     monkeypatch.setattr(ip, "get_db", lambda: db)
     out = await ip.generate_prep(
@@ -97,8 +99,8 @@ async def test_generate_prep_happy_path_firewall_kept(monkeypatch):
     from domains.interview_prep.service import PrepRequest
     db = _DB(claims=[
         {"id": "c1", "type": "employment", "status": "approved",
-         "data": {"title": "Software Engineer", "company": "Acme",
-                  "start_year": 2019, "end_year": 2023}},
+         "value": {"role": "Software Engineer", "company": "Acme",
+                   "start": "2019-01", "end": "2023-12"}},
     ])
     monkeypatch.setattr(ip, "get_db", lambda: db)
 
@@ -139,7 +141,7 @@ async def test_generate_prep_never_invents_when_llm_returns_all_ungrounded(monke
     from domains.interview_prep.service import PrepRequest
     db = _DB(claims=[
         {"id": "c1", "type": "skill", "status": "approved",
-         "data": {"name": "kubernetes", "level": "advanced"}},
+         "value": {"name": "kubernetes"}},
     ])
     monkeypatch.setattr(ip, "get_db", lambda: db)
     fake_raw = (
@@ -168,7 +170,7 @@ async def test_generate_prep_502_on_llm_json_parse_failure(monkeypatch):
     from domains.interview_prep.service import PrepRequest
     db = _DB(claims=[
         {"id": "c1", "type": "project", "status": "approved",
-         "data": {"name": "Fynd", "description": "job search"}},
+         "value": {"name": "Fynd", "description": "job search"}},
     ])
     monkeypatch.setattr(ip, "get_db", lambda: db)
     async def fake_llm(*_a, **_kw): return "gpt-4o", "this is not json", 10, 5

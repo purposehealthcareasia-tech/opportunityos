@@ -205,9 +205,11 @@ async def test_public_view_valid_signature_returns_filtered_and_receipts(monkeyp
         elp={"user_id": "u1", "status": "us_citizen"},
         claims=[
             {"user_id": "u1", "status": "approved", "type": "education",
-             "data": {"school": "State U", "degree": "BSc", "field": "CS", "graduation_year": 2018}},
+             "value": {"institution": "State U", "degree": "BSc", "field": "CS",
+                       "start": "2014-08", "end": "2018-05"}},
             {"user_id": "u1", "status": "approved", "type": "employment",
-             "data": {"title": "Eng", "company": "Acme", "start_year": 2019, "end_year": 2023}},
+             "value": {"role": "Eng", "company": "Acme",
+                       "start": "2019-06", "end": "2023-10"}},
         ],
     )
     monkeypatch.setattr(share, "get_db", lambda: fake)
@@ -243,11 +245,12 @@ async def test_public_view_full_scope_includes_employment_and_skills(monkeypatch
         elp={"user_id": "u2", "status": "ead_opt"},
         claims=[
             {"user_id": "u2", "status": "approved", "type": "employment",
-             "data": {"title": "SWE", "company": "Beta", "start_year": 2020, "end_year": 2024}},
+             "value": {"role": "SWE", "company": "Beta",
+                       "start": "2020-01", "end": "2024-01"}},
             {"user_id": "u2", "status": "approved", "type": "skill",
-             "data": {"name": "python"}},
+             "value": {"name": "python"}},
             {"user_id": "u2", "status": "approved", "type": "skill",
-             "data": {"name": "rust"}},
+             "value": {"name": "rust"}},
         ],
     )
     monkeypatch.setattr(share, "get_db", lambda: fake)

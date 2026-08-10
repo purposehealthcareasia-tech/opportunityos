@@ -26,7 +26,12 @@ from pydantic import BaseModel, Field
 from core.db import get_db
 from core.deps import get_current_user, require_consent
 from core.time_utils import utc_now
-from domains.claims.schema import approved_for_user_query, claim_type
+from domains.claims.schema import (
+    _year_from_iso_month,
+    approved_for_user_query,
+    claim_type,
+    claim_value,
+)
 from domains.exports.ghosting import _signing_key  # reuse HMAC key (same rails)
 
 
@@ -93,15 +98,22 @@ async def _load_filtered_passport(user_id: str, scope: str) -> dict:
     view: dict = {"name": "" if "name" not in allow else (profile or {}).get("name") or ""}
 
     if "education" in allow:
-        view["education"] = [
-            {
-                "school": c.get("data", {}).get("school", ""),
-                "degree": c.get("data", {}).get("degree", ""),
-                "field":  c.get("data", {}).get("field", ""),
-                "graduation_year": c.get("data", {}).get("graduation_year"),
-            }
-            for c in claims if claim_type(c) == "education"
-        ]
+        # Public-API keys ("school", "graduation_year") are stable — they
+        # were published in PHASE-5-EVIDENCE.md. We source them from the
+        # ACTUAL value sub-doc keys ("institution", "end") via the
+        # schema accessor + year parser (Gate C · FIX 1B).
+        edu_list = []
+        for c in claims:
+            if claim_type(c) != "education":
+                continue
+            v = claim_value(c)
+            edu_list.append({
+                "school": v.get("institution", ""),
+                "degree": v.get("degree", ""),
+                "field":  v.get("field", ""),
+                "graduation_year": _year_from_iso_month(v.get("end")),
+            })
+        view["education"] = edu_list
 
     if "us_work_authorized" in allow:
         # Boolean only. Never the visa status literal (ITAR-adjacent).
@@ -112,20 +124,24 @@ async def _load_filtered_passport(user_id: str, scope: str) -> dict:
         )
 
     if "employment_history" in allow:
-        emps = [
-            {
-                "title": c.get("data", {}).get("title", ""),
-                "company": c.get("data", {}).get("company", ""),
-                "start_year": c.get("data", {}).get("start_year"),
-                "end_year": c.get("data", {}).get("end_year"),
-            }
-            for c in claims if claim_type(c) == "employment"
-        ]
+        # Same published-key stability: "title"/"start_year"/"end_year"
+        # sourced from actual value keys "role"/"start"/"end".
+        emps = []
+        for c in claims:
+            if claim_type(c) != "employment":
+                continue
+            v = claim_value(c)
+            emps.append({
+                "title": v.get("role", "") or v.get("title", ""),
+                "company": v.get("company", ""),
+                "start_year": _year_from_iso_month(v.get("start")),
+                "end_year": _year_from_iso_month(v.get("end")),
+            })
         view["employment_history"] = emps
 
     if "top_skills" in allow:
         skills = [
-            (c.get("data", {}).get("name") or "").strip()
+            (claim_value(c).get("name") or "").strip()
             for c in claims if claim_type(c) == "skill"
         ]
         view["top_skills"] = [s for s in skills if s][:5]

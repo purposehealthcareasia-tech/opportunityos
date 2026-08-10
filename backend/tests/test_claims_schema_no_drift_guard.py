@@ -24,9 +24,12 @@ from pathlib import Path
 
 BACKEND_DOMAINS = Path("/app/backend/domains")
 
-# The two names that historically drifted. If a future contributor
-# uses either literal against `db.claims`, the guard fails.
-FORBIDDEN_LITERALS = ("state", "kind")
+# The three names that historically drifted. If a future contributor
+# uses any of these literals as a key against `db.claims`, the guard
+# fails. "state"/"kind" caught in Gate C · FIX 1; "data" caught in
+# Gate C · FIX 1B (interview_prep + share both read `c.get("data")`
+# while the collection actually stores the value sub-doc as `value`).
+FORBIDDEN_LITERALS = ("state", "kind", "data")
 
 # Whitelist: modules that legitimately own or manipulate the claims
 # collection's raw structure (schema.py + repository.py + the models

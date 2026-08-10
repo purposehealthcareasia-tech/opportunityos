@@ -26,6 +26,7 @@ from domains.claims.schema import (
     ALLOWED_TYPES,
     approved_for_user_query,
     claim_type,
+    claim_value,
     is_approved,
 )
 
@@ -51,10 +52,16 @@ _SYSTEM_PROMPT = (
 )
 
 _GROUNDING_CATEGORY_KEYS = {
-    "education": {"school", "degree", "field", "graduation_year"},
-    "employment": {"title", "company", "start_year", "end_year"},
-    "skill": {"name", "level"},
-    "project": {"name", "description"},
+    # Keys are the ACTUAL `value` sub-doc keys as written by the
+    # seeder + domains.claims.service (see schema.VALUE_KEYS_BY_TYPE).
+    # Historical drift bug (Gate C · FIX 1B): this used to be
+    # {"school","graduation_year"} / {"title","start_year"} — neither
+    # exists on real approved claims, so every grounding read produced
+    # an empty block and the LLM path was unreachable.
+    "education":  set(("institution", "degree", "field", "start", "end")),
+    "employment": set(("company", "role", "start", "end", "summary")),
+    "skill":      set(("name",)),
+    "project":    set(("name", "description")),
 }
 
 
@@ -120,7 +127,10 @@ def _build_claim_block(claims: list[dict], category: str) -> tuple[list[dict], s
             continue
         if not is_approved(c):
             continue
-        data = c.get("data") or {}
+        # Read the canonical value sub-document via the schema accessor
+        # (Gate C · FIX 1B: was c.get("data") — no such field exists at
+        # rest; every grounded read returned the empty block).
+        data = claim_value(c)
         clean = {k: data.get(k) for k in allowed if data.get(k) is not None}
         if not clean:
             continue
