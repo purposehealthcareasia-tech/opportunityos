@@ -72,11 +72,18 @@ _TESTS_NEEDING_FUNCTION_REBASE = {
     # Privacy-export hash-leak check reads /privacy/export which reflects
     # accumulated documents. Passes solo after rebase.
     "tests/test_milestone_a_integrations.py::TestRegressionSpotChecks::test_privacy_export_no_hash_leak",
+    # test_match_score_and_feedback uses user_zero_token and seeds a
+    # match_scores row after rebase. Feed cache holds stale IDs so the
+    # subsequent /matches/for-job read may target a pre-rebase job.
+    # P2a.3 rebase-then-fresh-compute ensures the read hits a live row.
+    "tests/test_phase3_integration.py::test_match_score_and_feedback",
     # NOTE (2026-08-10): `test_receipts_immutability::test_supersedes_chain_
     # keeps_original_row` was investigated as a candidate — it fails in-suite
     # but the root cause is `RuntimeError: Event loop is closed` (motor +
     # asyncio.run() infra issue, same class as the 3 permanently-skipped
-    # tests). Rebase does NOT help it. Filed separately under P2a.2.
+    # tests). Rebase does NOT help it; the fix was to reset
+    # core.db._client / _db inside the test (see the test file itself,
+    # not conftest). Filed as P2a.2.
 }
 
 
