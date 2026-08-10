@@ -41,11 +41,11 @@ def test_tokens_of_extracts_alphanum():
 def test_build_claim_block_filters_approved_only():
     from domains.interview_prep.service import _build_claim_block
     claims = [
-        {"kind": "education", "state": "approved",
+        {"type": "education", "status": "approved",
          "data": {"school": "State U", "degree": "BSc", "field": "CS", "graduation_year": 2018}},
-        {"kind": "education", "state": "pending",
+        {"type": "education", "state": "pending",
          "data": {"school": "Never Approved"}},
-        {"kind": "employment", "state": "approved",
+        {"type": "employment", "status": "approved",
          "data": {"title": "Eng", "company": "Acme"}},
     ]
     block, tokens = _build_claim_block(claims, "education")
@@ -77,7 +77,7 @@ async def test_generate_prep_empty_state_when_no_approved_claims_in_category(mon
     from domains.interview_prep.service import PrepRequest
     db = _DB(claims=[
         # user has other-category claims but none approved for `education`
-        {"kind": "employment", "state": "approved", "data": {"title": "Eng"}},
+        {"type": "employment", "status": "approved", "data": {"title": "Eng"}},
     ])
     monkeypatch.setattr(ip, "get_db", lambda: db)
     out = await ip.generate_prep(
@@ -96,7 +96,7 @@ async def test_generate_prep_happy_path_firewall_kept(monkeypatch):
     from domains.interview_prep import service as ip
     from domains.interview_prep.service import PrepRequest
     db = _DB(claims=[
-        {"id": "c1", "kind": "employment", "state": "approved",
+        {"id": "c1", "type": "employment", "status": "approved",
          "data": {"title": "Software Engineer", "company": "Acme",
                   "start_year": 2019, "end_year": 2023}},
     ])
@@ -138,7 +138,7 @@ async def test_generate_prep_never_invents_when_llm_returns_all_ungrounded(monke
     from domains.interview_prep import service as ip
     from domains.interview_prep.service import PrepRequest
     db = _DB(claims=[
-        {"id": "c1", "kind": "skill", "state": "approved",
+        {"id": "c1", "type": "skill", "status": "approved",
          "data": {"name": "kubernetes", "level": "advanced"}},
     ])
     monkeypatch.setattr(ip, "get_db", lambda: db)
@@ -167,7 +167,7 @@ async def test_generate_prep_502_on_llm_json_parse_failure(monkeypatch):
     from domains.interview_prep import service as ip
     from domains.interview_prep.service import PrepRequest
     db = _DB(claims=[
-        {"id": "c1", "kind": "project", "state": "approved",
+        {"id": "c1", "type": "project", "status": "approved",
          "data": {"name": "Fynd", "description": "job search"}},
     ])
     monkeypatch.setattr(ip, "get_db", lambda: db)

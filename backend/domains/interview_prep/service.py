@@ -22,12 +22,18 @@ from pydantic import BaseModel, Field
 from core.config import settings
 from core.db import get_db
 from core.deps import require_consent
+from domains.claims.schema import (
+    ALLOWED_TYPES,
+    approved_for_user_query,
+    claim_type,
+    is_approved,
+)
 
 
 router = APIRouter(prefix="/api/v1/interview-prep", tags=["interview_prep"])
 
 
-_ALLOWED_CATEGORIES = ("education", "employment", "skill", "project")
+_ALLOWED_CATEGORIES = tuple(sorted(ALLOWED_TYPES))
 
 _SYSTEM_PROMPT = (
     "You are Fynd's interview practice generator. HARD RULES:\n"
@@ -101,14 +107,18 @@ def _validation_firewall(qas: list[dict], claim_tokens: set[str]) -> tuple[list[
 def _build_claim_block(claims: list[dict], category: str) -> tuple[list[dict], set[str]]:
     """Filter approved claims to `category` + strip everything the
     grounding rule doesn't need (no user_id, no created_at, etc.).
-    Also computes the token set for the firewall."""
+    Also computes the token set for the firewall.
+
+    Uses `domains/claims/schema.py` helpers so field names cannot
+    drift from the collection's actual keys (Phase-5 Gate-C FIX 1).
+    """
     allowed = _GROUNDING_CATEGORY_KEYS.get(category, set())
     block: list[dict] = []
     tokens: set[str] = set()
     for c in claims:
-        if c.get("kind") != category:
+        if claim_type(c) != category:
             continue
-        if c.get("state") != "approved":
+        if not is_approved(c):
             continue
         data = c.get("data") or {}
         clean = {k: data.get(k) for k in allowed if data.get(k) is not None}
@@ -143,7 +153,10 @@ async def generate_prep(
     user: dict = Depends(require_consent("interview_prep_generate")),
 ):
     db = get_db()
-    claims_cursor = db.claims.find({"user_id": user["id"], "state": "approved"})
+    # Canonical approved-claims read (schema.approved_for_user_query
+    # is the single source of truth for these field names — see
+    # domains/claims/schema.py + tests/test_claims_schema_no_drift_guard.py).
+    claims_cursor = db.claims.find(approved_for_user_query(user["id"]))
     claims = [c async for c in claims_cursor]
 
     claim_block, claim_tokens = _build_claim_block(claims, req.category)

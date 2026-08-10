@@ -204,9 +204,9 @@ async def test_public_view_valid_signature_returns_filtered_and_receipts(monkeyp
         users={"id": "u1", "name": "Alice"},
         elp={"user_id": "u1", "status": "us_citizen"},
         claims=[
-            {"user_id": "u1", "state": "approved", "kind": "education",
+            {"user_id": "u1", "status": "approved", "type": "education",
              "data": {"school": "State U", "degree": "BSc", "field": "CS", "graduation_year": 2018}},
-            {"user_id": "u1", "state": "approved", "kind": "employment",
+            {"user_id": "u1", "status": "approved", "type": "employment",
              "data": {"title": "Eng", "company": "Acme", "start_year": 2019, "end_year": 2023}},
         ],
     )
@@ -242,11 +242,11 @@ async def test_public_view_full_scope_includes_employment_and_skills(monkeypatch
         users={"id": "u2", "name": "Bob"},
         elp={"user_id": "u2", "status": "ead_opt"},
         claims=[
-            {"user_id": "u2", "state": "approved", "kind": "employment",
+            {"user_id": "u2", "status": "approved", "type": "employment",
              "data": {"title": "SWE", "company": "Beta", "start_year": 2020, "end_year": 2024}},
-            {"user_id": "u2", "state": "approved", "kind": "skill",
+            {"user_id": "u2", "status": "approved", "type": "skill",
              "data": {"name": "python"}},
-            {"user_id": "u2", "state": "approved", "kind": "skill",
+            {"user_id": "u2", "status": "approved", "type": "skill",
              "data": {"name": "rust"}},
         ],
     )

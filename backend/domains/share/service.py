@@ -26,6 +26,7 @@ from pydantic import BaseModel, Field
 from core.db import get_db
 from core.deps import get_current_user, require_consent
 from core.time_utils import utc_now
+from domains.claims.schema import approved_for_user_query, claim_type
 from domains.exports.ghosting import _signing_key  # reuse HMAC key (same rails)
 
 
@@ -82,9 +83,10 @@ async def _load_filtered_passport(user_id: str, scope: str) -> dict:
         raise HTTPException(status_code=400, detail="bad_scope")
     db = get_db()
     profile = await db.users.find_one({"id": user_id}, {"name": 1, "_id": 0})
-    claims_cursor = db.claims.find(
-        {"user_id": user_id, "state": "approved"}
-    )
+    # Canonical approved-claims read (single source of truth in
+    # domains/claims/schema.py — prevents the schema-drift class of
+    # bug that hit Phase 5 Gate C · FIX 1).
+    claims_cursor = db.claims.find(approved_for_user_query(user_id))
     claims = [c async for c in claims_cursor]
 
     allow = _SCOPES[scope]
@@ -98,7 +100,7 @@ async def _load_filtered_passport(user_id: str, scope: str) -> dict:
                 "field":  c.get("data", {}).get("field", ""),
                 "graduation_year": c.get("data", {}).get("graduation_year"),
             }
-            for c in claims if c.get("kind") == "education"
+            for c in claims if claim_type(c) == "education"
         ]
 
     if "us_work_authorized" in allow:
@@ -117,14 +119,14 @@ async def _load_filtered_passport(user_id: str, scope: str) -> dict:
                 "start_year": c.get("data", {}).get("start_year"),
                 "end_year": c.get("data", {}).get("end_year"),
             }
-            for c in claims if c.get("kind") == "employment"
+            for c in claims if claim_type(c) == "employment"
         ]
         view["employment_history"] = emps
 
     if "top_skills" in allow:
         skills = [
             (c.get("data", {}).get("name") or "").strip()
-            for c in claims if c.get("kind") == "skill"
+            for c in claims if claim_type(c) == "skill"
         ]
         view["top_skills"] = [s for s in skills if s][:5]
 
