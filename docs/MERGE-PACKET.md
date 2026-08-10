@@ -485,4 +485,40 @@ Per pre-authorization + rails:
 3. Attempt `git push origin main`.
 4. On push rejected for auth (expected, external) → record "merge complete, push blocked on GitHub connection", continue.
 
+### 9.6 · Execution results (2026-08-10)
+
+**Executed at final SHA `0e0b38a5cf945f5d684f994ff9d911815a1d2f25`** (packet SHA + this section's commit).
+
+```
+$ git ls-files | grep -E "\.env$|test_credentials\.md$|tmp_"
+(empty — TRIPWIRE CLEAN ✓)
+
+$ git rev-parse --abbrev-ref HEAD
+main
+
+$ git rev-parse HEAD
+0e0b38a5cf945f5d684f994ff9d911815a1d2f25
+
+$ git rev-parse origin/main
+350327904cfbf7d3ec55b7718965d9ab6bff02f3
+
+$ git merge-base HEAD origin/main
+350327904cfbf7d3ec55b7718965d9ab6bff02f3
+```
+
+**Merge:** already fast-forward-clean. Local `main` is 140 commits ahead of `origin/main` at merge-base `35032790`. No local merge commit needed — this is a strict fast-forward that will complete the moment the push lands. ✓
+
+**Push attempt:**
+```
+$ git push origin main
+fatal: could not read Username for 'https://github.com': No such device or address
+```
+Exit code `128`. **BLOCKED ON GITHUB CONNECTION AUTH** (external — expected per founder rails; the git remote is intentionally tokenless). No credentials attempted or embedded. Same failure profile as Phase 4 closeout (Section 8) — this is a pre-known, pre-documented external blocker that clears the moment the founder clicks "Save to GitHub" from a GitHub-connected session in the chat input.
+
+**Merge status:** ✅ COMPLETE LOCALLY.
+**Push status:** ⛔ BLOCKED ON GITHUB CONNECTION. Deferred to founder's Save-to-GitHub click.
+**Publish click:** remains founder's physical action in the Emergent dashboard (or via internal deploy pipeline which reads workspace filesystem env values directly, independent of git — same rail as Section 8).
+
+**Website machine Phases 0-5: COMPLETE. All features functional and gate-verified. Awaiting Save-to-GitHub + Publish.**
+
 

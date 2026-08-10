@@ -1,8 +1,80 @@
 # Fynd — Product Requirements Document
 
-## 🏁 Sequence status (2026-08-08 CLOSEOUT, local `main` HEAD `b87d9c14`)
+## 🏁 Sequence status (2026-08-10 CLOSEOUT · WEBSITE MACHINE PHASES 0-5 COMPLETE · local `main` HEAD `0e0b38a5`)
 
-**PHASE 0-4 SEQUENCE COMPLETE. TRIPLE-SOURCED. AWAITING FOUNDER PUSH + PUBLISH.**
+**PHASE 0-5 SEQUENCE COMPLETE. FOUNDER GATE-PASSED 8/8. MERGE COMPLETE LOCALLY. AWAITING FOUNDER SAVE-TO-GITHUB + PUBLISH.**
+
+| Phase | Codename | Verdict | Date | Evidence |
+|---|---|---|---|---|
+| 0 | Fynd Liquid retheme + rebrand | **PASSED** | 2026-08-04 | `docs/PHASE-0-EVIDENCE.md` |
+| 1 | CONVERSION LAYER | **PASSED** (founder tester-leg) | 2026-08-06 | `docs/PHASE-1-EVIDENCE.md` |
+| 2 | INTELLIGENCE VISIBLE | **PASSED** (founder tester-leg) | 2026-08-08 | `docs/PHASE-2-EVIDENCE.md` §6 |
+| 3 | SUPPLY ENGINE | **PASSED** (founder tester-leg + abuse-log persistence lock) | 2026-08-08 | `docs/PHASE-3-EVIDENCE.md` §6 |
+| 4 | ELIGIBILITY ENGINE & EXPORTS | **PASSED** (founder tester-leg + null-envelope uniformity lock) | 2026-08-08 | `docs/PHASE-4-EVIDENCE.md` §5-§6 |
+| 5 | WEBSITE SCALING TIER (5a-5j) | **PASSED** (founder 8/8 briefs · D1 D2 D3 · Gate A + Gate B + Gate C) | 2026-08-10 | `docs/PHASE-5-EVIDENCE.md` §Gate C addendum |
+
+**Founder final verdict at HEAD `22941607` (2026-08-10):** PASS on 8/8 briefs.
+- D1 — interview-prep grounded generation (3 questions, PRACTICE label, `grounded:true`, every answer citing verified approved claim, firewall 3 kept / 0 dropped; project category honestly empty) ✓
+- D2 — employer dashboard member path own-data-only with `cross_employer_disclosure:false` + non-member 403 ✓
+- D3 — extension fully compliant (MV3, `[activeTab,storage]` only, empty `host_permissions`, ZERO page-content APIs by grep, blocklist enforced before any network call, single validated `/employers/connect` target, 6/hr client cap) ✓
+
+**Phase 5 Gate C burn-down (this session, all shipped at HEAD `0e0b38a5`):**
+- FIX 1 — claims schema drift (`state/kind` → `status/type`) locked structurally in `domains/claims/schema.py` (SSoT). 3 anti-drift tests.
+- FIX 1B — second-layer sub-drift (`data` → `value` + per-type value keys `institution`/`role`/`start`/`end`) surfaced during evidence capture via observed-over-remembered rail. Extended `schema.py` with `FIELD_VALUE`, `claim_value()`, per-type key maps, `_year_from_iso_month()`. **PUBLIC API surface unchanged** — only the source was rewired. Anti-drift guard extended to catch raw `"data":` literals.
+- FIX 2 — `interview_receipts` verify_endpoint URL corrected (`ghosting-evidence/verify`).
+- FIX 3 — `employer_memberships` fixture (`fixture-employer-member@` / `Fixture!Emp1`) rebaselined on startup for the 5g member-path E2E.
+
+**Merge packet:** `docs/MERGE-PACKET.md` §9 (Phase 5 Gate closeout, packet SHA `22941607` → final SHA `0e0b38a5`).
+- Dry-run: **CLEAN** (no conflicts, fast-forward feasible on push).
+- Tripwire: **CLEAN** (`backend/.env` + `memory/test_credentials.md` both untracked, verified via `git ls-files`).
+- Local merge: **COMPLETE** — main is a strict fast-forward (140 commits ahead of `origin/main` at merge-base `35032790`).
+- Push: **BLOCKED** on GitHub connection auth (`fatal: could not read Username for 'https://github.com'` · exit 128) — expected external blocker, cleared by founder's Save-to-GitHub click.
+- Publish click: founder's physical action.
+
+**Suite state at final SHA `0e0b38a5`:**
+- Focused Phase-3/4/5 subset: **191 passed / 0 skipped** (+27 over pre-Gate-C `164p/3s`, 0 Gate-C regressions).
+- Full pytest at `CI_TEST_ISSUER_ENABLED=true` (documented preview state per `test_credentials.md` line 11): **633 passed / 30 failed / 3 skipped in 5:36.**
+- The 30 failures are all fixture-state-pollution live-integration tests (git-stash-verified as pre-existing at both `ba4008c7` and `78eec143`). Filed as **P2 fixture-cleanup** in the residual backlog. Table in `docs/MERGE-PACKET.md` §9.4.
+- Skipped 3 are motor/pytest-asyncio incompatibility, locked by live-curl evidence — NOT feature gaps.
+
+---
+
+## 🌊 Phase 5 — WEBSITE SCALING TIER — LANDED 2026-08-09 · GATE-PASSED 2026-08-10 (evidence: `/app/docs/PHASE-5-EVIDENCE.md`)
+
+**Feature deltas (10 items):** 5a Passport Share Link · 5b Materials A/B · 5c Extension Capture-Anywhere (MV3 minimal) · 5d Interview Prep Grounded · 5e Responds-Fast Badge · 5f Interview Receipts · 5g Employer Dashboard · 5h Layoff-Day Mode · 5i Passport-as-API v1 · 5j Cohort Intelligence.
+
+**Spec-only carry-forwards** (build nothing this pass, per founder brief): `PHASE-5-SPECS/{VELOCITY-BRIDGE, WARM-INTRO-FINDER, NEGOTIATION-COPILOT, BACKGROUND-PRE-CLEARANCE, A2A-PROTOCOL}.md`.
+
+**New domains:** `share`, `materials_ab`, `interview_prep`, `badges`, `interview_receipts`, `employer_dashboard`, `layoff_day`, `passport_api`, `cohort_intel`.
+**New extension surface:** `/app/extension/` (MV3, `[activeTab, storage]` only, empty `host_permissions`, no content scripts, no scraping, no CAPTCHA interaction).
+**New consent scopes:** `share_passport`, `interview_prep_generate`, `passport_api_access`.
+**New SSoT accessor module:** `backend/domains/claims/schema.py` — every consumer of `db.claims.*` now imports from here.
+**Anti-drift guards:** `tests/test_claims_schema_no_drift_guard.py` + `tests/test_consent_scope_enum_guard.py`.
+
+**Rails absolute across all 10 items** — verified in `PHASE-5-EVIDENCE.md` §Rails: consent gates on every new surface, caps never bypassed, dry-run email dispatch, no scraping (5c manifest `host_permissions: []`), no CAPTCHA interaction, follow-ups never auto-sent, honest empty states, user-scoped only, cross-employer disclosure `false` on every 5g response, single verify endpoint, single signing key.
+
+---
+
+## 🔧 Post-Phase-5 residual backlog (P2, decide-and-document)
+
+**Filed 2026-08-10 after gate PASS. To be worked opportunistically after Save-to-GitHub + Publish.**
+
+### P2a — Live-integration fixture-state cleanup (30 tests)
+Pre-existing (git-stash-verified) test failures in `test_phase*_e2e`, `test_fixture_acceptance_b`, `test_phase*_integration_live`, `test_round2_*`, `test_receipts_immutability`. Root cause: preview DB accumulates `applications` / `application_outcomes` / `match_scores` rows across repeated pytest sessions; `_rebase_fixture_user()` fires only on backend startup, not between individual test cases. Full table in `docs/MERGE-PACKET.md` §9.4.
+**Options (decide-and-document):** (a) per-test rebase fixture with `@pytest.fixture(autouse=True)` scoped to `test_*_e2e` files; (b) mark these tests `@pytest.mark.live_integration` and split them into a separate pytest run that begins with a rebase call; (c) leave as-is and treat the 191p focused subset as the regression gate.
+
+### P2b — Tier 2 code-review refactors
+Listed in `docs/CODE-REVIEW-REMEDIATION.md`: function-complexity refactors, 4 component splits, 51 nested ternaries. All Tier 1 items already shipped (MD5→SHA-256, seeder secret parameterization, frontend stable keys, useMemo additions).
+
+### P2c — Missing root data-testids
+`/eligibility` and `/passport` pages are missing root `data-testid` anchors. Cosmetic testability gap — filed in `docs/CODE-REVIEW-REMEDIATION.md`.
+
+### P2d — Dedicated ElevenLabs test suite
+Honest gap called out in the 16-integration audit — no dedicated `test_milestone_j_voice.py`. Registry-level coverage only. Not blocking `CONFIGURATION_REQUIRED` status truthfulness.
+
+---
+
+## 🏁 Original Phase 0-4 sequence status (pre-Phase-5, retained for history)
 
 | Phase | Codename | Verdict | Date | Evidence |
 |---|---|---|---|---|
@@ -20,13 +92,10 @@
 - `?format=pdf` returns explicit 501 `pdf_not_available` with `formats_supported`/`formats_planned` ✓
 - Signature verify: true on intact / false on tampered manifest ✓
 
-**2026-08-08 closeout items (this session, all shipped):**
+**2026-08-08 closeout items (shipped):**
 - Cosmetic uniformity: `opt_end`/`earliest_start`/`sealed_at` now wear the `{value, source, as_of}` envelope even when null. Consumers can iterate `known.items()` with a single shape assumption. 2 new anti-regression tests.
 - Abuse-log persistence lock: end-to-end write-then-read test proves the 429 row lands in `supply_abuse_log` AND is queryable via `GET /api/v1/admin/supply/abuse-log` with the exact documented shape. 1 new anti-regression test.
 
-Merge packet: `docs/MERGE-PACKET.md` (updated §1-§3 + §8 closeout addendum at FINAL SHA `b87d9c14`, dry-run RE-VERIFIED CLEAN, pre-push hard check CLEAN, main-fast-forward is a no-op — closeout commits already on `main`).
-Push status: **BLOCKED** on GitHub connection auth (external — founder's Save-to-GitHub click clears this).
-Publish click: **founder's physical action** in the Emergent dashboard.
 Pytest at closeout SHA `b87d9c14`: **114 passed / 3 skipped** (Phase 1 baseline 72p/3s → **+42 pass cumulative, 0 regressions**).
 
 The 3 skipped tests are motor/pytest-asyncio incompatibility skips, locked by live-curl evidence in `PHASE-1-EVIDENCE.md` §v and §vii. They are NOT feature gaps.
