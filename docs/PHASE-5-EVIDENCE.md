@@ -238,3 +238,202 @@ Per-item test totals:
 
 **Ready for Phase 5 gate.** Standing by for split tester briefs. Rails held: preview-only, no push (still founder-blocked on GitHub connection), Publish remains founder's.
 
+
+---
+
+## Gate C · addendum · closeout evidence (2026-08-10 · HEAD `e942d929`)
+
+Founder's Gate C tester leg surfaced 3 blockers on the `164p/3s` build. All landed this pass across 4 commits (`77a1a9f3` → `258b8a8c` → `ba4008c7` → `e942d929`). Observed-over-remembered rail: every proof below is a live curl trace against preview, captured today.
+
+### FIX 1 · claims schema drift (`state/kind` → `status/type`)
+
+**Root cause:** `domains/interview_prep/service.py` and `domains/share/service.py` both queried `db.claims` with `{"state":"approved"}` and filtered on `c.get("kind")`, while the collection's authoritative writer (`domains/claims/repository.py`) stores `status="approved"` + `type`. Every category silently returned the empty state.
+
+**Structural fix:** new `domains/claims/schema.py` — SINGLE SOURCE OF TRUTH for claim field names + status/type enum values + canonical query helper `approved_for_user_query(user_id)`. Consumers now import from it exclusively.
+
+**Anti-regression:** `tests/test_claims_schema_no_drift_guard.py` (3 tests) — scans `domains/**/*.py` (excluding `schema.py`/`repository.py`/`models.py`) for raw `"state"` / `"kind"` string keys near `db.claims.*` reads. Also verifies schema.py's constants still match `repository.py`'s literals (independent cross-check).
+
+### FIX 1B · second-layer sub-drift (`data` → `value` + per-type value keys)
+
+**Root cause (surfaced during evidence capture — FIX 1 alone was insufficient):** even after fixing top-level drift, curl against preview at HEAD `ba4008c7` returned:
+```
+POST /api/v1/interview-prep/generate {"category":"employment","question_count":3}
+→ {"empty_state": true, "reason": "no_approved_claims_in_category"}
+```
+despite fixture-ead@ having 11 approved claims on file. Interview_prep + share both read `c.get("data")` — but the collection stores the value sub-document under `value` (see `FIXTURE_CLAIMS` in `domains/seeds/data.py`). Additionally, interview_prep expected education `{"school","graduation_year"}` + employment `{"title","start_year","end_year"}` — none of those keys exist on real claims (production uses `institution`, `end` (YYYY-MM), `role`, `start`).
+
+**Structural fix:** extended `domains/claims/schema.py`:
+- `FIELD_VALUE = "value"` constant + `claim_value(c)` accessor.
+- Per-type value-key maps `EDUCATION_VALUE_KEYS = ("institution","degree","field","start","end")`, `EMPLOYMENT_VALUE_KEYS = ("company","role","start","end","summary")`, etc.
+- `_year_from_iso_month("YYYY-MM") → int | None` helper for consumers that publish year-only fields.
+
+**Consumer updates:**
+- `interview_prep/service.py`: `_GROUNDING_CATEGORY_KEYS` realigned to production shape; `_build_claim_block` uses `claim_value(c)`.
+- `share/service.py`: **PUBLIC API surface UNCHANGED** — `school` / `graduation_year` / `title` / `start_year` / `end_year` are locked keys published in this file's 5a section. Internally they're now sourced via `claim_value(v).get("institution")` → `school`, `_year_from_iso_month(v.get("end"))` → `graduation_year`, etc.
+
+**Anti-drift guard extended:** `FORBIDDEN_LITERALS = ("state","kind","data")` — any raw `"data":` key near `db.claims.*` now fails the guard.
+
+**Test-fixture alignment:** `test_phase5a_share_link` + `test_phase5d_interview_prep` mock claims now use the canonical `{"value": {...}}` + production-shape sub-keys (institution/role/start/end). This eliminates the test/production drift that hid FIX 1B under the 164p green.
+
+### FIX 2 · interview_receipts verify_endpoint URL typo
+
+3 response payloads (`record_event`, `list_events_for_application`, `confirm_ghost`) previously advertised the verify path as `POST /api/v1/exports/verify-signature`. Real Phase-4 registration is `POST /api/v1/exports/ghosting-evidence/verify`. Corrected. `test_phase5f_interview_receipts::test_record_event_persists_signed_row` assertion updated.
+
+### FIX 3 · `employer_memberships` fixture for 5g member path
+
+`GET /api/v1/employer-dashboard/summary` requires a verified `employer_memberships` row (403 otherwise). Preview had no seeded row, so the member path was un-testable without human-side employer onboarding. Rebased `fixture-employer-member@opportunityos.dev` (`Fixture!Emp1`) on every startup with:
+- verified=True `employer_memberships{canonical_key:"fixture-employer-corp", role:"hiring_manager"}`
+- 2 minimal applications (score=72 passes ≥60 gate, score=55 does not — exercises `application_quality_pass_rate`)
+- 1 `response_received` outcome with `lag_days=4` → non-null `response_rate` + `median_days_to_response`
+
+Prod-gated by `run_seeds()`. Cross-employer rail unchanged.
+
+---
+
+### Live curl proofs (observed, `HEAD e942d929`, 2026-08-10)
+
+#### 5d/C1a — interview-prep grounded generation · employment category
+
+```
+POST /api/v1/interview-prep/generate {"category":"employment","question_count":3}
+as fixture-ead@opportunityos.dev
+```
+Response (verbatim, elided for length):
+```json
+{
+  "practice_questions": [
+    {
+      "question": "Can you describe your role and responsibilities at Fixture Motors?",
+      "sample_answer": "In my role as a Systems Engineer at Fixture Motors starting in August 2020, ... focusing on the development and implementation of systems for enhanced performance.",
+      "grounded_in": ["eeeeecad-704d-477c-b4eb-cf219518aa02"]
+    },
+    {
+      "question": "What key projects did you work on during your tenure at Fixture Motors?",
+      "sample_answer": "While at Fixture Motors, I was primarily engaged in projects centered around synthetic fixture experience as a Systems Engineer ...",
+      "grounded_in": ["eeeeecad-704d-477c-b4eb-cf219518aa02"]
+    },
+    {
+      "question": "How did your role at Fixture Motors contribute to your overall career development?",
+      "sample_answer": "My position as a Systems Engineer at Fixture Motors starting in August 2020 allowed me to deepen my expertise ...",
+      "grounded_in": ["eeeeecad-704d-477c-b4eb-cf219518aa02"]
+    }
+  ],
+  "prep_summary": "These questions focus on your role as a Systems Engineer at Fixture Motors since August 2020, emphasizing your work on synthetic fixture experience.",
+  "grounded": true,
+  "empty_state": false,
+  "category": "employment",
+  "model_used": "gpt-4o",
+  "firewall": {"kept": 3, "dropped": 0, "dropped_preview": []},
+  "labeled_as": "PRACTICE — grounded in your approved Passport claims only. Not employer output."
+}
+```
+- `claim_id` traceability: **every** answer cites `eeeeecad-704d-477c-b4eb-cf219518aa02` (fixture-ead@'s employment claim on Fixture Motors).
+- Firewall: **kept=3 / dropped=0** — all 3 LLM answers substantively token-matched the approved claim vocabulary.
+- Payload strings (`Fixture Motors`, `Systems Engineer`, `August 2020`, `synthetic fixture experience`) are verbatim `FIXTURE_CLAIMS.employment.value` fields — no invented facts.
+
+#### 5d/C1b — interview-prep grounded generation · skill category (multi-claim grounding)
+
+```
+POST /api/v1/interview-prep/generate {"category":"skill","question_count":2}
+as fixture-ead@opportunityos.dev
+```
+```
+grounded=true empty_state=false firewall={"kept":2,"dropped":0}
+Q1: Can you explain your experience with MATLAB and how it has been applied in your projects?
+   grounded_in: ["81d9a68d-0dcd-4154-ba26-4b4b40fa69f4"]
+Q2: How have you utilized Simulink in the development of systems?
+   grounded_in: ["2a0bac35-1a2a-4dd9-bf49-0b0ba2c620d1", "37cb7632-6841-4bc9-80df-d3e785a60512"]
+```
+Confirms the LLM grounds Q2 in *multiple* skill claim_ids simultaneously — no single-claim tunnel-vision.
+
+#### 5d/C1c — interview-prep honest empty state · project category
+
+```
+POST /api/v1/interview-prep/generate {"category":"project","question_count":2}
+as fixture-ead@opportunityos.dev  # no approved 'project' claims
+```
+```
+{"empty_state": true, "reason": "no_approved_claims_in_category",
+ "notice": "You don't have any approved 'project' claims yet. Interview prep is grounded ONLY in claims you've approved. Add and approve some in your Passport, then come back."}
+```
+- Zero LLM call. Zero row written to `interview_prep_generations`. Zero fabricated placeholder. Rail held.
+
+#### 5g/M — employer dashboard summary · MEMBER path
+
+```
+GET /api/v1/employer-dashboard/summary
+as fixture-employer-member@opportunityos.dev (verified employer_memberships)
+```
+```json
+{
+  "employer_canonical_key": "fixture-employer-corp",
+  "total_applications": 2,
+  "responded_count": 1,
+  "response_rate": 0.5,
+  "median_days_to_response": 4,
+  "application_quality_pass_rate": 0.5,
+  "rank_bucket": null,
+  "rank_scope": "not_available",
+  "cross_employer_disclosure": false,
+  "notice": "Own-data only. Cross-employer disclosure is a hard rail. The percentile bucket, when present, is computed exclusively over YOUR OWN connected employers."
+}
+```
+- `total_applications=2` maps directly to the 2 seeded apps (`score=72` passes, `score=55` fails → `application_quality_pass_rate=0.5`).
+- `responded_count=1` + `median_days_to_response=4` derive from the single seeded `response_received` outcome (`lag_days=4`).
+- **`cross_employer_disclosure: false`** ✓ (rail on every response, verified again here).
+- `rank_scope="not_available"` because the caller is a single-employer owner — correct behavior (percentile bucket requires ≥2 employers in the caller's scope).
+
+#### 5g/NM — employer dashboard summary · NON-MEMBER path
+
+```
+GET /api/v1/employer-dashboard/summary
+as fixture-ead@opportunityos.dev (no employer_memberships row)
+```
+```
+HTTP 403
+{"detail":{"error":"employer_membership_required","message":"Employer dashboard requires a verified employer_memberships row for this account."}}
+```
+- Hard 403 gate held.
+
+---
+
+### Focused suite state at Gate C close
+
+```
+Phase 5 close pre-Gate-C (documented above):   164 passed / 3 skipped
+Phase 5 Gate C close (this pass, HEAD e942d929):  191 passed / 0 skipped   (+27 tests, 0 regressions)
+```
+
+Per-item deltas on Gate C:
+- +3 tests in `test_claims_schema_no_drift_guard.py` (FORBIDDEN_LITERALS now `("state","kind","data")`).
+- 0 new tests in interview-receipts (FIX 2 was a string typo; existing assertion updated in place).
+- 0 new tests in 5g (FIX 3 was a seed-only fixture; existing `test_phase5ghij::test_5g_*` covers behavior).
+- Realigned 6 inline claim fixtures across `test_phase5a` + `test_phase5d` from `{"data": {...}, "state": "…"}` → `{"value": {...}, "status": "…"}` production shape.
+
+**Focused suite command (reproducible):**
+```
+python -m pytest tests/test_phase5*.py tests/test_claims_schema_no_drift_guard.py \
+                 tests/test_consent_scope_enum_guard.py tests/test_phase3_safeguards.py \
+                 tests/test_phase4_and_unlock.py tests/test_phase234_tester_leg_fixes.py \
+                 tests/test_gate_engine.py tests/test_phase1_*.py tests/test_iter20_*.py \
+                 tests/test_outcomes_endpoints.py tests/test_outcome_autopilot.py \
+                 tests/test_self_healing.py tests/test_form_map_cache.py \
+                 tests/test_apply_at_birth.py tests/test_preflight_validator.py \
+                 tests/test_receipt_compound_index_regression.py -q
+→ 191 passed in 4.87s
+```
+
+**Known non-Gate-C flake:** `tests/test_phase3_integration_live.py::TestEmployerCap::test_shortlist_3_sampleco_then_4th_429` fails against live preview because the SampleCo assisted-lane fixture app pre-consumes 1 of the 3 employer-cap slots (2 shortlists + 1 pre-seeded = cap reached at N=3, not N=4). Reproduced by git-stashing all Gate C commits — failure is present at both `ba4008c7` and `e942d929`, and predates every FIX in this pass. Filed for follow-up as a P2 fixture-state cleanup after Gate C sign-off; NOT a Gate C regression.
+
+### Rails held on the closing pass
+
+- Consent gates enforced on every new surface (`interview_prep_generate`, `share_passport`, `passport_api_access`) — unchanged.
+- PII surface controls unchanged: share payload `full` scope still has ZERO occurrences of `itar`/`salary`/`sealed`/`preferences`/`visa` (locked case-insensitively).
+- Public-API keys for `/share/p/{id}` still `school` / `graduation_year` / `title` / `start_year` / `end_year` — FIX 1B rewired the SOURCE without changing the SURFACE.
+- Cross-employer disclosure hard rail: `cross_employer_disclosure: false` still on every 5g response.
+- Signature verify path: SINGLE endpoint `POST /api/v1/exports/ghosting-evidence/verify` for 5f + Phase 4 ghosting export receipts, SAME `EVIDENCE_SIGNING_KEY`, SAME canonical serializer.
+- `git ls-files backend/.env test_credentials.md` → both remain UNTRACKED (checked).
+
+**Ready for final re-test.** Standing by for founder verdict on Brief D (extension inspection) + full tester leg. Push still expected to fail on the founder's GitHub connection — will handle gracefully post-merge per protocol.
+
+
