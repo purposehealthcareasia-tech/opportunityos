@@ -432,6 +432,16 @@ delta = 8 landed commits (Phase 5 build + Gate A + Gate C):
 
 **Full pytest at packet SHA (with `CI_TEST_ISSUER_ENABLED=true` per test_credentials.md line 11 documented preview state):** **633 passed / 30 failed / 3 skipped in 5:36.** The 30 failures are all live-integration tests with fixture-state pollution (accumulated `applications` + `application_outcomes` rows across repeated runs consume the 30-day employer cap and inflate outcome counters). Documented under §9.4 Known Gaps — all pre-Gate-C, none touch Gate-C surfaces.
 
+**Post-P2a floor (HEAD `38fab8f1`, function-scope precise rebase landed 2026-08-10):** **635 passed / 28 failed / 3 skipped in 6:31.** Net +2 pass / -2 fail. Test-code-only fix (conftest.py) with a precise 2-test whitelist. The 28 residual failures split empirically as: (a) seed-drift class — assertions expect fewer apps/outcomes than the current seeder produces; (b) `test_receipts_immutability::test_supersedes_chain_keeps_original_row` fails on `RuntimeError: Event loop is closed` (motor + `asyncio.run()` infra issue, same class as the 3 permanently-skipped tests) — filed as P2a.2. Filed for opportunistic burn-down under §9.4a.
+
+**Post-P2 burn-down floor (HEAD `2c7214f0`, 2026-08-10):** **651 passed / 27 failed / 3 skipped in 5:25.** Cumulative delta vs pre-Gate-C 633p/30f/3s: **+18 pass / -3 fail.** Landed:
+  * P2a (`38fab8f1`) — function-scope precise rebase for 2 accumulation-class flakes. Test-code-only, node-id whitelist. +2p / -2f.
+  * P2b Tier 2 refactor · 1 of N (`60c56bdf`) — `core.db.ensure_indexes` split into 10 collection-group helpers (`_ensure_identity_indexes` / `_ensure_document_indexes` / `_ensure_job_indexes` / `_ensure_idempotency_indexes` / `_ensure_application_indexes` / `_ensure_receipt_indexes` / `_ensure_phase4_indexes` / `_ensure_phase5_indexes` / `_ensure_phase6_indexes` / `_ensure_founder_brief_indexes`). +2 tests. **Byte-identical proof:** `test_ensure_indexes_ordering_stable.py` records every `create_index` call against a Mock DB and compares to the 62-call `EXPECTED_INDEX_CALLS` sequence captured from pre-refactor HEAD `38fab8f1` — sequence MATCH.
+  * P2c (`8f401b69`) — root `data-testid` added on `/eligibility` and `/passport` pages (Tier 2 addendum #1 + #2). 0 behavioral change; Playwright anchor navigation stable.
+  * P2d (`2c7214f0`) — dedicated Milestone J voice adapter contract tests. 13 new tests. Honest-scope docstring explicitly calls out what is NOT verified (real audio content, MP3 playback, MODEL_ID override on live output — all require live API). Adapter contract fully locked: registry wiring, metadata shape, `validate_configuration()` missing-env reporting, `test_connection()` CONFIGURATION_REQUIRED + successful-probe URL, `text_to_speech()` hard-fail contract on unset env, success-path URL + body contract, and 4xx/5xx/network-exception error surface (retryable flag correct in each class). +13 tests.
+
+**Frontend `yarn build` at HEAD `2c7214f0`:** Done in 6.43s. Bundle unchanged.
+
 ### 9.3 · Dry-run verdict + secret-check output (RE-RUN 2026-08-10)
 
 ```
