@@ -34,6 +34,16 @@ log = logging.getLogger("oppos.discovery")
 
 INTER_COMPANY_DELAY_S = 0.25
 
+# Yield the event loop to other tasks (HTTP handlers, health probes,
+# scheduler ticks) every N rows inside the tight per-company upsert
+# loop. `_to_jobs_doc` runs regex-heavy JD parsing (`services.jd_parser`)
+# + string classification synchronously per row; over the ~22k-row full
+# corpus this can starve the single uvicorn worker for tens of seconds
+# and cause platform health probes to time out (upstream-timed-out /
+# errno 110). `await asyncio.sleep(0)` gives back one loop iteration —
+# no wall-clock delay, no behaviour change, just a scheduling checkpoint.
+INGEST_YIELD_EVERY_N_ROWS = 25
+
 # Sources this preview cannot legitimately ingest today. Recorded in the
 # per-run audit so a reviewer sees why they're not in ALL_BOARDS.
 SKIPPED_SOURCES: list[dict] = [
@@ -191,7 +201,7 @@ async def refresh_all(actor: str = "discovery-scheduler") -> dict:
         db = get_db()
         inserted_here = 0
         updated_here = 0
-        for row in rows:
+        for _i, row in enumerate(rows):
             key = _canonical_key(row["source_ats"], row["external_id"])
             existing = await db.jobs.find_one({"canonical_key": key},
                                                 projection={"_id": 0})
@@ -203,6 +213,9 @@ async def refresh_all(actor: str = "discovery-scheduler") -> dict:
                 await db.jobs.insert_one(doc)
                 inserted_here += 1
                 inserted_ids.append(doc["id"])
+            # Cooperative yield — see INGEST_YIELD_EVERY_N_ROWS comment.
+            if (_i + 1) % INGEST_YIELD_EVERY_N_ROWS == 0:
+                await asyncio.sleep(0)
 
         per_source_kept[ats] += 1
         per_source_postings[ats] += len(rows)
@@ -246,7 +259,7 @@ async def refresh_all(actor: str = "discovery-scheduler") -> dict:
     if federal_rows:
         db = get_db()
         ins = upd = 0
-        for row in federal_rows:
+        for _i, row in enumerate(federal_rows):
             key = _canonical_key(row["source_ats"], row["external_id"])
             existing = await db.jobs.find_one({"canonical_key": key},
                                                 projection={"_id": 0})
@@ -258,6 +271,9 @@ async def refresh_all(actor: str = "discovery-scheduler") -> dict:
                 await db.jobs.insert_one(doc)
                 ins += 1
                 inserted_ids.append(doc["id"])
+            # Cooperative yield — see INGEST_YIELD_EVERY_N_ROWS comment.
+            if (_i + 1) % INGEST_YIELD_EVERY_N_ROWS == 0:
+                await asyncio.sleep(0)
         usajobs_report.update({"postings_seen": len(federal_rows),
                                 "inserted": ins, "updated": upd})
         total_inserted += ins

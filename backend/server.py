@@ -217,6 +217,28 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
     return JSONResponse(status_code=500, content={"detail": "internal_error"})
 
 
+# ---------------------------------------------------------------------------
+# Platform health probe — root `/health` (2026-08-11 fix for prod deploy #3).
+#
+# The Emergent deploy platform probes `GET /health` at the ROOT path
+# (nginx :8080 → uvicorn :8001), not `/api/health`. Any 4xx here fails the
+# HEALTH_CHECK phase and triggers a restart loop. This handler is:
+#   - Unauthenticated (public liveness probe).
+#   - DB-free / I/O-free (no `db.command("ping")` — first-boot ingestion or
+#     mongo pressure must NOT drag the probe into the request queue).
+#   - Registered on the app itself (no router mount) so it responds
+#     immediately after lifespan yields and no route mount order can hide
+#     it. Explicit HEAD support for probes that only send HEAD.
+#
+# `/api/health` (below) remains the richer mongo-touching endpoint kept for
+# app-level readiness checks.
+# ---------------------------------------------------------------------------
+@app.get("/health", include_in_schema=False)
+@app.head("/health", include_in_schema=False)
+async def platform_health():
+    return {"status": "ok"}
+
+
 # SEC-004(e): FastAPI's default 422 handler echoes the raw request body
 # under `detail[].input`. That leaks plaintext credentials whenever a
 # malformed signup / login / reset payload triggers Pydantic validation.
