@@ -77,10 +77,12 @@ def test_p0_1_rebase_wipes_state():
     """Rebase produces the SEED BASELINE (not zero apps) — the seeder
     re-creates FIXTURE_EAD_TOTAL_APPS demo rows on every startup. This
     test verifies rebase wipes any TEST-added state and restores the
-    seed baseline. Values derived from tests._fixture_expectations."""
+    seed baseline. Values derived from tests._fixture_expectations.
+    Feed is fetched WITHOUT `within_mi` here, so all sample rows
+    (Phoenix + Remote-US) are visible → use *_ALL variants."""
     from tests._fixture_expectations import (
-        SAMPLE_FEED_PASSING, FIXTURE_EAD_TOTAL_APPS,
-        SAMPLE_JOB_FAIL_SPONSOR, SAMPLE_JOB_FAIL_US_PERSON,
+        SAMPLE_FEED_PASSING_ALL, FIXTURE_EAD_TOTAL_APPS,
+        SAMPLE_JOB_FAIL_SPONSOR_ALL, SAMPLE_JOB_FAIL_US_PERSON_ALL,
         SAMPLE_JOB_FAIL_DUPLICATE_FROM_ASSISTED,
     )
     _rebase()
@@ -88,7 +90,7 @@ def test_p0_1_rebase_wipes_state():
     H = {"Authorization": f"Bearer {tok}"}
     feed = requests.get(f"{BASE}/api/v1/jobs/feed", headers=H, timeout=30).json()
     passing_ids = [j["id"] for j in feed["passing"]]
-    assert len(passing_ids) == SAMPLE_FEED_PASSING
+    assert len(passing_ids) == SAMPLE_FEED_PASSING_ALL
 
     # Pollute: shortlist one passing, hide a different one
     k = uuid.uuid4().hex[:8]
@@ -123,11 +125,11 @@ def test_p0_1_rebase_wipes_state():
 
     feed2 = requests.get(f"{BASE}/api/v1/jobs/feed", headers=H2, timeout=30).json()
     t = feed2["totals"]
-    assert t["passing"] == SAMPLE_FEED_PASSING
+    assert t["passing"] == SAMPLE_FEED_PASSING_ALL
     assert t["hidden"] == 0
     ebr = t["excluded_by_reason"]
-    assert ebr.get("no_sponsorship_offered") == SAMPLE_JOB_FAIL_SPONSOR
-    assert ebr.get("requires_us_person") == SAMPLE_JOB_FAIL_US_PERSON
+    assert ebr.get("no_sponsorship_offered") == SAMPLE_JOB_FAIL_SPONSOR_ALL
+    assert ebr.get("requires_us_person") == SAMPLE_JOB_FAIL_US_PERSON_ALL
     if SAMPLE_JOB_FAIL_DUPLICATE_FROM_ASSISTED > 0:
         assert ebr.get("duplicate_application") == SAMPLE_JOB_FAIL_DUPLICATE_FROM_ASSISTED
 

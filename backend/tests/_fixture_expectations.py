@@ -16,6 +16,19 @@ raise a precise error naming the missing symbol.
 
 Every constant in this file is annotated with the seeder function it
 was extracted from, so grep-ability is preserved.
+
+CACHE-BUST NOTE (feed-geometry callers, DO NOT "fix" this backwards):
+`test_fixture_acceptance_b.py::initial_feed` passes `within_mi=99997`
+to force a fresh /jobs/feed compute past the 60s TTL cache (see
+P2a.4 in docs/MERGE-PACKET.md). That filter — implemented in
+`domains/jobs/router.py` — keeps only rows whose
+`distance_from_phoenix_mi` is a numeric value <= within_mi. Remote-US
+sample rows have `distance_from_phoenix_mi = None` (only Phoenix rows
+have `0.0` — see `seeder.py:96,287`), so they are FILTERED OUT of the
+sample-slice the test observes even though `within_mi=99997` reads
+as "huge threshold, filter nothing". The Phoenix-only fail-counts
+below reflect this observable reality; do not expand them to include
+Remote-US rows unless the cache-bust strategy changes too.
 """
 from __future__ import annotations
 
@@ -134,16 +147,33 @@ EMPLOYER_CAP_FIRST_429_SAMPLECO_INDEX = (
 
 # ---------------------------------------------------------------------------
 # Feed geometry — derived from SAMPLE_JOBS + SAMPLE_JOBS_RESPONSIVE.
+#
 # We iterate the seed literals and count fail-reasons by their `eligibility`
 # sub-dict shape (offers_sponsorship / requires_us_person). Fixture-ead@
 # is a US resident with EAD (needs sponsorship), so a job fails with:
 #   - `no_sponsorship_offered` when eligibility.offers_sponsorship == False
 #   - `requires_us_person`     when eligibility.requires_us_person == True
 # (Fixture-ead is not a US citizen so ITAR fires.)
+#
+# PHOENIX-ONLY FILTER: The `initial_feed` fixture uses `within_mi=99997` as
+# a cache-bust; that filter drops rows where `distance_from_phoenix_mi` is
+# None. In the seeder (see `seeder.py:96,287`), only "Phoenix, AZ" seed
+# rows get `0.0`; "Remote (US)" rows get None. So sample-slice geometry
+# observable to the test is the Phoenix subset only. Remote-US samples
+# exist in the DB but never surface in the test's feed view.
 # ---------------------------------------------------------------------------
+def _is_phoenix(job: dict) -> bool:
+    """Mirror of seeder's distance-tagging rule (`seeder.py:96,287`):
+    only 'Phoenix' rows carry a numeric distance_from_phoenix_mi and
+    therefore survive the /jobs/feed `within_mi` filter."""
+    return "Phoenix" in (job.get("geo") or "")
+
+
 def _count_sample_fails(reason_key: str, expect_true_for_us_person: bool) -> int:
     n = 0
     for j in (*_data.SAMPLE_JOBS, *_data.SAMPLE_JOBS_RESPONSIVE):
+        if not _is_phoenix(j):
+            continue
         elig = j.get("eligibility") or {}
         if reason_key == "no_sponsorship_offered":
             if elig.get("offers_sponsorship") is False:
@@ -153,7 +183,9 @@ def _count_sample_fails(reason_key: str, expect_true_for_us_person: bool) -> int
                 n += 1
     return n
 
-SAMPLE_JOB_TOTAL = len(_data.SAMPLE_JOBS) + len(_data.SAMPLE_JOBS_RESPONSIVE)
+SAMPLE_JOB_TOTAL = sum(
+    1 for j in (*_data.SAMPLE_JOBS, *_data.SAMPLE_JOBS_RESPONSIVE) if _is_phoenix(j)
+)
 SAMPLE_JOB_FAIL_SPONSOR = _count_sample_fails("no_sponsorship_offered", False)
 SAMPLE_JOB_FAIL_US_PERSON = _count_sample_fails("requires_us_person", True)
 # `duplicate_application` fires against SampleCo passing jobs when the
@@ -173,6 +205,41 @@ if SAMPLE_JOB_FAIL_DUPLICATE_FROM_ASSISTED > 0:
 
 SAMPLE_FEED_TOTAL_EXCLUDED = sum(SAMPLE_FEED_EXCLUDED_BY_REASON.values())
 SAMPLE_FEED_PASSING = SAMPLE_JOB_TOTAL - SAMPLE_FEED_TOTAL_EXCLUDED
+
+
+# ---------------------------------------------------------------------------
+# ALL-SAMPLES variants (Phoenix + Remote-US) — for callers whose cache key
+# doesn't include the `within_mi` filter, e.g. /eligibility/coverage-preview
+# (no within_mi arg at all) and /jobs/feed?sort=speed (feed cache key
+# includes within_mi, so sort=speed with no within_mi is a distinct cache
+# key that returns unfiltered results). These endpoints see BOTH the 12
+# Phoenix samples AND the 6 Remote-US samples → 18 total.
+# ---------------------------------------------------------------------------
+def _count_all_sample_fails(reason_key: str) -> int:
+    n = 0
+    for j in (*_data.SAMPLE_JOBS, *_data.SAMPLE_JOBS_RESPONSIVE):
+        elig = j.get("eligibility") or {}
+        if reason_key == "no_sponsorship_offered":
+            if elig.get("offers_sponsorship") is False:
+                n += 1
+        elif reason_key == "requires_us_person":
+            if elig.get("requires_us_person") is True:
+                n += 1
+    return n
+
+SAMPLE_JOB_TOTAL_ALL = len(_data.SAMPLE_JOBS) + len(_data.SAMPLE_JOBS_RESPONSIVE)
+SAMPLE_JOB_FAIL_SPONSOR_ALL = _count_all_sample_fails("no_sponsorship_offered")
+SAMPLE_JOB_FAIL_US_PERSON_ALL = _count_all_sample_fails("requires_us_person")
+
+SAMPLE_FEED_EXCLUDED_BY_REASON_ALL = {
+    "no_sponsorship_offered": SAMPLE_JOB_FAIL_SPONSOR_ALL,
+    "requires_us_person": SAMPLE_JOB_FAIL_US_PERSON_ALL,
+}
+if SAMPLE_JOB_FAIL_DUPLICATE_FROM_ASSISTED > 0:
+    SAMPLE_FEED_EXCLUDED_BY_REASON_ALL["duplicate_application"] = SAMPLE_JOB_FAIL_DUPLICATE_FROM_ASSISTED
+
+SAMPLE_FEED_TOTAL_EXCLUDED_ALL = sum(SAMPLE_FEED_EXCLUDED_BY_REASON_ALL.values())
+SAMPLE_FEED_PASSING_ALL = SAMPLE_JOB_TOTAL_ALL - SAMPLE_FEED_TOTAL_EXCLUDED_ALL
 
 
 # ---------------------------------------------------------------------------

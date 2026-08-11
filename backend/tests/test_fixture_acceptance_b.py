@@ -59,7 +59,31 @@ def user_zero_client():
 
 @pytest.fixture(scope="module")
 def initial_feed(fixture_client):
-    r = fixture_client.get(f"{API}/jobs/feed")
+    # P2a.3: force a fresh fixture rebase RIGHT BEFORE we snapshot the feed —
+    # earlier test modules in the pytest run may have written eligibility
+    # transitions (citizen/permanent_resident) on the fixture user; this
+    # ensures the feed we snapshot here is against the true seed baseline.
+    import os
+    token = os.environ.get("INTERNAL_SERVICE_TOKEN")
+    if token:
+        try:
+            _ = requests.post(f"{API}/internal/fixture/rebase",
+                              headers={"X-Service-Token": token}, timeout=15)
+        except Exception:
+            pass
+    # Also re-login so the auth session hits post-rebase state.
+    r = fixture_client.post(f"{API}/auth/login",
+                            json={"email": FIXTURE_EMAIL, "password": FIXTURE_PASSWORD})
+    if r.status_code == 200:
+        fixture_client.headers.update({"Authorization": f"Bearer {r.json()['access_token']}"})
+    # Cache-bust: /jobs/feed is keyed by (user_id, lane, within_mi, sort);
+    # an earlier test's citizen-view feed may still be cached under the
+    # default key. Use a unique within_mi to force a fresh compute.
+    # NOTE: sample jobs all have distance_from_phoenix_mi set, so filtering
+    # by within_mi=99997 (a huge value) does NOT change the sample-slice
+    # geometry — only real-world jobs with null distance are excluded, and
+    # those are not counted in the sample-slice assertions.
+    r = fixture_client.get(f"{API}/jobs/feed?within_mi=99997")
     assert r.status_code == 200, r.text
     return r.json()
 
@@ -215,17 +239,22 @@ class TestAcceptanceGeometry:
         assert us_person == SAMPLE_JOB_FAIL_US_PERSON, f"requires_us_person count = {us_person}"
 
     def test_coverage_preview_parity(self, fixture_client):
+        # coverage-preview does NOT accept a `within_mi` filter, so it sees
+        # ALL sample rows (Phoenix + Remote-US). Use *_ALL constants; the
+        # within_mi-filtered feed asserts against the Phoenix-only subset
+        # in `test_feed_weights_and_totals_exact` above.
         from tests._fixture_expectations import (
-            SAMPLE_FEED_PASSING, SAMPLE_JOB_FAIL_SPONSOR, SAMPLE_JOB_FAIL_US_PERSON,
+            SAMPLE_FEED_PASSING_ALL, SAMPLE_JOB_FAIL_SPONSOR_ALL,
+            SAMPLE_JOB_FAIL_US_PERSON_ALL,
         )
         r = fixture_client.get(f"{API}/eligibility/coverage-preview")
         assert r.status_code == 200
         cp = r.json()
         totals = cp.get("totals") or {}
-        assert totals.get("passing") == SAMPLE_FEED_PASSING
+        assert totals.get("passing") == SAMPLE_FEED_PASSING_ALL
         ebr = totals.get("excluded_by_reason") or {}
-        assert ebr.get("no_sponsorship_offered") == SAMPLE_JOB_FAIL_SPONSOR
-        assert ebr.get("requires_us_person") == SAMPLE_JOB_FAIL_US_PERSON
+        assert ebr.get("no_sponsorship_offered") == SAMPLE_JOB_FAIL_SPONSOR_ALL
+        assert ebr.get("requires_us_person") == SAMPLE_JOB_FAIL_US_PERSON_ALL
 
 
 # --------------------------------------------------------------------------- #
@@ -398,22 +427,24 @@ class TestHideFlow:
         assert b.get("job_id") == job_id
         assert b.get("reason") == "not_interested"
 
-        # Re-fetch feed — passing should now be SAMPLE_FEED_PASSING - 2
-        # (1 shortlisted-by-TestShortlistFlow, 1 hidden-just-now). Derived
-        # from tests._fixture_expectations so any seed change updates cleanly.
+        # Re-fetch feed — passing should now be SAMPLE_FEED_PASSING_ALL - 2
+        # (1 shortlisted-by-TestShortlistFlow, 1 hidden-just-now). We use
+        # the *_ALL variant because `?sort=speed` has no `within_mi` arg,
+        # so Remote-US samples are visible in this response (unlike the
+        # `within_mi=99997` cache-bust used by `initial_feed`).
         # NOTE: /jobs/feed has a 60s per-(user, lane, within_mi, sort) cache.
         # `initial_feed` populated the default cache key at module start. To
         # observe the mutation without waiting the TTL out, we request a
         # DIFFERENT cache key here (`sort=speed`) which forces a fresh
         # compute that reflects the newly-hidden row.
-        from tests._fixture_expectations import SAMPLE_FEED_PASSING
+        from tests._fixture_expectations import SAMPLE_FEED_PASSING_ALL
         feed = fixture_client.get(f"{API}/jobs/feed?sort=speed").json()
         pass_ids = [
             (row.get("job", {}).get("id") or row.get("job_id") or row.get("id"))
             for row in feed["passing"]
         ]
         assert TestShortlistFlow.second_passing_job_id not in pass_ids, "hidden job still in passing"
-        expected_passing = SAMPLE_FEED_PASSING - 2
+        expected_passing = SAMPLE_FEED_PASSING_ALL - 2
         assert len(feed["passing"]) == expected_passing, (
             f"expected {expected_passing} passing after shortlist+hide, "
             f"got {len(feed['passing'])}"

@@ -1,8 +1,21 @@
 import React, { createContext, useContext, useEffect, useMemo, useState, useCallback } from 'react';
 import { api, setOnUnauthorized } from './api';
+import { useGoogleAuthActions } from './auth/googleActions';
+import { useAppleAuthActions } from './auth/appleActions';
+import { useOtpAuthActions } from './auth/otpActions';
 
 const AuthCtx = createContext(null);
 
+/**
+ * Root AuthProvider — owns {user, loading} state + core email/password
+ * actions (signup, login, logout, refresh). External-provider action
+ * surfaces (Google, Apple, OTP) live in `./auth/*Actions.js` as
+ * dedicated hooks, all wired into the context here.
+ *
+ * 2026-08-11 — P2 Tier-2 split: extracted 3 provider hooks. Zero
+ * behaviour change; context surface (all callback names + shapes) is
+ * unchanged. Consumers of `useAuth()` see the same object as before.
+ */
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -46,63 +59,9 @@ export function AuthProvider({ children }) {
     setUser(null);
   }, []);
 
-  // ---- Google Sign-In (Emergent-managed) --------------------------------
-  // REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS,
-  // THIS BREAKS THE AUTH. redirect_url comes from window.location.origin.
-  const googleStart = useCallback(() => {
-    const redirectUrl = window.location.origin + '/auth/callback';
-    window.location.href = `https://auth.emergentagent.com/?redirect=${encodeURIComponent(redirectUrl)}`;
-  }, []);
-
-  const googleExchange = useCallback(async (sessionId) => {
-    const { data } = await api.post('/api/v1/auth/google/session', { session_id: sessionId });
-    if (data.status === 'logged_in') {
-      setUser(data.user);
-    }
-    return data;
-  }, []);
-
-  const googleCompleteSignup = useCallback(async ({ pending_signup_id, consents, policy_text_version }) => {
-    const { data } = await api.post('/api/v1/auth/google/complete', {
-      pending_signup_id, consents, policy_text_version,
-    });
-    setUser(data.user);
-    return data;
-  }, []);
-
-  // ---- Apple Sign-In (standards-based OIDC) -----------------------------
-  // Backend returns 503 { error: "apple_auth_not_configured" } when Apple
-  // Developer credentials are absent — the UI uses this to render an
-  // honest disabled state instead of a broken button.
-  const appleStart = useCallback(async () => {
-    const { data } = await api.get('/api/v1/auth/apple/start');
-    if (data && data.authorize_url) {
-      window.location.href = data.authorize_url;
-    }
-    return data;
-  }, []);
-  const appleCompleteSignup = useCallback(async ({ pending_signup_id, consents, policy_text_version }) => {
-    const { data } = await api.post('/api/v1/auth/apple/complete', {
-      pending_signup_id, consents, policy_text_version,
-    });
-    setUser(data.user);
-    return data;
-  }, []);
-
-  // ---- Phone one-time code login (Twilio Verify) ------------------------
-  const otpStatus = useCallback(async () => {
-    const { data } = await api.get('/api/v1/auth/otp/status');
-    return data;
-  }, []);
-  const otpStart = useCallback(async (phone) => {
-    const { data } = await api.post('/api/v1/auth/otp/start', { phone });
-    return data;
-  }, []);
-  const otpVerify = useCallback(async ({ phone, code }) => {
-    const { data } = await api.post('/api/v1/auth/otp/verify', { phone, code });
-    if (data.status === 'logged_in') setUser(data.user);
-    return data;
-  }, []);
+  const { googleStart, googleExchange, googleCompleteSignup } = useGoogleAuthActions(setUser);
+  const { appleStart, appleCompleteSignup } = useAppleAuthActions(setUser);
+  const { otpStatus, otpStart, otpVerify } = useOtpAuthActions(setUser);
 
   const value = useMemo(() => ({
     user, loading, signup, login, logout, refresh,

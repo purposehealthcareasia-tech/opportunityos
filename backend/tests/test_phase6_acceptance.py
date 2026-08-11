@@ -559,15 +559,17 @@ class TestGates:
         print(f"passing={len(passing)}, excluded={len(excluded)}, keys={list(b.keys())}")
         # Feed geometry — derived from seeder constants
         # (tests._fixture_expectations). Historical name references 9/6.
+        # No `within_mi` param, so all sample rows (Phoenix + Remote-US)
+        # are visible → use *_ALL variants.
         from tests._fixture_expectations import (
-            SAMPLE_FEED_PASSING,
-            SAMPLE_FEED_TOTAL_EXCLUDED,
+            SAMPLE_FEED_PASSING_ALL,
+            SAMPLE_FEED_TOTAL_EXCLUDED_ALL,
         )
-        assert len(passing) == SAMPLE_FEED_PASSING, f"expected {SAMPLE_FEED_PASSING} passing, got {len(passing)}"
+        assert len(passing) == SAMPLE_FEED_PASSING_ALL, f"expected {SAMPLE_FEED_PASSING_ALL} passing, got {len(passing)}"
         # excluded may include real-world jobs (location_mismatch etc.), so
         # bound by the sample-slice minimum.
-        assert len(excluded) >= SAMPLE_FEED_TOTAL_EXCLUDED, (
-            f"expected ≥{SAMPLE_FEED_TOTAL_EXCLUDED} excluded (sample-slice), got {len(excluded)}"
+        assert len(excluded) >= SAMPLE_FEED_TOTAL_EXCLUDED_ALL, (
+            f"expected ≥{SAMPLE_FEED_TOTAL_EXCLUDED_ALL} excluded (sample-slice), got {len(excluded)}"
         )
 
 

@@ -84,20 +84,23 @@ def shortlisted_app(session, rebase_and_login):
 
 def test_feed_geometry_9_6(session, rebase_and_login):
     """Feed geometry derived from seed constants (see
-    tests._fixture_expectations.SAMPLE_FEED_PASSING). Historical name
+    tests._fixture_expectations.SAMPLE_FEED_PASSING_ALL). Historical name
     references 9/6 — kept for grep continuity, but the actual number is
-    now derived and will track seeder changes automatically."""
+    now derived and will track seeder changes automatically. This call
+    does NOT pass `within_mi`, so all sample rows (Phoenix + Remote-US)
+    are visible → use *_ALL variants."""
     from tests._fixture_expectations import (
-        SAMPLE_FEED_PASSING, SAMPLE_JOB_FAIL_SPONSOR, SAMPLE_JOB_FAIL_US_PERSON,
+        SAMPLE_FEED_PASSING_ALL, SAMPLE_JOB_FAIL_SPONSOR_ALL,
+        SAMPLE_JOB_FAIL_US_PERSON_ALL,
     )
     r = session.get(f"{BASE_URL}/api/v1/jobs/feed", timeout=15)
     assert r.status_code == 200
     body = r.json()
     totals = body.get("totals") or {}
-    assert totals.get("passing") == SAMPLE_FEED_PASSING, totals
+    assert totals.get("passing") == SAMPLE_FEED_PASSING_ALL, totals
     by_reason = totals.get("excluded_by_reason") or {}
-    assert by_reason.get("no_sponsorship_offered") == SAMPLE_JOB_FAIL_SPONSOR
-    assert by_reason.get("requires_us_person") == SAMPLE_JOB_FAIL_US_PERSON
+    assert by_reason.get("no_sponsorship_offered") == SAMPLE_JOB_FAIL_SPONSOR_ALL
+    assert by_reason.get("requires_us_person") == SAMPLE_JOB_FAIL_US_PERSON_ALL
 
 
 def test_prepare_grounded_lines(session, shortlisted_app):

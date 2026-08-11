@@ -1,28 +1,22 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import Card, { CardHeader } from '../components/ui/Card';
-import Button from '../components/ui/Button';
-import { Bell, BellOff, AlertTriangle, CheckCircle2, Loader2 } from 'lucide-react';
+import { AlertTriangle, Loader2 } from 'lucide-react';
 import {
   isPushSupported, permissionState, fetchPreferences, updatePreferences,
   fetchVapidPublicKey, subscribe, unsubscribe, sendTest,
 } from '../lib/push';
+import { PushDeviceBar } from './notifications/PushDeviceBar';
+import { CategoryTogglesList } from './notifications/CategoryTogglesList';
+import { NotificationsStatusMessages } from './notifications/NotificationsStatusMessages';
 
-const CATEGORY_LABELS = {
-  application_updates: 'Application updates',
-  interviews:          'Interviews scheduled',
-  approvals_expiring:  'Approval expiring reminders',
-  receipts:            'New submission receipts',
-  support:             'Support ticket replies',
-};
-
-const CATEGORY_HINTS = {
-  application_updates: 'When an outcome (response / rejection / offer) is logged for one of your applications.',
-  interviews:          'When an interview is scheduled or rescheduled on your tracker.',
-  approvals_expiring:  'When an authorized submission window has less than 12 hours remaining.',
-  receipts:            'When a submission receipt is written for one of your applications.',
-  support:             'When a support member replies to one of your tickets.',
-}
-
+/**
+ * Notifications settings — VAPID push + per-category preferences.
+ *
+ * 2026-08-11 — P2 Tier-2 split: sub-components live under
+ * `./notifications/`. This file owns state, async actions, and the
+ * top-level Card/header/loader. Zero behaviour change; all testids
+ * preserved.
+ */
 export default function NotificationsSettings() {
   const [permission, setPermission] = useState(permissionState());
   const [supported] = useState(isPushSupported());
@@ -162,88 +156,29 @@ export default function NotificationsSettings() {
       )}
 
       {loading ? (
-        <div className="flex items-center gap-2 muted text-sm py-6"><Loader2 className="h-4 w-4 animate-spin"/> Loading notification settings…</div>
+        <div className="flex items-center gap-2 muted text-sm py-6">
+          <Loader2 className="h-4 w-4 animate-spin" /> Loading notification settings…
+        </div>
       ) : (
         <>
           {supported && configReady && (
-            <div className="flex items-center justify-between py-3 border-b border-line dark:border-line-dark">
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <Bell className="h-4 w-4"/>
-                  <span className="text-sm font-medium">Push notifications on this device</span>
-                  <span
-                    data-testid="notifications-device-state"
-                    className={`pill ${hasActiveSubscription ? 'pill-accent' : 'pill-neutral'}`}
-                  >
-                    {hasActiveSubscription ? 'active' : 'inactive'}
-                  </span>
-                </div>
-                <p className="text-xs muted mt-1">
-                  Enable on each device you want to receive push on. Permission is asked only when you click Enable.
-                </p>
-              </div>
-              <div className="flex items-center gap-2 flex-shrink-0">
-                {hasActiveSubscription ? (
-                  <>
-                    <Button
-                      data-testid="notifications-test-btn"
-                      variant="secondary" size="sm" onClick={handleTest} loading={busy}
-                    >Send test</Button>
-                    <Button
-                      data-testid="notifications-disable-btn"
-                      variant="secondary" size="sm" onClick={handleDisable} loading={busy}
-                    ><BellOff className="h-3 w-3 mr-1"/>Disable</Button>
-                  </>
-                ) : (
-                  <Button
-                    data-testid="notifications-enable-btn"
-                    variant="accent" size="sm" onClick={handleEnable} loading={busy}
-                    disabled={permission === 'denied'}
-                  ><Bell className="h-3 w-3 mr-1"/>Enable</Button>
-                )}
-              </div>
-            </div>
+            <PushDeviceBar
+              hasActiveSubscription={hasActiveSubscription}
+              permission={permission}
+              busy={busy}
+              onEnable={handleEnable}
+              onDisable={handleDisable}
+              onTest={handleTest}
+            />
           )}
 
-          <div data-testid="notifications-categories" className="pt-3">
-            <p className="text-xs muted mb-2">
-              Even if this device is active, categories you turn off will never dispatch.
-            </p>
-            {Object.entries(CATEGORY_LABELS).map(([key, label]) => (
-              <div key={key} className="flex items-start justify-between gap-4 py-3 border-b border-line dark:border-line-dark last:border-b-0">
-                <div className="min-w-0">
-                  <div className="text-sm font-medium">{label}</div>
-                  <p className="text-xs muted mt-1">{CATEGORY_HINTS[key] || catalog[key] || ''}</p>
-                </div>
-                <label className="inline-flex items-center gap-2 select-none flex-shrink-0">
-                  <input
-                    type="checkbox"
-                    data-testid={`notifications-cat-${key}`}
-                    checked={!!(prefs && prefs[key])}
-                    onChange={(e) => handleToggleCategory(key, e.target.checked)}
-                    className="h-4 w-4"
-                  />
-                  <span className="text-xs muted">{(prefs && prefs[key]) ? 'on' : 'off'}</span>
-                </label>
-              </div>
-            ))}
-          </div>
+          <CategoryTogglesList
+            prefs={prefs}
+            catalog={catalog}
+            onToggle={handleToggleCategory}
+          />
 
-          {status && (
-            <div data-testid="notifications-status-message" className="mt-4 text-xs text-accent flex items-center gap-1">
-              <CheckCircle2 className="h-3.5 w-3.5"/> {status}
-            </div>
-          )}
-          {error && (
-            <div data-testid="notifications-error-message" className="mt-4 text-xs text-red-600 dark:text-red-400">
-              {error}
-            </div>
-          )}
-          {testResult && (
-            <div className="mt-2 text-[11px] muted" data-testid="notifications-test-summary">
-              Test dispatch: sent {testResult.sent}, failed {testResult.failed}, skipped {testResult.skipped}, pruned {testResult.pruned}
-            </div>
-          )}
+          <NotificationsStatusMessages status={status} error={error} testResult={testResult} />
         </>
       )}
     </Card>

@@ -105,14 +105,16 @@ def test_parity_clean_baseline(fixture_token):
     d = abs((ft.get("excluded") or 0) - (ct.get("excluded") or 0))
     assert d <= 5, f"excluded parity drift > 5: feed={ft.get('excluded')} cov={ct.get('excluded')}"
     # Sample-slice geometry derived from seed constants.
+    # This call fetches /jobs/feed WITHOUT `within_mi`, so all sample rows
+    # (Phoenix + Remote-US) are visible → use *_ALL variants.
     from tests._fixture_expectations import (
-        SAMPLE_FEED_PASSING, SAMPLE_JOB_FAIL_SPONSOR,
-        SAMPLE_JOB_FAIL_US_PERSON, SAMPLE_JOB_FAIL_DUPLICATE_FROM_ASSISTED,
+        SAMPLE_FEED_PASSING_ALL, SAMPLE_JOB_FAIL_SPONSOR_ALL,
+        SAMPLE_JOB_FAIL_US_PERSON_ALL, SAMPLE_JOB_FAIL_DUPLICATE_FROM_ASSISTED,
     )
-    assert ft["passing"] == SAMPLE_FEED_PASSING
+    assert ft["passing"] == SAMPLE_FEED_PASSING_ALL
     assert ft["hidden"] == 0
-    assert fbr.get("no_sponsorship_offered") == SAMPLE_JOB_FAIL_SPONSOR
-    assert fbr.get("requires_us_person") == SAMPLE_JOB_FAIL_US_PERSON
+    assert fbr.get("no_sponsorship_offered") == SAMPLE_JOB_FAIL_SPONSOR_ALL
+    assert fbr.get("requires_us_person") == SAMPLE_JOB_FAIL_US_PERSON_ALL
     if SAMPLE_JOB_FAIL_DUPLICATE_FROM_ASSISTED > 0:
         assert fbr.get("duplicate_application") == SAMPLE_JOB_FAIL_DUPLICATE_FROM_ASSISTED
 

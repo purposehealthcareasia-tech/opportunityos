@@ -532,3 +532,23 @@ Exit code `128`. **BLOCKED ON GITHUB CONNECTION AUTH** (external — expected pe
 **Website machine Phases 0-5: COMPLETE. All features functional and gate-verified. Awaiting Save-to-GitHub + Publish.**
 
 
+---
+
+### 9.7 · P2 burn-down floor (post-Phase-5, 2026-08-11)
+
+**Full pytest at post-P2a.3 HEAD (test-code-only fixes):** **677 passed / 1 failed / 3 skipped in 5:15.** Net vs. pre-P2 baseline (`633p/30f/3s`): **+44 pass, -29 fail, 0 regressions.**
+
+The single residual failure — `test_phase3_integration::test_match_score_and_feedback` — is documented pre-existing state-accumulation: passes solo (`pytest -k test_match_score_and_feedback` → PASS), fails only in-suite when prior test-module runs against `user_zero` have polluted `match_scores`. Filed under §9.4 already; residual after P2a.3 fix.
+
+### 9.8 · P2a.4 Known Gap — Feed cache not invalidated on mutation
+
+**Filed:** 2026-08-10 during P2a.3 test-expectations refactor. **Status:** deferred (test-code-only rails scope; production fix out of P2a scope).
+
+**Behaviour:** `/api/v1/jobs/feed` caches its response for 60s keyed by `(user_id, lane, within_mi, sort)`. `POST /jobs/{id}/shortlist`, `POST /jobs/{id}/hide`, and `POST /api/internal/fixture/rebase` do NOT invalidate that cache.
+
+**User-visible impact (honest):** a real user who shortlists or hides a job can see the just-mutated row for up to 60s on their next `/feed` load — the shortlist card still appears in `passing` and the hidden card still appears (unless the app changes any of `lane`/`within_mi`/`sort` — the client currently does not). This is a truthfulness bug of bounded severity: no data loss, no wrong writes, correctness is restored within one TTL cycle; but the feed can misrepresent the DB state for up to a minute. Coverage-preview (`/api/v1/eligibility/coverage-preview`) has no cache and always reflects fresh state.
+
+**Deferred fix (single-file change, out of P2a scope):** invalidate the per-user cache slice from within the shortlist/hide router endpoints (`domains/jobs/router.py` + `domains/applications/service.py` shortlist writer). Mechanical, ~5 lines per call-site, no schema change.
+
+**Test-side workaround (in-place today):** feed-mutation tests append a unique `within_mi=99991..99997` cache-bust to force a fresh compute. That filter has the SIDE EFFECT of hiding Remote-US sample rows (they have `distance_from_phoenix_mi=None`), so `_fixture_expectations.py` exposes both PHOENIX-ONLY (`SAMPLE_FEED_PASSING`) and ALL-SAMPLES (`SAMPLE_FEED_PASSING_ALL`) variants; each test picks based on whether its /feed call includes `within_mi`. See docstring in `backend/tests/_fixture_expectations.py`.
+
