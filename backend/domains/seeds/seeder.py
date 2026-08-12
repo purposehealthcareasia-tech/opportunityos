@@ -591,6 +591,24 @@ async def _rebase_fixture_user() -> str:
     # Founder brief: fixture-ead@ = plus; everyone else defaults to free.
     from domains.subscriptions import service as subs_svc
     await subs_svc.set_plan(user_id, "plus", actor="system:fixture")
+
+    # Phase 6d — Application Credits — deterministic launch-ready balance.
+    # Wipe the balance + ledger docs then materialize a fresh row with
+    # 50 credits (starter default) so `fixture-ead@` demos the happy-path
+    # Authorize & Launch flow. Companion doc `test_credentials.md` names
+    # this fixture as the LAUNCH-READY demo user (Batch D UI).
+    await db.application_credits_balance.delete_many({"user_id": user_id})
+    await db.application_credits_ledger.delete_many({"user_id": user_id})
+    await db.application_credits_balance.insert_one({
+        "user_id": user_id, "plan": "starter", "balance": 50,
+        "is_unlimited": False, "created_at": now, "updated_at": now,
+    })
+    await db.application_credits_ledger.insert_one({
+        "id": str(uuid.uuid4()), "user_id": user_id,
+        "direction": "grant", "amount": 50,
+        "source": "fixture_rebase_launch_ready",
+        "plan": "starter", "is_unlimited_flag": False, "ts": now,
+    })
     # -----------------------------------------------------------------
     # Phase 5.3 / 5.4 UI-visibility seeds (Founder Directive 2026-07-28)
     # -----------------------------------------------------------------
@@ -801,6 +819,23 @@ async def _rebase_fixture_broad_user() -> str:
 
     from domains.subscriptions import service as subs_svc
     await subs_svc.set_plan(user_id, "plus", actor="system:fixture-broad")
+
+    # Phase 6d — deterministic ZERO-credit balance for the 402 /
+    # paused_no_credits demo. Wipe balance + ledger then materialize a
+    # row at balance=0, is_unlimited=False. `test_credentials.md` names
+    # this fixture as the ZERO-CREDIT demo user (Batch D UI).
+    await db.application_credits_balance.delete_many({"user_id": user_id})
+    await db.application_credits_ledger.delete_many({"user_id": user_id})
+    await db.application_credits_balance.insert_one({
+        "user_id": user_id, "plan": "starter", "balance": 0,
+        "is_unlimited": False, "created_at": now, "updated_at": now,
+    })
+    await db.application_credits_ledger.insert_one({
+        "id": str(uuid.uuid4()), "user_id": user_id,
+        "direction": "grant", "amount": 0,
+        "source": "fixture_broad_rebase_zero_credits",
+        "plan": "starter", "is_unlimited_flag": False, "ts": now,
+    })
 
     await db.audit_logs.insert_one({
         "id": str(uuid.uuid4()),

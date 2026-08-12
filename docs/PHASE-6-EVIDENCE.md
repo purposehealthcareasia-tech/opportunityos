@@ -436,6 +436,81 @@ Delta from **Phase 6 start (`677 pass / 1 fail / 3 skip`)** → **end (`712 / 2 
 
 Every endpoint is in the `/api/openapi.json` — verified by supervisor restart + `/api/health=200`.
 
+---
+
+## §UI — Phase 6 Batch D `/onboarding/launch` React screen (2026-08-12)
+
+**Landed:** `/app/frontend/src/pages/OnboardingLaunch.jsx` (~470 lines, single page, sub-components inline).
+**Route:** `/onboarding/launch`, wired inside `<ProtectedRoute><Layout />` in `App.js`. Sidebar entry added under **Launch** (Rocket icon, Phase 6, always active for authed users).
+**Rail:** consent language rendered VERBATIM per scope from `GET /api/v1/meta/policy` — no collapsing, no summarizing. `pay_floor: null` from `/spectrum/suggest` renders as an explicit "no verified pay history yet" honest-empty card, never a fabricated number.
+
+### API composition on this screen
+
+| Step | Call | State fetched | UI section |
+|---|---|---|---|
+| Bootstrap | `GET /api/v1/claims` | Passport claim groups (attest summary) | Card 1 · "Attest your Passport" |
+| Bootstrap | `GET /api/v1/spectrum/suggest` | `titles`, `radius_mi`, `pay_floor`, `rationale`, `honest_label` | Card 2 · "Confirm your spectrum" |
+| Bootstrap | `GET /api/v1/credits/me` | `balance`, `plan`, `is_unlimited` | Top banner + Card 4 · footer 402 warning |
+| Bootstrap | `GET /api/v1/meta/policy` | `scopes[]` (verbatim label + description) | Card 4 · "Consent — verbatim per scope" |
+| Live (radius change) | `GET /api/v1/wave/preview?within_mi=<r>&cap=25` | eligible summary + breakdown | Card 3 · "Preview the first wave" |
+| Authorize tap | `POST /api/v1/onboarding/launch` | atomic composed 4-step | Success view |
+
+Consent rows written **verbatim**, one row per scope (backend `LAUNCH_SCOPES = ("submit_applications", "process_career_data")`). Per-scope checkboxes; unchecking any required scope disables Authorize (client-side) + backend re-guards the invariant.
+
+### State-coverage screenshots (2026-08-12)
+
+Full 1440 × 900 headless Chromium capture, `docs/phase-6-screenshots/`:
+
+| State | File | Fixture used | What it proves |
+|---|---|---|---|
+| Loading | `docs/phase-6-screenshots/launch_loading.jpeg` | `fixture-ead@` (throttled network) | `data-testid=onboarding-launch-loading` renders while bootstrap Promise.all is in flight. |
+| Launch-ready (happy path) | `docs/phase-6-screenshots/launch_ready.jpeg` | `fixture-ead@` (50 credits) | Credits banner green, 11 claims attest summary, "Systems Engineer" suggested title chip, honest `no verified pay history yet` empty pay-floor card. |
+| Paused / 402 | `docs/phase-6-screenshots/launch_paused_no_credits.jpeg` | `fixture-broad@` (0 credits) | Top red banner `0 credits — auto-apply will pause (HTTP 402 · paused_no_credits)`, empty titles state ("No approved role or experience claims yet"), empty pay-floor card, footer 402 warning. |
+| Verbatim consents + 402 footer | `docs/phase-6-screenshots/launch_consent_and_402_footer.jpeg` | `fixture-broad@` | Both `submit_applications` + `process_career_data` scopes rendered verbatim from `/meta/policy`; footer `Authorizing with 0 credits: the wave will queue, but the first auto-dispatch will return HTTP 402 · paused_no_credits and park until you refill.` |
+| Error / missing consents | `docs/phase-6-screenshots/launch_missing_consents.jpeg` | `fixture-ead@` (unchecked one scope) | Warning `All two launch consents are required.` + Authorize button `disabled=true`. |
+| Success | `docs/phase-6-screenshots/launch_success.jpeg` | `fixture-broad@` (after Authorize) | Success card: `11 claims attested` + SHA-256 hash preview + `0 jobs queued` (honest) + `2 consent rows written (verbatim per scope)`. |
+
+### Verbatim-consent smoke (2026-08-12)
+
+Descriptions surfaced on the launch screen match `GET /api/v1/meta/policy` byte-for-byte:
+
+- **`submit_applications`** → `Authorize Fynd to submit applications you explicitly approve. In preview this is DRY-RUN only — nothing is sent to a real employer without a separate per-application confirmation. Revocable at any time.`
+- **`process_career_data`** → `Let Fynd process the résumé data, claims, and projects I approve so I can build a verified Career Passport.`
+
+Rendered verbatim inside `data-testid=launch-consent-description-<scope>` — no collapsing, no summarizing.
+
+### Fixture users (test_credentials.md — 2026-08-12 addendum)
+
+```
+fixture-ead@opportunityos.dev  / Fixture!Test1    →  50 credits, plan=starter    (LAUNCH-READY demo)
+fixture-broad@opportunityos.dev/ Fixture!Broad1   →   0 credits, plan=starter    (paused_no_credits demo)
+```
+
+Balance is re-baselined on every backend startup via `application_credits_balance` insert (see `/app/backend/domains/seeds/seeder.py`, ledger source slugs `fixture_rebase_launch_ready` and `fixture_broad_rebase_zero_credits`).
+
+### Post-UI backend pytest (regression check, 2026-08-12)
+
+```
+$ cd /app/backend && CI_TEST_ISSUER_ENABLED=true python3 -m pytest -x --tb=short \
+    tests/test_credits_ledger.py tests/test_claims_attest_all.py \
+    tests/test_spectrum_suggest.py tests/test_email_route_credit_halt.py \
+    tests/test_autopilot_gate.py tests/test_email_route_live_flip.py
+
+============================== 37 passed in 1.47s ==============================
+```
+
+### openapi.json health (2026-08-12)
+
+```
+paths=205
+has_onboarding_launch=True
+has_credits_me=True
+has_spectrum_suggest=True
+has_claims_attest_all=True
+```
+
+---
+
 ### Commit trail (this phase)
 
 ```
@@ -447,6 +522,7 @@ e9c0fe08   fix(smoke)                             — check-1/-4/-10 hygiene (St
 <sha-C>    feat(phase6-batch-c)                   — auto-spectrum (never-invented pay-floor)
 1f7b527b   feat(phase6-batch-e)                   — credit halt into email-route dispatch
 <sha-DF>   feat(phase6-batches-d+f)               — onboarding/launch + telemetry + hard-lock
+<sha-UI>   feat(phase6-batch-d-ui)                — OnboardingLaunch.jsx + sidebar + fixture credits
 ```
 
 Tester-brief-ready. STOP for founder-run gate verification.

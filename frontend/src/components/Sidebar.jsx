@@ -14,6 +14,7 @@ import {
   BarChart3,
   CreditCard,
   Lock,
+  Rocket,
   Settings as SettingsIcon,
   ShieldAlert,
 } from 'lucide-react';
@@ -27,19 +28,20 @@ import { FyndWordmark } from './FyndMark';
  */
 
 const SECTIONS = [
-  { to: '/passport',     label: 'Passport',     Icon: IdCard,          phase: 2, active: true  },
-  { to: '/preferences',  label: 'Preferences',  Icon: Sliders,         phase: 2, active: true  },
-  { to: '/eligibility',  label: 'Eligibility',  Icon: ShieldCheck,     phase: 2, active: true  },
-  { to: '/feed',         label: 'Feed',         Icon: Rss,             phase: 3, active: true  },
-  { to: '/applications', label: 'Applications', Icon: SendHorizonal,   phase: 3, active: true  },
-  { to: '/approvals',    label: 'Approvals',    Icon: ClipboardCheck,  phase: 5, active: true  },
-  { to: '/tracker',      label: 'Tracker',      Icon: ListTodo,        phase: 5, active: true  },
-  { to: '/outcomes',     label: 'Outcomes',     Icon: ListChecks,      phase: 5, active: true  },
-  { to: '/follow-ups',   label: 'Follow-ups',   Icon: Mail,            phase: 1, active: true  },
-  { to: '/analytics',    label: 'Analytics',    Icon: BarChart3,       phase: 5, active: true  },
-  { to: '/billing',      label: 'Billing',      Icon: CreditCard,      phase: 6, active: false },
-  { to: '/privacy',      label: 'Privacy',      Icon: Lock,            phase: 2, active: false },
-  { to: '/settings',     label: 'Settings',     Icon: SettingsIcon,    phase: 1, active: true  },
+  { to: '/passport',         label: 'Passport',     Icon: IdCard,          phase: 2, active: true  },
+  { to: '/preferences',      label: 'Preferences',  Icon: Sliders,         phase: 2, active: true  },
+  { to: '/eligibility',      label: 'Eligibility',  Icon: ShieldCheck,     phase: 2, active: true  },
+  { to: '/onboarding/launch',label: 'Launch',       Icon: Rocket,          phase: 6, active: true  },
+  { to: '/feed',             label: 'Feed',         Icon: Rss,             phase: 3, active: true  },
+  { to: '/applications',     label: 'Applications', Icon: SendHorizonal,   phase: 3, active: true  },
+  { to: '/approvals',        label: 'Approvals',    Icon: ClipboardCheck,  phase: 5, active: true  },
+  { to: '/tracker',          label: 'Tracker',      Icon: ListTodo,        phase: 5, active: true  },
+  { to: '/outcomes',         label: 'Outcomes',     Icon: ListChecks,      phase: 5, active: true  },
+  { to: '/follow-ups',       label: 'Follow-ups',   Icon: Mail,            phase: 1, active: true  },
+  { to: '/analytics',        label: 'Analytics',    Icon: BarChart3,       phase: 5, active: true  },
+  { to: '/billing',          label: 'Billing',      Icon: CreditCard,      phase: 6, active: false },
+  { to: '/privacy',          label: 'Privacy',      Icon: Lock,            phase: 2, active: false },
+  { to: '/settings',         label: 'Settings',     Icon: SettingsIcon,    phase: 1, active: true  },
 ];
 
 export function Sidebar({ isAdminOrSupport }) {

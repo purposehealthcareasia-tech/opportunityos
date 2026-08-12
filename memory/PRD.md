@@ -1,5 +1,24 @@
 # Fynd — Product Requirements Document
 
+## 🚀 Phase 6 Batch D UI (2026-08-12) — /onboarding/launch React screen — READY FOR GATE
+
+**Immediate task closeout.** The founder-blocking Phase 6 UI gap is CLOSED. `/onboarding/launch` React screen is landed, wired, screenshot-covered, and pytest-regression-checked. **Awaiting founder-run split tester brief for gate PASS.**
+
+- **Landed:** `/app/frontend/src/pages/OnboardingLaunch.jsx` (single page composing Attest → Spectrum → Wave preview → Verbatim consent → Authorize).
+- **Wired:** `App.js` (protected route `/onboarding/launch`) + `Sidebar.jsx` (**Launch** entry, Rocket icon).
+- **Rails held:** consent language rendered VERBATIM per scope from `/meta/policy` (no collapsing); `pay_floor: null` → honest "no verified pay history yet" card (never fabricated); Authorize disabled when any required scope unchecked; empty / error / 402 / success all render with distinct data-testids.
+- **Fixture users** (seeder deterministic on every backend startup, documented in `test_credentials.md`):
+  - `fixture-ead@opportunityos.dev / Fixture!Test1` — 50 credits (LAUNCH-READY happy path)
+  - `fixture-broad@opportunityos.dev / Fixture!Broad1` — 0 credits (`paused_no_credits` HTTP 402 demo)
+- **Screenshots** (6 states) under `/app/docs/phase-6-screenshots/`: `launch_loading.jpeg · launch_ready.jpeg · launch_paused_no_credits.jpeg · launch_consent_and_402_footer.jpeg · launch_missing_consents.jpeg · launch_success.jpeg`.
+- **Regression pytest (2026-08-12):** `37 passed in 1.47s` on the 6 Phase 6 test files (`test_credits_ledger, test_claims_attest_all, test_spectrum_suggest, test_email_route_credit_halt, test_autopilot_gate, test_email_route_live_flip`). Zero regressions.
+- **openapi.json** healthy at 205 paths including `/api/v1/onboarding/launch, /api/v1/credits/me, /api/v1/spectrum/suggest, /api/v1/claims/attest-all`.
+- **Evidence appended** to `/app/docs/PHASE-6-EVIDENCE.md` §UI with full state-coverage table and verbatim-consent smoke.
+
+**Next after founder gate PASS:** resume Tier-2 code-review burn-down (Admin.jsx `IntegrationsTab` split + 51 nested-ternary resolution).
+
+---
+
 ## 🏁 Sequence status (2026-08-10 CLOSEOUT · WEBSITE MACHINE PHASES 0-5 COMPLETE · local `main` HEAD `0e0b38a5`)
 
 **PHASE 0-5 SEQUENCE COMPLETE. FOUNDER GATE-PASSED 8/8. MERGE COMPLETE LOCALLY. AWAITING FOUNDER SAVE-TO-GITHUB + PUBLISH.**
