@@ -109,6 +109,10 @@ EXPECTED_INDEX_CALLS = [
     ("application_credits_ledger",  ([("user_id", 1), ("source", 1), ("month_key", 1)],),
                                     (("name", "credits_ledger_monthly_refill_idempotent"),
                                      ("partialFilterExpression", {"source": "monthly_refill"}))),
+    # Phase 6f — Form-fill telemetry (added 2026-08-12):
+    ("form_fill_telemetry", ([("user_id", 1), ("sample_ts", -1)],), ()),
+    ("form_fill_telemetry", ([("sample_ts", -1)],), ()),
+    ("user_settings",       ([("user_id", 1)],), (("unique", True),)),
 ]
 
 
@@ -147,7 +151,7 @@ async def test_ensure_indexes_sequence_byte_identical(monkeypatch):
         f"First difference at position {next((i for i,(a,b) in enumerate(zip(recorder._calls, EXPECTED_INDEX_CALLS)) if a != b), 'N/A')}"
     )
     # Also lock the total count so a helper adding an unlisted index fails immediately.
-    assert len(recorder._calls) == len(EXPECTED_INDEX_CALLS) == 66
+    assert len(recorder._calls) == len(EXPECTED_INDEX_CALLS) == 69
 
 
 def test_ensure_indexes_helpers_are_all_wired():

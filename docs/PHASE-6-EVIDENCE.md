@@ -287,3 +287,97 @@ Scope note: the founder's Batch E also mentions the sprint form-route submit pat
 Documented here for the tester brief so the split brief for auto-apply-lane can verify the halt behavior WITHOUT expecting a not-yet-shipped auto-dispatcher.
 
 ---
+
+## Batch D · Approve-&-launch composition endpoint (2026-08-12)
+
+Backend: one atomic composition endpoint so the "single tap Authorize & Launch" cannot half-fire. UI wiring lands in the next commit.
+
+### D.1 · New endpoint — `POST /api/v1/onboarding/launch`
+
+Auth-required. Body: `{preferences, wave_scope, consents[], policy_text_version}`. Runs 4 steps in strict order:
+
+1. Policy-version + required-scope precheck (409 if stale policy version; 400 if any required scope missing or unknown)
+2. `claims_svc.attest_all(...)` — bulk attest with claim-set hash
+3. `preferences.insert(next_version, payload)` — save the confirmed spectrum
+4. `consent_svc.record(scope, granted=True, policy_text_version, ...)` **one row per scope, VERBATIM** — never collapsed
+5. `wave.authorize_wave(wave_scope, user)` — kick the initial wave (standing_wave from scope)
+
+Composite audit: single `onboarding.launch` row summarizing all four step results (attest hash, prefs version, consent row ids, wave id, standing-wave flag).
+
+### D.2 · Atomicity — no partial launches
+
+Every step is wrapped in try/except. On any failure the response is `500 partial_launch_blocked` with `step: <name>` (or a 4xx if the underlying service raised HTTPException — bubbled with original status). The `consent_row_ids` list is included in error detail if we failed AFTER writing some consent rows so admin can see partial state (subsequent rerun is idempotent — bulk-attest re-attests the same set, prefs.insert writes a new version, consent grants are additive).
+
+### D.3 · Rails preserved
+
+* Consent rows written verbatim — one `consent_records` row per scope with its own `scope`, `policy_text_version`, `ts`, `id`.
+* Revocation still works per-scope from Settings (unchanged).
+* `LAUNCH_SCOPES = ("submit_applications", "process_career_data")` — hardcoded in `onboarding/router.py`. Missing any → 400 with the specific missing scopes.
+* Unknown-scope typos are 400'd (rejects silent typo acceptance).
+
+---
+
+## Batch F · Form-route telemetry + autopilot hard-lock (2026-08-12)
+
+### F.1 · New collection — `form_fill_telemetry`
+
+Shape: `{id, user_id, application_id, field_count, field_matches, mismatches[], session_ms, sample_ts}`. Field values themselves are NEVER stored — only counts + a short summary of mismatches. Privacy-honest by construction.
+
+Indexes:
+- `(user_id, sample_ts DESC)` — per-user recent-first for gate reads
+- `(sample_ts DESC)` — global rolling-30d admin readout
+
+### F.2 · New collection — `user_settings`
+
+Shape: `{user_id, autopilot_auto_submit_opt_in, updated_at}`. Unique on `user_id`. Ships DISABLED by default (row missing OR `opt_in=False` → gate returns `user_not_opted_in`).
+
+### F.3 · Autopilot gate — `services/autopilot_gate.py`
+
+Locked-in-code constants (**NOT env-flags**, pinned by `test_gate_constants_hardcoded`):
+
+```python
+MIN_ACCURACY = 0.99
+MIN_SAMPLE_SIZE = 200
+CI_Z = 1.959963984540054  # 95% two-sided Wilson CI
+```
+
+Gate logic (`is_auto_submit_allowed`):
+
+1. Env kill-switch (`AUTOPILOT_AUTO_SUBMIT=off`) → `shipped_disabled`
+2. `user_settings.autopilot_auto_submit_opt_in` missing or False → `user_not_opted_in`
+3. `n_fields < MIN_SAMPLE_SIZE` → `insufficient_sample`
+4. `wilson_lower_bound(matches, n_fields) < MIN_ACCURACY` → `accuracy_below_threshold`
+5. else → `allowed`
+
+**Rationale for MIN_SAMPLE_SIZE=200 (revised from the initial proposal — honest math):**
+
+MIN_SAMPLE_SIZE is the ADMISSION threshold to the accuracy check. Below 200 fields we don't even measure. But passing that alone does NOT unlock: the Wilson-95% LOWER bound must ALSO clear MIN_ACCURACY=0.99. At p̂=1.0 the Wilson lower bound is `n/(n+z²)` with z≈1.96, so for lower ≥ 0.99 you need `n ≥ ~381` fields. At p̂=0.99 you need substantially more. The layered design (sample-size ≥ 200 AND CI-lower ≥ 0.99) means neither a lucky short streak nor a single-outlier long streak can spoof the gate.
+
+The earlier proposal of "n=200 gives ±1.4pp half-width at p̂=0.99" was an approximate two-sided width, not the WILSON LOWER at those coordinates (which is ≈0.964). The revised rationale is now documented in `services/autopilot_gate.py` docstring so nobody revises MIN_SAMPLE_SIZE without redoing the math.
+
+### F.4 · Endpoints
+
+- `POST /api/v1/form-telemetry` — sprint client inserts ONE row per sprint session. Validates `field_matches <= field_count`. Caps mismatches to 100 items.
+- `GET  /api/v1/autopilot/status` — user's current gate state (allowed / reason / metrics / constants / honest_copy).
+- `POST /api/v1/autopilot/opt-in` — per-user opt-in flip (audited). Opting in alone does NOT unlock — the accuracy gate still fires.
+- `GET  /api/v1/admin/telemetry/form-accuracy` — owner/admin-only 30-day rolling aggregate + per-user ranked rows + gate constants.
+
+### F.5 · Pytest — 8 invariants, 8/8 pass
+
+```
+$ python -m pytest tests/test_autopilot_gate.py -v
+test_wilson_lower_bound_math                    PASSED  ← spot-checks at (1,1), (198,200), (10000,10000), (0,0)
+test_default_is_not_opted_in                    PASSED  ← ships DISABLED
+test_opt_in_alone_does_not_unlock               PASSED  ← opt-in without telemetry → insufficient_sample
+test_allowed_when_all_conditions_met            PASSED  ← 500 fields all-match → allowed=True (Wilson lower ≈ 0.9924)
+test_accuracy_below_threshold_blocks            PASSED  ← 70% accuracy over 300 fields → accuracy_below_threshold
+test_env_kill_switch_overrides                  PASSED  ← AUTOPILOT_AUTO_SUBMIT=off → shipped_disabled regardless
+test_gate_constants_hardcoded                   PASSED  ← MIN_ACCURACY/MIN_SAMPLE_SIZE grep-pinned NOT env-flagged
+test_sample_size_boundary_layered_correctly     PASSED  ← n=200 all-match → sample-size PASSES but accuracy blocks
+```
+
+### F.6 · Autopilot auto-submit SHIPS DISABLED
+
+Even if a user opts in, unlock requires n_fields ≥ 200 AND Wilson-95%-CI-lower ≥ 99%. In practice, that's ~381+ perfect fills or many more mixed. The UI surfaces this via `honest_copy` from `/autopilot/status` so users understand the lock is intentional, not broken.
+
+---

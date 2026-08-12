@@ -219,6 +219,25 @@ async def _ensure_credits_indexes(db: AsyncIOMotorDatabase) -> None:
     )
 
 
+async def _ensure_form_telemetry_indexes(db: AsyncIOMotorDatabase) -> None:
+    """Phase 6f Form-fill telemetry — sprint accuracy tracking + autopilot gate.
+
+    Two indexes:
+      * (user_id, sample_ts DESC) — per-user recent-first for gate reads
+      * (sample_ts DESC) — global rolling-window admin readout
+    Plus `user_settings` unique on `user_id` (opt-in flag lives there).
+    """
+    await db.form_fill_telemetry.create_index(
+        [("user_id", ASCENDING), ("sample_ts", DESCENDING)],
+    )
+    await db.form_fill_telemetry.create_index(
+        [("sample_ts", DESCENDING)],
+    )
+    await db.user_settings.create_index(
+        [("user_id", ASCENDING)], unique=True,
+    )
+
+
 # --------------------------------------------------------------------------- #
 # Public entry point — order matches the pre-refactor byte-identical sequence.
 # --------------------------------------------------------------------------- #
@@ -234,6 +253,7 @@ _ENSURE_INDEX_GROUPS = (
     _ensure_phase6_indexes,
     _ensure_founder_brief_indexes,
     _ensure_credits_indexes,
+    _ensure_form_telemetry_indexes,
 )
 
 

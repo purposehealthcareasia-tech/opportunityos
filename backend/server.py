@@ -410,3 +410,11 @@ app.include_router(credits_router)
 # Phase 6b — Auto-spectrum suggestion (Passport → spectrum)
 from domains.spectrum.router import router as spectrum_router  # noqa: E402
 app.include_router(spectrum_router)
+
+# Phase 6d — Approve-&-launch (one atomic composition endpoint)
+from domains.onboarding.router import router as onboarding_router  # noqa: E402
+app.include_router(onboarding_router)
+
+# Phase 6f — Form-route telemetry + autopilot hard-lock
+from domains.form_telemetry.router import router as form_telemetry_router  # noqa: E402
+app.include_router(form_telemetry_router)
