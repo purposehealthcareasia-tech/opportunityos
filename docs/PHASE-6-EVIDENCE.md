@@ -482,11 +482,28 @@ Rendered verbatim inside `data-testid=launch-consent-description-<scope>` — no
 ### Fixture users (test_credentials.md — 2026-08-12 addendum)
 
 ```
-fixture-ead@opportunityos.dev  / Fixture!Test1    →  50 credits, plan=starter    (LAUNCH-READY demo)
-fixture-broad@opportunityos.dev/ Fixture!Broad1   →   0 credits, plan=starter    (paused_no_credits demo)
+fixture-ead@opportunityos.dev  / Fixture!Test1    →  50 credits, plan=starter    (LAUNCH-READY demo; 4 seeded apps for real-debit path)
+fixture-broad@opportunityos.dev/ Fixture!Broad1   →   0 credits, plan=starter    (paused_no_credits demo; 1 seeded shortlisted app for direct 402 exercise)
 ```
 
 Balance is re-baselined on every backend startup via `application_credits_balance` insert (see `/app/backend/domains/seeds/seeder.py`, ledger source slugs `fixture_rebase_launch_ready` and `fixture_broad_rebase_zero_credits`).
+
+`fixture-broad@` also carries exactly one `applications` row in `state=shortlisted` marked `fixture_purpose="phase6_batch_d_402_demo"` (SampleCo demo job pin, seeded in `_seed_fixture_broad_dispatchable_app`). Combined with the deterministic 0-credit balance + base resume manifest already on this user, `POST /api/v1/email-route/dispatch` clears preflight and halts at credits — returning HTTP 402 `paused_no_credits` deterministically.
+
+### Direct HTTP 402 `paused_no_credits` exercise — VERIFIED (2026-08-12)
+
+Discovery route: `GET /api/v1/applications` returns exactly one row for the fixture; its `id` is the dispatch target. Then:
+
+```bash
+$ curl -s -b fb.jar -X POST "$BASE/api/v1/email-route/dispatch" \
+    -H "Content-Type: application/json" -H "X-CSRF-Token: $CSRF" \
+    -d "{\"application_id\":\"$APP_ID\",\"destination\":\"hiring@sampleco.demo\",\"subject\":\"Application\",\"body\":\"Hello, I would like to apply for this role. Thank you for your consideration.\"}"
+→ HTTP 402
+→ {"detail":{"error":"insufficient_credits","state":"paused_no_credits","balance":0,
+              "message":"Out of application credits. Item stays queued in your shortlist. …"}}
+```
+
+`fixture-ead@` (50 credits, 4 seeded apps) exercises the counter-path — first dispatch decrements 50 → 49 and returns 201 with the receipt.
 
 ### Post-UI backend pytest (regression check, 2026-08-12)
 
@@ -496,8 +513,10 @@ $ cd /app/backend && CI_TEST_ISSUER_ENABLED=true python3 -m pytest -x --tb=short
     tests/test_spectrum_suggest.py tests/test_email_route_credit_halt.py \
     tests/test_autopilot_gate.py tests/test_email_route_live_flip.py
 
-============================== 37 passed in 1.47s ==============================
+============================== 37 passed in 1.37s ==============================
 ```
+
+Re-run 2026-08-12 after the fixture-broad@ dispatchable-app seed addition — **37 / 37 pass, zero regressions**.
 
 ### openapi.json health (2026-08-12)
 

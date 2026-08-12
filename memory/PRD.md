@@ -8,10 +8,11 @@
 - **Wired:** `App.js` (protected route `/onboarding/launch`) + `Sidebar.jsx` (**Launch** entry, Rocket icon).
 - **Rails held:** consent language rendered VERBATIM per scope from `/meta/policy` (no collapsing); `pay_floor: null` → honest "no verified pay history yet" card (never fabricated); Authorize disabled when any required scope unchecked; empty / error / 402 / success all render with distinct data-testids.
 - **Fixture users** (seeder deterministic on every backend startup, documented in `test_credentials.md`):
-  - `fixture-ead@opportunityos.dev / Fixture!Test1` — 50 credits (LAUNCH-READY happy path)
-  - `fixture-broad@opportunityos.dev / Fixture!Broad1` — 0 credits (`paused_no_credits` HTTP 402 demo)
+  - `fixture-ead@opportunityos.dev / Fixture!Test1` — 50 credits (LAUNCH-READY happy path; 4 seeded apps for real-debit path)
+  - `fixture-broad@opportunityos.dev / Fixture!Broad1` — 0 credits + 1 shortlisted app marked `fixture_purpose=phase6_batch_d_402_demo` (direct HTTP 402 `paused_no_credits` exercise on `POST /api/v1/email-route/dispatch`)
+- **Direct 402 exercise verified (2026-08-12):** `POST /api/v1/email-route/dispatch` for `fixture-broad@` returns HTTP 402 `{state:"paused_no_credits", balance:0, error:"insufficient_credits"}` deterministically. Discovery: `GET /api/v1/applications` → single row for this fixture.
 - **Screenshots** (6 states) under `/app/docs/phase-6-screenshots/`: `launch_loading.jpeg · launch_ready.jpeg · launch_paused_no_credits.jpeg · launch_consent_and_402_footer.jpeg · launch_missing_consents.jpeg · launch_success.jpeg`.
-- **Regression pytest (2026-08-12):** `37 passed in 1.47s` on the 6 Phase 6 test files (`test_credits_ledger, test_claims_attest_all, test_spectrum_suggest, test_email_route_credit_halt, test_autopilot_gate, test_email_route_live_flip`). Zero regressions.
+- **Regression pytest (2026-08-12, post-seed):** `37 passed in 1.37s` on the 6 Phase 6 test files. Zero regressions.
 - **openapi.json** healthy at 205 paths including `/api/v1/onboarding/launch, /api/v1/credits/me, /api/v1/spectrum/suggest, /api/v1/claims/attest-all`.
 - **Evidence appended** to `/app/docs/PHASE-6-EVIDENCE.md` §UI with full state-coverage table and verbatim-consent smoke.
 

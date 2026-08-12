@@ -837,6 +837,14 @@ async def _rebase_fixture_broad_user() -> str:
         "plan": "starter", "is_unlimited_flag": False, "ts": now,
     })
 
+    # Phase 6d Batch D — dispatchable application row so testers can
+    # DIRECTLY exercise the HTTP 402 `paused_no_credits` branch on
+    # `POST /api/v1/email-route/dispatch`. Preflight passes (approved
+    # claims + base resume manifest already seeded above), credits are
+    # 0, dispatch halts honestly. `test_credentials.md` documents the
+    # discovery route via `GET /api/v1/applications`.
+    await _seed_fixture_broad_dispatchable_app(user_id, now)
+
     await db.audit_logs.insert_one({
         "id": str(uuid.uuid4()),
         "actor": "system:fixture-broad",
@@ -849,6 +857,69 @@ async def _rebase_fixture_broad_user() -> str:
     log.info("FIXTURE BROAD user re-baselined: %s (%s)",
               FIXTURE_BROAD_EMAIL, user_id)
     return user_id
+
+
+async def _seed_fixture_broad_dispatchable_app(user_id: str, now) -> str | None:
+    """Phase 6d Batch D — one shortlisted `applications` row on a SampleCo
+    seed job so testers can DIRECTLY exercise the HTTP 402
+    `paused_no_credits` branch on `POST /api/v1/email-route/dispatch`
+    with `fixture-broad@` (which is deterministically re-baselined to
+    balance=0).
+
+    Rails: preflight passes because
+      (a) fixture-broad has approved contact + name + skill claims,
+      (b) the base resume manifest is seeded above (see
+          `_rebase_fixture_broad_user` → `resume_versions`), and
+      (c) the outbound body used in the tester's curl carries no
+          numbers / years / sealed values and no signature (fixture-broad
+          has no `identity`-type claim, so the signature branch is
+          skipped in `_identity_check`).
+
+    Discovery: the tester finds this row via
+        GET /api/v1/applications
+    then dispatches to it. Documented in `memory/test_credentials.md`.
+    """
+    db = get_db()
+    sample_job = await db.jobs.find_one(
+        {"is_sample": True}, {"_id": 0}, sort=[("_id", 1)],
+    )
+    if not sample_job:
+        log.info("FIXTURE-BROAD dispatchable-app seed skipped: no SampleCo job found")
+        return None
+    from domains.applications.service import route_decision
+    r = route_decision(sample_job)
+    app_id = str(uuid.uuid4())
+    doc = {
+        "id": app_id,
+        "user_id": user_id,
+        "job_id": sample_job["id"],
+        "company_id": sample_job.get("company_id"),
+        "job_snapshot": {
+            "title": sample_job.get("title"),
+            "company_name": sample_job.get("company_name"),
+            "canonical_key": sample_job.get("canonical_key"),
+            "is_sample": True,
+        },
+        "state": "shortlisted",
+        "route": r["route"],
+        "route_rationale": r["rationale"],
+        "materials": {},
+        "authorization_id": None,
+        "minutes_to_prepare": None,
+        "fields_corrected": None,
+        "created_at": now,
+        "updated_at": now,
+        # Fixture marker so operators can tell this apart from real applications.
+        "fixture": True,
+        "fixture_purpose": "phase6_batch_d_402_demo",
+    }
+    try:
+        await db.applications.insert_one(doc)
+    except Exception:
+        log.warning("FIXTURE-BROAD dispatchable-app seed insert failed", exc_info=True)
+        return None
+    log.info("FIXTURE-BROAD 402-demo app seeded: %s (job=%s)", app_id, sample_job.get("id"))
+    return app_id
 
 
 async def _rebase_fixture_employer_member_user() -> str:
