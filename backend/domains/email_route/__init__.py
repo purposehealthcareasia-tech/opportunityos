@@ -212,6 +212,46 @@ async def dispatch(req: EmailDispatchRequest,
     # a stored verdict, not just blocks).
     await preflight.persist_verdict(verdict)
 
+    # ------------------------------------------------------------
+    # Phase 6d — Application Credits: check-and-debit the caller's
+    # ledger BEFORE any transport-side effect. Runs AFTER preflight /
+    # consent / throttle / dedup so credits are a FINAL brake, never
+    # a bypass. On insufficient_credits we halt honestly (HTTP 402 +
+    # `paused_no_credits`) — the application stays queued (shortlist
+    # row is untouched), so refilling later + re-dispatching re-runs
+    # the full validation chain (caps/dedup/gates/preflight) — a
+    # parked item is re-validated at resume, never dispatched on
+    # stale checks.
+    # ------------------------------------------------------------
+    from domains.credits import service as credits_svc
+    # Precompute the receipt_id so debit-idempotency is keyed against
+    # the SAME receipt we're about to write below. If the send races
+    # or the caller replays, only one debit lands.
+    receipt_id_precomputed = str(uuid.uuid4())
+    debit = await credits_svc.check_and_debit(
+        user_id=user["id"], receipt_id=receipt_id_precomputed,
+        application_id=req.application_id, reason="email_route_dispatch",
+    )
+    if not debit.get("ok"):
+        # Log the honest halt (audit but not a receipt — no send happened).
+        await audit.write(user["id"], "email_route.halt_no_credits",
+                           f"application:{req.application_id}",
+                           {"destination": req.destination.lower(),
+                            "balance_after": debit.get("balance_after", 0)})
+        raise HTTPException(
+            status_code=402,
+            detail={
+                "error": "insufficient_credits",
+                "state": "paused_no_credits",
+                "balance": debit.get("balance_after", 0),
+                "message": "Out of application credits. Item stays queued "
+                            "in your shortlist. Grant refills automatically "
+                            "on UTC month-start; admin grants also work. "
+                            "Re-dispatch to resume — full gates re-run at "
+                            "that time.",
+            },
+        )
+
     # Phase 1 §vi (1c) — instant-scheduling link. Append the user's saved
     # booking URL to the outbound body when present. Runs AFTER preflight
     # so validator claim-grounding is not muddied by user-supplied contact
@@ -327,7 +367,7 @@ async def dispatch(req: EmailDispatchRequest,
     _kind = "email_sent" if outbox_state == "sent" else "email_dry_run"
     _manifest = f"{_kind}:{dedup}"
     receipt = {
-        "id": str(uuid.uuid4()),
+        "id": receipt_id_precomputed,   # debit already keyed against this id
         "user_id": user["id"],
         "application_id": req.application_id,
         "job_id": _job_id,

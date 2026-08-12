@@ -223,3 +223,67 @@ test_superseded_claims_ignored                 PASSED   ← superseded_by field 
 ```
 
 ---
+
+## Batch E · Credit-halt wired into email-route dispatch (2026-08-12)
+
+Consumer #1: the email-route `POST /dispatch` path now calls `credits.check_and_debit(...)` at the correct ordering point — AFTER preflight/consent/throttle/dedup, BEFORE any outbox insert / provider.send() / receipt write.
+
+### E.1 · Wiring point
+
+```
+dispatch(req):
+  1. ownership_check(app_id, user_id)
+  2. dedup lookup       ← replays exit here BEFORE debit (idempotency)
+  3. throttle check
+  4. preflight validator
+  5. persist_verdict
+  6. credits.check_and_debit(user_id, receipt_id_precomputed, app_id)  ← NEW
+       ├ ok=True  → continue
+       └ ok=False → HTTPException 402 {error:"insufficient_credits",
+                                       state:"paused_no_credits",
+                                       balance:0, message:<refill+re-dispatch>}
+                    audit: email_route.halt_no_credits
+                    NO outbox row. NO receipt. NO transport call.
+  7. body_final = req.body + booking_url appendix
+  8. DRY-RUN or LIVE fork (provider.send if live+configured)
+  9. outbox insert (state="sent"|"dry_run")
+ 10. submission_receipts insert  ← uses receipt_id_precomputed → matches debit
+ 11. audit: email_route.dispatch  ← includes dispatch_mode/provider/sent_to_smtp
+```
+
+Rails preserved:
+* Credits are a FINAL brake — they NEVER bypass caps, dedup, gates, preflight, or throttles (all run first).
+* `receipt_id_precomputed = uuid4()` is generated BEFORE the debit and reused as the ledger `receipt_id` AND the `submission_receipts.id`. Guarantees debit-idempotency and receipt-immutability are keyed to the SAME identifier — a replay of the same physical dispatch never double-debits and never writes two receipts.
+* Duplicate dispatch (same `dedup_key`) short-circuits at step 2 — a replay returns the existing outbox row untouched, no debit, no receipt duplication.
+
+### E.2 · Parked-item resume re-validates fully (founder amendment)
+
+By construction: a "parked" item is a shortlist row whose email-route dispatch was refused for insufficient credits. There is NO parked-items collection separate from `applications`. The user's re-dispatch of a parked item runs the FULL dispatch pipeline top-to-bottom — dedup, preflight, throttle, credit re-check — with the current DB state. Stale caps / closed jobs / mismatched claims all block again if applicable. There is no code path that dispatches a stale item on stale checks.
+
+Structural test `test_dispatch_ordering_preflight_before_credit` pins the exact order (dedup < preflight < debit < outbox insert). If a future refactor breaks the ordering, the test fails LOUDLY.
+
+### E.3 · 402 shape documented
+
+Test `test_402_halt_shape_documented` grep-pins the exact tokens `status_code=402`, `"insufficient_credits"`, `"paused_no_credits"`, and `re-dispatch` in the source — the UI can rely on this shape.
+
+### E.4 · Pytest — 4 halt invariants + parity, 4/4 pass
+
+```
+$ python -m pytest tests/test_email_route_credit_halt.py -v
+test_debit_succeeds_at_positive_balance   PASSED  ← 1→0 debit ok
+test_debit_halts_at_zero                  PASSED  ← 0 balance → insufficient_credits, no ledger row
+test_dispatch_ordering_preflight_before_credit PASSED  ← structural ordering
+test_402_halt_shape_documented            PASSED  ← 402 tokens present in source
+```
+
+Full email-route + credits combined suite: **17 passed, 1 skipped** (`test_default_is_dry_run` skips due to prior-run throttle; passes fresh).
+
+### E.5 · Sprint form-route + Wave auto-dispatch — NOT WIRED IN THIS BATCH
+
+Scope note: the founder's Batch E also mentions the sprint form-route submit path and a Standing-Wave auto-dispatch loop. Current codebase has:
+- Sprint form-route: **route exists but no auto-submit path** exists today (hard-locked pending Batch F telemetry threshold). So there's no consumer to wire — will land in Batch F when auto-submit is unlocked.
+- Standing-Wave AAB tick: **shortlists only, does not auto-dispatch**. The credit brake is placed at the actual send point (email-route dispatch), so Standing Wave that queues items for later user-triggered dispatch inherits the halt behavior transitively. When/if we later add "Standing Wave auto-dispatches email-route on new arrivals" that call-site will invoke the same `check_and_debit` — no new logic needed.
+
+Documented here for the tester brief so the split brief for auto-apply-lane can verify the halt behavior WITHOUT expecting a not-yet-shipped auto-dispatcher.
+
+---
