@@ -190,3 +190,36 @@ test_empty_claims_short_circuits_gracefully    PASSED   ← 0-claim user gets st
 
 ---
 
+
+## Batch C · Auto-spectrum suggestion (2026-08-12)
+
+Pre-draws a starter spectrum from the Passport for the approve-&-launch screen (Batch D). Backend-only in this batch; UI consumes it in D.
+
+### C.1 · New endpoint — `GET /api/v1/spectrum/suggest`
+
+Auth-required. Returns `{titles, radius_mi, pay_floor, rationale, honest_label}`.
+
+### C.2 · Suggestion logic (approved-only from Passport)
+
+* **Titles**: iterate `claims` where `status="approved" AND user_approved=True AND (superseded_by is None or missing)` in `updated_at DESC` order. Extract title from `value.role` → `value.title` → `value.name`. De-dupe case-insensitive. Cap at 5. Only claim types `role`, `experience`, `employment`, `job` contribute.
+* **Radius**: default `25` mi (matches existing `/jobs/feed` default).
+* **Pay floor**: MEDIAN of `annual_usd` from `compensation` / `compensation_history` / `pay` claims where `value.verified == True` AND `value.end_year >= (current_year - 2)`. Zero verified rows → `pay_floor = null` with `rationale.pay_floor = "no_verified_history"`. **Never a fabricated number.** Unverified rows are silently excluded from the median.
+
+### C.3 · UI copy (verbatim, from `honest_label`)
+
+`"suggested from your Passport — edit anytime"` — the UI shows this exact string above the pre-filled spectrum form.
+
+### C.4 · Pytest — 5 invariants, 5/5 pass
+
+```
+$ python -m pytest tests/test_spectrum_suggest.py -v
+test_suggest_titles_only_from_approved_claims  PASSED   ← pending/unapproved claims cannot surface as titles
+test_pay_floor_uses_verified_history_median    PASSED   ← [145000, 165000] verified → floor=155000
+test_pay_floor_never_invented_when_no_verified PASSED   ← unverified-only user → pay_floor=None, "no_verified_history"
+test_empty_user_gets_all_empty_with_rationale  PASSED   ← no claims → structured empty with honest rationales
+test_superseded_claims_ignored                 PASSED   ← superseded_by field respected
+
+5 passed in 0.16s
+```
+
+---

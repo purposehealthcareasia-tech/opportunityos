@@ -406,3 +406,7 @@ app.include_router(follow_ups_router)
 # Phase 6d — Application Credits (internal Fynd ledger; halt for Auto-Apply)
 from domains.credits.router import router as credits_router  # noqa: E402
 app.include_router(credits_router)
+
+# Phase 6b — Auto-spectrum suggestion (Passport → spectrum)
+from domains.spectrum.router import router as spectrum_router  # noqa: E402
+app.include_router(spectrum_router)
