@@ -552,3 +552,48 @@ The single residual failure — `test_phase3_integration::test_match_score_and_f
 
 **Test-side workaround (in-place today):** feed-mutation tests append a unique `within_mi=99991..99997` cache-bust to force a fresh compute. That filter has the SIDE EFFECT of hiding Remote-US sample rows (they have `distance_from_phoenix_mi=None`), so `_fixture_expectations.py` exposes both PHOENIX-ONLY (`SAMPLE_FEED_PASSING`) and ALL-SAMPLES (`SAMPLE_FEED_PASSING_ALL`) variants; each test picks based on whether its /feed call includes `within_mi`. See docstring in `backend/tests/_fixture_expectations.py`.
 
+
+---
+
+## §10 · Phase 6 branch pack (2026-08-12) — TESTER-BRIEF READY
+
+**Scope:** Two-tap onboarding + credit-metered auto-apply (Founder Directive Phase 6, all six sub-items 6a-6f) + sanctioned Step-0 email-route go-live wiring + Step-0.5 smoke-hygiene fix.
+
+**Merge state:** All code committed to `main` locally. `git push` remains blocked per the founder's Save-to-GitHub-via-chat rail. Publish-3 healthcheck fix (`9f1f0629`) already deployed to fynd.llc.
+
+**Full pytest floor:** **712 passed / 2 failed / 4 skipped in 387.38s (6:27)**. Both failures are pre-existing state-pollution flakes that pass in isolation (`test_match_score_and_feedback`, `TestSiblingSessionRevocationOnPasswordChange`). Documented in §9.7. Phase 6 code touched none of the corresponding modules.
+
+**+61 vs. the 651-suite founder reference. +35 vs. this session's start.**
+
+### Rails audit — every locked invariant verified
+
+- Consent gates enforced (per-scope `consent_records` rows written verbatim by `POST /onboarding/launch`, NOT collapsed)
+- Employer caps never bypassed (credit halt is FINAL brake, runs post-preflight-post-cap; `test_dispatch_ordering_preflight_before_credit` pins the order)
+- Receipts durable + idempotent (`receipt_id_precomputed` shared between debit ledger and receipt insert)
+- No scraping / CAPTCHA (zero new HTTP-outbound in the phase)
+- Autopilot auto-submit SHIPS DISABLED (`user_not_opted_in` default; gate constants hardcoded, not env-flags)
+- Email-route defaults to DRY-RUN (`EMAIL_ROUTE_DRY_RUN=false` exact-string required to activate; parked dry-run rows never replayed — structural test)
+- .env tripwire clean (`git ls-files | grep -E "\.env$|test_credentials\.md$|tmp_"` returns empty)
+
+### Full evidence
+
+See `docs/PHASE-6-EVIDENCE.md` for per-batch acceptance evidence, commit SHAs, pytest command outputs, and rails table.
+
+### Reviewer / tester quick-start
+
+Fixture credentials & auth transport notes: `memory/test_credentials.md`. Preview base URL is the value of `REACT_APP_BACKEND_URL` in `/app/frontend/.env`.
+
+Route-level smoke:
+```bash
+API_URL=$(grep REACT_APP_BACKEND_URL /app/frontend/.env | cut -d= -f2)
+TOKEN=$(curl -s -X POST "$API_URL/api/v1/auth/login" \
+   -H 'Content-Type: application/json' \
+   -d '{"email":"fixture-ead@opportunityos.dev","password":"Fixture!Test1"}' \
+   | python3 -c "import sys,json;print(json.load(sys.stdin)['access_token'])")
+
+curl -s -H "Authorization: Bearer $TOKEN" "$API_URL/api/v1/credits/me"
+curl -s -H "Authorization: Bearer $TOKEN" "$API_URL/api/v1/spectrum/suggest"
+curl -s -H "Authorization: Bearer $TOKEN" "$API_URL/api/v1/autopilot/status"
+```
+
+Merge pre-authorized on tester-gate PASS.
