@@ -534,12 +534,12 @@ Rail-lock test file `tests/test_onboarding_launch_scope_rail.py` — 5 tests pas
 
 ```
 fixture-ead@opportunityos.dev  / Fixture!Test1    →  50 credits, plan=starter    (LAUNCH-READY demo; 4 seeded apps for real-debit path)
-fixture-broad@opportunityos.dev/ Fixture!Broad1   →   0 credits, plan=starter    (paused_no_credits demo; 1 seeded shortlisted app for direct 402 exercise)
+fixture-broad@opportunityos.dev/ Fixture!Broad1   →   0 credits, plan=founder    (paused_no_credits demo; plan=founder pins grant=0 so monthly_refill_all can't top up; 1 seeded shortlisted app for direct 402 exercise)
 ```
 
 Balance is re-baselined on every backend startup via `application_credits_balance` insert (see `/app/backend/domains/seeds/seeder.py`, ledger source slugs `fixture_rebase_launch_ready` and `fixture_broad_rebase_zero_credits`).
 
-`fixture-broad@` also carries exactly one `applications` row in `state=shortlisted` marked `fixture_purpose="phase6_batch_d_402_demo"` (SampleCo demo job pin, seeded in `_seed_fixture_broad_dispatchable_app`). Combined with the deterministic 0-credit balance + base resume manifest already on this user, `POST /api/v1/email-route/dispatch` clears preflight and halts at credits — returning HTTP 402 `paused_no_credits` deterministically.
+**Deterministic-zero rail:** `fixture-broad@`'s credits row uses `plan="founder"` (independent of subscription plan, which stays `"plus"`). The `monthly_refill_all` scheduler reads `PLAN_MONTHLY_GRANT[plan]` and skips when the grant ≤ 0. This makes the zero-credit fixture survive a UTC month-start refill and any startup scheduler run.
 
 ### Direct HTTP 402 `paused_no_credits` exercise — VERIFIED (2026-08-12)
 

@@ -822,19 +822,25 @@ async def _rebase_fixture_broad_user() -> str:
 
     # Phase 6d — deterministic ZERO-credit balance for the 402 /
     # paused_no_credits demo. Wipe balance + ledger then materialize a
-    # row at balance=0, is_unlimited=False. `test_credentials.md` names
-    # this fixture as the ZERO-CREDIT demo user (Batch D UI).
+    # row at balance=0. `test_credentials.md` documents this fixture
+    # as the ZERO-CREDIT demo user (Batch D UI).
+    #
+    # Credits plan is pinned to "founder" (monthly grant = 0) so that
+    # the `monthly_refill_all` scheduler NEVER tops this fixture back
+    # up on the next UTC month-start — the deterministic zero survives
+    # a restart AND a scheduler run. Subscription plan (wave capacity)
+    # is independently kept at "plus" via `subs_svc.set_plan` above.
     await db.application_credits_balance.delete_many({"user_id": user_id})
     await db.application_credits_ledger.delete_many({"user_id": user_id})
     await db.application_credits_balance.insert_one({
-        "user_id": user_id, "plan": "starter", "balance": 0,
+        "user_id": user_id, "plan": "founder", "balance": 0,
         "is_unlimited": False, "created_at": now, "updated_at": now,
     })
     await db.application_credits_ledger.insert_one({
         "id": str(uuid.uuid4()), "user_id": user_id,
         "direction": "grant", "amount": 0,
         "source": "fixture_broad_rebase_zero_credits",
-        "plan": "starter", "is_unlimited_flag": False, "ts": now,
+        "plan": "founder", "is_unlimited_flag": False, "ts": now,
     })
 
     # Phase 6d Batch D — dispatchable application row so testers can
