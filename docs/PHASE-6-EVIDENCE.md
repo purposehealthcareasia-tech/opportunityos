@@ -137,3 +137,56 @@ tests/test_ensure_indexes_ordering_stable.py::test_ensure_indexes_helpers_are_al
 
 ---
 
+## Batch B · Bulk-attest with claim-set hash (2026-08-12)
+
+Single-tap "Approve all N claims" replaces per-claim tapping while preserving expandable per-claim review/edit/reject. Attestation records the SHA-256 of a canonicalized claim set into the consent ledger, so what was attested is cryptographically pinned and independently verifiable.
+
+### B.1 · New endpoint — `POST /api/v1/claims/attest-all`
+
+Consent-gated on `process_career_data` (same as sibling routes). No body. Returns:
+
+```json
+{
+  "attested_count": 3,
+  "newly_approved": 3,
+  "newly_approved_ids": ["...", "...", "..."],
+  "claim_set_hash": "sha256:<64-hex>",
+  "consent_row_id": "<uuid>"
+}
+```
+
+`newly_approved_ids` lists claims that flipped from pending → approved by THIS call (0 on a re-attest of an already-approved set). The `claim_set_hash` is what the consent ledger row pins.
+
+### B.2 · Canonicalization
+
+`_claim_set_hash()`: sort claims by `id`, canonicalize each into `{id, type, value, sensitivity}` where `value` is `json.dumps(v, sort_keys=True, separators=(',', ':'))`. Then `json.dumps(list, sort_keys=True, separators=(',',':'))` and SHA-256. Result is `"sha256:" + hex`. Deterministic, byte-stable across processes, unaffected by dict/db ordering.
+
+### B.3 · Consent ledger row shape
+
+Written via existing `domains/consent/repository.py::append` — no schema migration needed (Mongo). New fields on the row:
+
+- `scope: "claims.attest_all"` (new scope key; existing SCOPE_KEYS not enforced for this internal row)
+- `attestation_hash: "sha256:..."`
+- `attested_count: <int>`
+- `newly_approved: <int>`
+
+Existing shape preserved (`user_id`, `granted`, `policy_text_version`, `actor`, `source`, `ts`, `id`).
+
+### B.4 · Unapproved-Passport rule preserved
+
+The Passport still generates ONLY from claims where `status="approved" AND user_approved=True`. `attest_all` mutates those two fields in one action; no code path in the Passport generator was touched. Individual `POST /claims/{id}/approve`, `POST /claims/{id}/reject`, `PUT /claims/{id}` still work unchanged — bulk-attest is purely additive.
+
+### B.5 · Pytest — 4 invariants, 4/4 pass
+
+```
+$ python -m pytest tests/test_claims_attest_all.py -v
+test_attest_all_returns_sha256_hash            PASSED   ← hash shape sha256:<64>, stable on re-attest
+test_hash_changes_when_claim_edited            PASSED   ← edit a claim → next attest hash differs
+test_consent_row_written_with_hash             PASSED   ← consent_records row contains attestation_hash, count, policy_text_version
+test_empty_claims_short_circuits_gracefully    PASSED   ← 0-claim user gets structured graceful response, no consent row written
+
+4 passed in 0.37s
+```
+
+---
+

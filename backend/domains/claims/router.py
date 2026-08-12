@@ -51,3 +51,22 @@ async def edit_claim(claim_id: str, req: EditClaimRequest, user: dict = Depends(
 @router.post("/bulk-approve")
 async def bulk_approve(req: BulkApproveRequest, user: dict = Depends(require_consent("process_career_data"))):
     return await svc.bulk_approve(user["id"], ctype=req.type, ids=req.ids)
+
+
+@router.post("/attest-all", status_code=201)
+async def attest_all(user: dict = Depends(require_consent("process_career_data"))):
+    """Phase 6b · Bulk-attest.
+
+    ONE tap to attest every current claim as true. Records a consent
+    ledger row with the SHA-256 of the canonicalized claim set so
+    "what was attested" is cryptographically pinned. Per-claim
+    edit/reject still works alongside (the individual list endpoints
+    are unchanged). Unapproved-Passport rule unchanged — nothing
+    generates from claims that aren't attested here.
+    """
+    from core.policy import policy_version
+    return await svc.attest_all(
+        user["id"],
+        policy_text_version=policy_version(),
+        source="claims.attest-all",
+    )

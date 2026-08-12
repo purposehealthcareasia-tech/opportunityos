@@ -139,3 +139,89 @@ async def bulk_approve(user_id: str, *, ctype: str | None, ids: list[str] | None
     if approved:
         await audit.write(user_id, "claims.bulk_approve", f"user:{user_id}", {"count": len(approved), "type": ctype})
     return {"approved_count": len(approved), "approved_ids": approved}
+
+
+# ---------------------------------------------------------------------------
+# Phase 6b · attest-all with claim-set hash.
+#
+# Approves every pending / not-yet-approved claim in one action AND records
+# a cryptographic hash of the exact attested set into the consent ledger.
+# The hash is what's pinned — the raw claim rows are stored in `claims`
+# and never mutated without a version bump (via `edit_claim` → new row +
+# supersedes chain). This means "what you attested to" is provable
+# byte-for-byte after the fact.
+#
+# Called by the /onboarding/launch approve-&-launch screen (Batch C/D).
+# Never generates from unattested claims (Passport rule unchanged).
+# ---------------------------------------------------------------------------
+def _claim_set_hash(claims: list[dict]) -> str:
+    """SHA-256 of a canonicalized `[{id, type, value_json, sensitivity}...]`
+    list. Sorted by id so ordering never changes the hash. Value dict is
+    JSON-canonicalized (sort_keys=True, separators=(',',':') → no whitespace,
+    stable key order)."""
+    import hashlib
+    import json as _json
+    canonical = sorted(
+        [{
+            "id": c["id"],
+            "type": c.get("type"),
+            "value": _json.loads(_json.dumps(c.get("value") or {},
+                                                sort_keys=True, separators=(",", ":"))),
+            "sensitivity": c.get("sensitivity") or "normal",
+        } for c in claims],
+        key=lambda x: x["id"],
+    )
+    payload = _json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return "sha256:" + hashlib.sha256(payload).hexdigest()
+
+
+async def attest_all(
+    user_id: str, *,
+    policy_text_version: str,
+    source: str = "onboarding-launch",
+) -> dict:
+    """Approve every pending / not-yet-approved claim for this user AND
+    write a `claims.attest_all` consent-ledger row containing the
+    claim-set hash. Idempotent — a repeat call over the same claim set
+    approves nothing new but re-records the current hash (so drift is
+    visible in the audit trail)."""
+    from domains.consent import repository as consent_repo
+    rows = await repo.list_for_user(user_id, include_history=False)
+    if not rows:
+        return {"attested_count": 0, "claim_set_hash": None,
+                "consent_row_id": None, "message": "no_claims_to_attest"}
+    approved_ids: list[str] = []
+    for c in rows:
+        if c.get("superseded_by"):
+            continue
+        if c.get("status") != "approved" or not c.get("user_approved"):
+            await repo.update_fields(c["id"], {"status": "approved", "user_approved": True})
+            approved_ids.append(c["id"])
+    # Re-read the effective (post-mutation) set for the hash.
+    effective = [c for c in await repo.list_for_user(user_id, include_history=False)
+                 if not c.get("superseded_by")]
+    claim_hash = _claim_set_hash(effective)
+    consent_row_id = await consent_repo.append({
+        "user_id": user_id,
+        "scope": "claims.attest_all",
+        "granted": True,
+        "policy_text_version": policy_text_version,
+        "actor": user_id,
+        "source": source,
+        "attestation_hash": claim_hash,
+        "attested_count": len(effective),
+        "newly_approved": len(approved_ids),
+    })
+    await audit.write(user_id, "claims.attest_all", f"user:{user_id}", {
+        "attested_count": len(effective),
+        "newly_approved": len(approved_ids),
+        "attestation_hash": claim_hash,
+        "consent_row_id": consent_row_id,
+    })
+    return {
+        "attested_count": len(effective),
+        "newly_approved": len(approved_ids),
+        "newly_approved_ids": approved_ids,
+        "claim_set_hash": claim_hash,
+        "consent_row_id": consent_row_id,
+    }
