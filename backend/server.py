@@ -402,3 +402,7 @@ from domains.wave import router as wave_router  # noqa: E402
 from domains.follow_ups import router as follow_ups_router  # noqa: E402
 app.include_router(wave_router)
 app.include_router(follow_ups_router)
+
+# Phase 6d — Application Credits (internal Fynd ledger; halt for Auto-Apply)
+from domains.credits.router import router as credits_router  # noqa: E402
+app.include_router(credits_router)

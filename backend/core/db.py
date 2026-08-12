@@ -184,6 +184,41 @@ async def _ensure_founder_brief_indexes(db: AsyncIOMotorDatabase) -> None:
     await db.jobs.create_index("first_seen")
 
 
+async def _ensure_credits_indexes(db: AsyncIOMotorDatabase) -> None:
+    """Phase 6d Application Credits — atomic-debit balance doc + append-only ledger.
+
+    Rails pinned by these indexes:
+      * `application_credits_balance` — one row per user; unique on `user_id`.
+      * `application_credits_ledger` — append-only; unique compound on
+        (user_id, receipt_id, direction) so the debit path is idempotent
+        under retries (a replay of the same dispatch hits E11000 and
+        rolls back the balance decrement).
+    """
+    await db.application_credits_balance.create_index(
+        [("user_id", ASCENDING)], unique=True,
+    )
+    # Debit idempotency — replay-safe. `receipt_id` is a UUID string only
+    # on debit rows; grant rows lack the field entirely. Partial filter
+    # `$type: "string"` restricts the unique constraint to actual debit
+    # rows (MongoDB partial-index expressions don't support `$ne`/`$not`).
+    await db.application_credits_ledger.create_index(
+        [("user_id", ASCENDING), ("receipt_id", ASCENDING), ("direction", ASCENDING)],
+        unique=True,
+        partialFilterExpression={"receipt_id": {"$type": "string"}},
+        name="credits_ledger_debit_unique",
+    )
+    # Query-side: recent rows per user (ledger_page uses ts DESC).
+    await db.application_credits_ledger.create_index(
+        [("user_id", ASCENDING), ("ts", DESCENDING)],
+    )
+    # Monthly-refill idempotency lookup.
+    await db.application_credits_ledger.create_index(
+        [("user_id", ASCENDING), ("source", ASCENDING), ("month_key", ASCENDING)],
+        partialFilterExpression={"source": "monthly_refill"},
+        name="credits_ledger_monthly_refill_idempotent",
+    )
+
+
 # --------------------------------------------------------------------------- #
 # Public entry point — order matches the pre-refactor byte-identical sequence.
 # --------------------------------------------------------------------------- #
@@ -198,6 +233,7 @@ _ENSURE_INDEX_GROUPS = (
     _ensure_phase5_indexes,
     _ensure_phase6_indexes,
     _ensure_founder_brief_indexes,
+    _ensure_credits_indexes,
 )
 
 

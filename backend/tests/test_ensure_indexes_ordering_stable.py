@@ -98,6 +98,17 @@ EXPECTED_INDEX_CALLS = [
     ("personas",             ([("user_id", 1), ("superseded_by", 1)],), ()),
     ("discovery_runs",       ([("ts", -1)],), ()),
     ("jobs",                 ("first_seen",), ()),
+    # Phase 6d — Application Credits (added 2026-08-12):
+    ("application_credits_balance", ([("user_id", 1)],), (("unique", True),)),
+    ("application_credits_ledger",  ([("user_id", 1), ("receipt_id", 1), ("direction", 1)],),
+                                    (("name", "credits_ledger_debit_unique"),
+                                     ("partialFilterExpression",
+                                      {"receipt_id": {"$type": "string"}}),
+                                     ("unique", True))),
+    ("application_credits_ledger",  ([("user_id", 1), ("ts", -1)],), ()),
+    ("application_credits_ledger",  ([("user_id", 1), ("source", 1), ("month_key", 1)],),
+                                    (("name", "credits_ledger_monthly_refill_idempotent"),
+                                     ("partialFilterExpression", {"source": "monthly_refill"}))),
 ]
 
 
@@ -136,7 +147,7 @@ async def test_ensure_indexes_sequence_byte_identical(monkeypatch):
         f"First difference at position {next((i for i,(a,b) in enumerate(zip(recorder._calls, EXPECTED_INDEX_CALLS)) if a != b), 'N/A')}"
     )
     # Also lock the total count so a helper adding an unlisted index fails immediately.
-    assert len(recorder._calls) == len(EXPECTED_INDEX_CALLS) == 62
+    assert len(recorder._calls) == len(EXPECTED_INDEX_CALLS) == 66
 
 
 def test_ensure_indexes_helpers_are_all_wired():

@@ -61,3 +61,79 @@ Ran the full backend suite after this batch — will report actual counts in the
 
 ---
 
+## Batch A · Application Credits ledger (2026-08-12)
+
+Foundational for the halt-behavior in Batch E. Backend-only, no UI in this batch.
+
+### A.1 · Domain module — `backend/domains/credits/`
+
+* `service.py` — public API:
+  * `ensure_user_balance_row(user_id, plan)` — idempotent bootstrap, appends starter grant to ledger
+  * `get_balance(user_id, use_cache)` — display-side, 5s in-process cache
+  * `check_and_debit(user_id, receipt_id, application_id, reason)` — **atomic**, always reads DB (never cache); returns `{ok, balance_after, is_unlimited, duplicate}` on success or `{ok:False, error:"insufficient_credits"}` when zero
+  * `grant(user_id, amount, source, admin_actor)` — additive, ledger-audited
+  * `monthly_refill_all()` — scheduler entry point; idempotent per `(user_id, source="monthly_refill", month_key)`
+  * `ledger_page(user_id, limit)` — recent-first user-scoped ledger read
+* `router.py` — `GET /credits/me`, `GET /credits/ledger`, `POST /admin/credits/grant`
+
+### A.2 · Plan defaults (decide-and-document)
+
+```python
+PLAN_MONTHLY_GRANT = {"starter": 50, "pro": 250, "founder": 0}
+UNLIMITED_PLANS = frozenset(("founder",))  # founder plan → is_unlimited=True
+```
+
+### A.3 · Atomic debit implementation
+
+The core safety amendment. Debit is a single `find_one_and_update`:
+
+```python
+db.application_credits_balance.find_one_and_update(
+    {"user_id": user_id, "balance": {"$gte": 1}},
+    {"$inc": {"balance": -1}, "$set": {"updated_at": now}},
+    return_document=True,
+)
+```
+
+If it returns `None`, the balance was `< 1` and NO mutation happened → return `insufficient_credits`. Then the ledger row is appended with `direction="debit"`, `receipt_id`, `application_id`, `balance_after`. If the ledger insert hits the unique-compound index `(user_id, receipt_id, direction)`, we ROLLBACK the balance decrement (`$inc: +1`) and return `duplicate: true` — replay-safe. Two concurrent debits at balance=1 → exactly ONE succeeds, one fails. Proven by the test below.
+
+### A.4 · Cache is read-side only
+
+`_DISPLAY_CACHE` (5s TTL, in-process dict) is populated only by `get_balance(use_cache=True)`. `check_and_debit` never consults it. Test `test_display_cache_does_not_authorize_spends` pins this: cache poisoned with stale balance → debit still hits DB and correctly refuses.
+
+### A.5 · Indexes added
+
+Two new collections wired into `core/db.py::_ensure_credits_indexes`:
+
+- `application_credits_balance` — `unique(user_id)`
+- `application_credits_ledger` — 3 indexes:
+  - unique compound `(user_id, receipt_id, direction)` with `partialFilterExpression={"receipt_id": {"$type": "string"}}` (MongoDB partial-index expressions don't support `$ne` — `$type:"string"` restricts uniqueness to actual debit rows)
+  - query-side `(user_id, ts DESC)` for `ledger_page`
+  - monthly-refill idempotency partial `(user_id, source, month_key)` scoped to `source="monthly_refill"`
+
+`test_ensure_indexes_ordering_stable.py` updated to reflect the 4 new create_index calls; total count 62 → 66.
+
+### A.6 · Pytest — 8 invariants, 10/10 pass
+
+```
+$ python -m pytest tests/test_credits_ledger.py tests/test_ensure_indexes_ordering_stable.py -v
+tests/test_credits_ledger.py::test_new_user_gets_starter_grant                PASSED
+tests/test_credits_ledger.py::test_atomic_debit_no_double_spend               PASSED  ← concurrent debits at balance=1 → exactly ONE wins
+tests/test_credits_ledger.py::test_debit_replay_is_idempotent                 PASSED  ← same (user, receipt) replay returns duplicate:true, balance NOT double-decremented
+tests/test_credits_ledger.py::test_insufficient_credits_no_mutation           PASSED  ← balance=0 debit → error, ledger unchanged
+tests/test_credits_ledger.py::test_unlimited_plan_never_decrements            PASSED  ← 5 debits on founder plan → balance unchanged
+tests/test_credits_ledger.py::test_grant_appends_and_increments               PASSED
+tests/test_credits_ledger.py::test_monthly_refill_idempotent                  PASSED  ← 2nd refill same month = no-op
+tests/test_credits_ledger.py::test_display_cache_does_not_authorize_spends    PASSED  ← cache poisoning cannot authorize a spend
+tests/test_ensure_indexes_ordering_stable.py::test_ensure_indexes_sequence_byte_identical PASSED
+tests/test_ensure_indexes_ordering_stable.py::test_ensure_indexes_helpers_are_all_wired   PASSED
+
+10 passed in 0.22s
+```
+
+### A.7 · Debit path not yet wired into consumers
+
+`check_and_debit` is available but NO caller invokes it yet — the email-route dispatch and the sprint submitter still complete without touching credits. That wiring lands in Batch E (auto-apply lane) after the intermediate batches (bulk attest, spectrum, approve-&-launch UI) so the credit-halt behavior can be exercised through the same flow the tester-brief will walk.
+
+---
+
