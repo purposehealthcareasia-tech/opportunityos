@@ -444,6 +444,12 @@ Every endpoint is in the `/api/openapi.json` — verified by supervisor restart 
 **Route:** `/onboarding/launch`, wired inside `<ProtectedRoute><Layout />` in `App.js`. Sidebar entry added under **Launch** (Rocket icon, Phase 6, always active for authed users).
 **Rail:** consent language rendered VERBATIM per scope from `GET /api/v1/meta/policy` — no collapsing, no summarizing. `pay_floor: null` from `/spectrum/suggest` renders as an explicit "no verified pay history yet" honest-empty card, never a fabricated number.
 
+### Tester gate results (2026-08-12)
+
+- **Backend split-brief:** **4 / 4 PASS** — `credits/me=50`, `spectrum` `pay_floor=null` with `"no_verified_history"` rationale, `/onboarding/launch` 201 envelope exact, real debit `50 → 49` observed on email-route dispatch.
+- **UI split-brief:** **3 / 3 PASS** — T1 live 402 `paused_no_credits` with `balance: 0` on the seeded app; T2 full composed screen rendered for `fixture-ead@`, Authorize produced `onboarding-launch-success`; T3 zero-credit banner honestly surfaced for `fixture-broad@`, no crash.
+- **WARN resolved:** UI-envelope consent-row count mismatch — root cause was the endpoint accepting extra scopes silently; fix rail-tightens `LaunchRequest` to reject anything outside `LAUNCH_SCOPES` (see §"UI-gate WARN resolution" below). Every row the endpoint can write is now individually surfaced verbatim on the screen.
+
 ### API composition on this screen
 
 | Step | Call | State fetched | UI section |
@@ -478,6 +484,51 @@ Descriptions surfaced on the launch screen match `GET /api/v1/meta/policy` byte-
 - **`process_career_data`** → `Let Fynd process the résumé data, claims, and projects I approve so I can build a verified Career Passport.`
 
 Rendered verbatim inside `data-testid=launch-consent-description-<scope>` — no collapsing, no summarizing.
+
+### UI-gate WARN resolution — verbatim-consent audit-hole closed (2026-08-12)
+
+**Tester WARN:** UI displayed 2 per-scope consent rows for `fixture-ead@` while the launch envelope could write more `consent_row_ids` than the UI surfaced.
+
+**Root cause:** `POST /api/v1/onboarding/launch` accepts a `consents: list[str]` in its request. The prior implementation only rejected UNKNOWN or MISSING-REQUIRED scopes — it did NOT reject EXTRA scopes beyond `LAUNCH_SCOPES`. So a caller could send e.g. `["submit_applications","process_career_data","discover_jobs","email_me","generate_materials"]` and get 5 rows written, of which the React UI only surfaces the first 2 verbatim. This is a client-side rail (the UI never sends more than 2), but the endpoint-level surface is what the verbatim-consent law binds.
+
+**Exact mapping of every consent_records row the launch endpoint writes**, and where each is surfaced on-screen:
+
+| Row written by launch | Scope value | Visible on `/onboarding/launch` UI | data-testid | Notes |
+|---|---|---|---|---|
+| `attest.consent_row_id` (Step 1) | `claims.attest_all` | YES — Attest card explains `claims.attest_all` explicitly | `launch-attest-summary` | System-derived pin of the attested claim SET (SHA-256), not a policy scope the user can revoke individually. |
+| `consent_row_ids[0]` (Step 3) | `submit_applications` | YES — verbatim label + verbatim description | `launch-consent-row-submit_applications`, `launch-consent-description-submit_applications` | Backend rail: LAUNCH_SCOPES member. |
+| `consent_row_ids[1]` (Step 3) | `process_career_data` | YES — verbatim label + verbatim description | `launch-consent-row-process_career_data`, `launch-consent-description-process_career_data` | Backend rail: LAUNCH_SCOPES member. |
+
+Total rows the endpoint can now write per launch call: **exactly 3**, all with visible on-screen provenance. Screenshot: `docs/phase-6-screenshots/launch_consent_provenance_full.jpeg`.
+
+**Fix (rail-tighten, no logic change to record):** `LaunchRequest` handler now rejects any scope in `req.consents` outside `LAUNCH_SCOPES` with a 400 error before any DB write:
+
+```
+400 {"error":"consent_scope_not_authorized_for_launch",
+     "extra":["discover_jobs"],
+     "allowed":["submit_applications","process_career_data"],
+     "step":"consent_scope_precheck",
+     "message":"This endpoint only accepts the two launch scopes surfaced
+                verbatim on the /onboarding/launch UI. Grant / revoke any
+                other scope from Settings, where its own policy text is
+                displayed."}
+```
+
+Rail-lock test file `tests/test_onboarding_launch_scope_rail.py` — 5 tests pass:
+1. Rejects a single extra scope (`discover_jobs`).
+2. Rejects multiple extra scopes.
+3. Preserves guard order (unknown scope still fails on the unknown-guard).
+4. Preserves guard order (missing required still fails on the required-guard).
+5. Byte-locks `LAUNCH_SCOPES = ("submit_applications", "process_career_data")` — expanding it without a coordinated UI change breaks the test.
+
+**UI copy updates for provenance clarity:**
+- Attest card foot text explicitly names the `claims.attest_all` scope and explains it's the system-derived pin, not a user-revocable policy scope.
+- Consent card foot text explicitly says: *"The /onboarding/launch endpoint only accepts these two scopes; any other scope grants must happen from Settings, where their own policy text is displayed."*
+
+**Live curl verification (post-fix, 2026-08-12):**
+- Normal launch with 2 scopes → `201`, envelope reports `attest.consent_row_id` (1) + `consent_row_ids` (2) = 3 rows total, all with on-screen provenance.
+- Launch with an extra scope `discover_jobs` → `400 consent_scope_not_authorized_for_launch` before any DB write.
+- 402 dispatch on fixture-broad@ → still returns HTTP 402 `paused_no_credits`, unchanged.
 
 ### Fixture users (test_credentials.md — 2026-08-12 addendum)
 

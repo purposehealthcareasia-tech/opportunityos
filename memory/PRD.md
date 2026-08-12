@@ -1,8 +1,21 @@
 # Fynd — Product Requirements Document
 
-## 🚀 Phase 6 Batch D UI (2026-08-12) — /onboarding/launch React screen — READY FOR GATE
+## 🚀 Phase 6 — GATE PASS (2026-08-12) · WARN resolved · merge complete on `main`
 
-**Immediate task closeout.** The founder-blocking Phase 6 UI gap is CLOSED. `/onboarding/launch` React screen is landed, wired, screenshot-covered, and pytest-regression-checked. **Awaiting founder-run split tester brief for gate PASS.**
+**Backend split-brief: 4/4 PASS · UI split-brief: 3/3 PASS · WARN resolved. Pytest floor 719 passed / 1 known-flake / 3 skipped in 5:15. .env tripwire CLEAN. Push blocked per Save-to-GitHub-via-chat rail — awaits founder Re-publish.**
+
+**UI-gate WARN resolution (verbatim-consent audit-hole closed):**
+- **Root cause:** `LaunchRequest.consents` accepted any subset of `SCOPE_KEYS`. Rail rejected unknowns + missing-required but NOT extras beyond `LAUNCH_SCOPES`. Client could send more scopes than the UI surfaces verbatim.
+- **Fix:** `/api/v1/onboarding/launch` now rejects any scope outside `LAUNCH_SCOPES` (`400 consent_scope_not_authorized_for_launch`) BEFORE any DB write. 5-test rail-lock in `tests/test_onboarding_launch_scope_rail.py` byte-locks `LAUNCH_SCOPES = ("submit_applications","process_career_data")`.
+- **Provenance mapping** (each of the 3 rows the endpoint writes → on-screen surface) documented in `docs/PHASE-6-EVIDENCE.md` §UI + fresh screenshot `launch_consent_provenance_full.jpeg`.
+- **UI copy sharpened:** Attest card names the internal `claims.attest_all` scope explicitly; Consent card foot text notes the endpoint accepts only these two scopes.
+- **Live curl re-verify:** 2-scope launch → 201/3 rows all surfaced; 3-scope launch (`+discover_jobs`) → 400 rejection before any write; 402 dispatch on `fixture-broad@` unchanged.
+
+**Merge state:** all Phase 6 code + WARN resolution committed to `main` locally. `feat/liquid-ui` is stale Phase 1 — no branch merge required. `git push` blocked per Save-to-GitHub-via-chat rail.
+
+## 🚀 Phase 6 Batch D UI (2026-08-12) — /onboarding/launch React screen — LANDED
+
+**Immediate task closeout.** The founder-blocking Phase 6 UI gap is CLOSED. `/onboarding/launch` React screen is landed, wired, screenshot-covered, and pytest-regression-checked. **UI gate PASS with WARN resolved (see top of file).**
 
 - **Landed:** `/app/frontend/src/pages/OnboardingLaunch.jsx` (single page composing Attest → Spectrum → Wave preview → Verbatim consent → Authorize).
 - **Wired:** `App.js` (protected route `/onboarding/launch`) + `Sidebar.jsx` (**Launch** entry, Rocket icon).

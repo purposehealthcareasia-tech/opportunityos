@@ -103,6 +103,26 @@ async def launch(req: LaunchRequest, user: dict = Depends(get_current_user)):
             detail={"error": "unknown_consent_scopes",
                     "unknown": unknown, "step": "consent_scope_precheck"},
         )
+    # Non-LAUNCH scopes guard — verbatim-consent law: the UI must display
+    # the exact text of every scope this endpoint will record. LAUNCH_SCOPES
+    # is the closed set the UI surfaces on `/onboarding/launch`. Anything
+    # else in `req.consents` (e.g., `discover_jobs`, `email_me`) belongs
+    # on Settings, not the launch tap — rejecting here forces the caller
+    # to grant/revoke those elsewhere so no consent row gets written
+    # without matching on-screen policy text at authorize time.
+    extra = [s for s in req.consents if s not in LAUNCH_SCOPES]
+    if extra:
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "consent_scope_not_authorized_for_launch",
+                    "extra": extra,
+                    "allowed": list(LAUNCH_SCOPES),
+                    "step": "consent_scope_precheck",
+                    "message": "This endpoint only accepts the two launch "
+                                "scopes surfaced verbatim on the /onboarding/launch "
+                                "UI. Grant / revoke any other scope from Settings, "
+                                "where its own policy text is displayed."},
+        )
 
     # ---- STEP 1: bulk attest ----
     try:

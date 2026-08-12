@@ -555,19 +555,47 @@ The single residual failure — `test_phase3_integration::test_match_score_and_f
 
 ---
 
-## §10 · Phase 6 branch pack (2026-08-12) — TESTER-BRIEF READY
+## §10 · Phase 6 branch pack (2026-08-12) — TESTER-BRIEF READY  ·  UI-GATE PASS
 
-**Scope:** Two-tap onboarding + credit-metered auto-apply (Founder Directive Phase 6, all six sub-items 6a-6f) + sanctioned Step-0 email-route go-live wiring + Step-0.5 smoke-hygiene fix.
+**Scope:** Two-tap onboarding + credit-metered auto-apply (Founder Directive Phase 6, all six sub-items 6a-6f) + sanctioned Step-0 email-route go-live wiring + Step-0.5 smoke-hygiene fix + Batch D `/onboarding/launch` React screen + WARN-resolution scope rail.
 
-**Merge state:** All code committed to `main` locally. `git push` remains blocked per the founder's Save-to-GitHub-via-chat rail. Publish-3 healthcheck fix (`9f1f0629`) already deployed to fynd.llc.
+**Merge state:** All Phase 6 code committed to `main` locally (emergent platform auto-commits per step). `feat/liquid-ui` is a stale Phase 1 branch not used for Phase 6 — no branch merge required. `git push` remains blocked per the founder's Save-to-GitHub-via-chat rail.
 
-**Full pytest floor:** **712 passed / 2 failed / 4 skipped in 387.38s (6:27)**. Both failures are pre-existing state-pollution flakes that pass in isolation (`test_match_score_and_feedback`, `TestSiblingSessionRevocationOnPasswordChange`). Documented in §9.7. Phase 6 code touched none of the corresponding modules.
+**Final pytest floor (post-WARN-resolution, 2026-08-12):** **719 passed / 1 failed / 3 skipped in 314.90s (5:15)**.
 
-**+61 vs. the 651-suite founder reference. +35 vs. this session's start.**
+- +7 vs. prior 712-count floor (5 new scope-rail tests in `test_onboarding_launch_scope_rail.py` + 2 previously-known state-pollution flakes: one now passes with the fresh baseline, one still flakes in the full suite but passes in isolation — confirmed live).
+- The remaining flake (`test_match_score_and_feedback`) is the documented state-pollution flake from §9.7. Runs green in isolation: `pytest tests/test_phase3_integration.py::test_match_score_and_feedback → 1 passed in 3.95s`.
+
+**Tester-gate results (2026-08-12):**
+- Backend split-brief: **4 / 4 PASS**
+- UI split-brief: **3 / 3 PASS** with ONE WARN → **RESOLVED** (see below).
+
+### WARN resolution — verbatim-consent audit-hole closed
+
+**Tester WARN:** UI showed 2 per-scope consent rows for `fixture-ead@` while the `/onboarding/launch` envelope could write more `consent_row_ids` than the UI surfaces.
+
+**Root cause:** `LaunchRequest.consents` accepted any subset of `SCOPE_KEYS`. Rail rejected unknowns + missing-required but NOT extras beyond `LAUNCH_SCOPES`. A caller could send 5 scopes and get 5 consent rows written, of which only the first 2 are surfaced verbatim on the React screen. Client-side rail alone; the endpoint-level surface was the true audit line.
+
+**Fix (backend-only, no logic change to `consent_svc.record`):**
+- `LaunchRequest` handler now rejects any scope outside `LAUNCH_SCOPES` with `400 consent_scope_not_authorized_for_launch` BEFORE any DB write.
+- Rail-lock test file `tests/test_onboarding_launch_scope_rail.py` — 5 tests pass; byte-locks `LAUNCH_SCOPES = ("submit_applications","process_career_data")`.
+
+**Exact mapping of every `consent_records` row the endpoint writes, and where each is surfaced on-screen** — see `PHASE-6-EVIDENCE.md` §UI. Total = 3 rows per launch (1 `claims.attest_all` hash + 2 per-scope verbatim), each with visible data-testid provenance.
+
+**UI copy sharpened for provenance clarity** (see screenshot `docs/phase-6-screenshots/launch_consent_provenance_full.jpeg`):
+- Attest card now explicitly names the internal scope `claims.attest_all` and explains it is a system-derived cryptographic pin (not a user-revocable policy scope).
+- Consent card foot text explicitly says the endpoint only accepts these two scopes, and any other scope grants must happen from Settings.
+
+**Live curl re-verify:**
+- 2-scope launch → `201`, 3 rows total, all surfaced verbatim on-screen.
+- 3-scope launch (`+discover_jobs`) → `400 consent_scope_not_authorized_for_launch` before any DB write.
+- 402 dispatch on `fixture-broad@` → still returns `HTTP 402 paused_no_credits`, unchanged.
+
+**+68 vs. the 651-suite founder reference. +42 vs. this session's start.**
 
 ### Rails audit — every locked invariant verified
 
-- Consent gates enforced (per-scope `consent_records` rows written verbatim by `POST /onboarding/launch`, NOT collapsed)
+- Consent gates enforced (per-scope `consent_records` rows written verbatim by `POST /onboarding/launch`, NOT collapsed; endpoint now REJECTS scopes outside `LAUNCH_SCOPES` so every row has matching on-screen text)
 - Employer caps never bypassed (credit halt is FINAL brake, runs post-preflight-post-cap; `test_dispatch_ordering_preflight_before_credit` pins the order)
 - Receipts durable + idempotent (`receipt_id_precomputed` shared between debit ledger and receipt insert)
 - No scraping / CAPTCHA (zero new HTTP-outbound in the phase)
@@ -577,7 +605,7 @@ The single residual failure — `test_phase3_integration::test_match_score_and_f
 
 ### Full evidence
 
-See `docs/PHASE-6-EVIDENCE.md` for per-batch acceptance evidence, commit SHAs, pytest command outputs, and rails table.
+See `docs/PHASE-6-EVIDENCE.md` for per-batch acceptance evidence, commit SHAs, pytest command outputs, rails table, UI state-coverage screenshots, and the full WARN-resolution table mapping each written consent_records row to its on-screen surface.
 
 ### Reviewer / tester quick-start
 
@@ -596,4 +624,4 @@ curl -s -H "Authorization: Bearer $TOKEN" "$API_URL/api/v1/spectrum/suggest"
 curl -s -H "Authorization: Bearer $TOKEN" "$API_URL/api/v1/autopilot/status"
 ```
 
-Merge pre-authorized on tester-gate PASS.
+Merge complete on main. `git push` blocked per the Save-to-GitHub-via-chat rail — founder to trigger the push through chat when ready.

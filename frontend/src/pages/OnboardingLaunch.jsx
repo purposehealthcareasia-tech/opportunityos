@@ -124,7 +124,10 @@ function AttestSummary({ claims, loading }) {
       </div>
       <p className="text-[11px] muted">
         Authorize hashes this exact set (SHA-256) and stores the hash on your
-        consent ledger — the attestation is cryptographically pinned.
+        consent ledger — the attestation is cryptographically pinned. That
+        attestation row uses the internal scope <code className="font-mono">claims.attest_all</code>
+        (not shown as a checkbox; it is the system-derived pin of the set
+        you attest above, not a policy scope you can revoke individually).
       </p>
     </div>
   );
@@ -440,6 +443,9 @@ function ConsentStep({ scopes, checked, onToggle, policyVersion }) {
         Consenting to policy version{' '}
         <code className="font-mono" data-testid="launch-consent-policy-version">{policyVersion || '?'}</code>.
         One row is written per scope (not collapsed) — revoke any of them in Settings anytime.
+        The <code className="font-mono">/onboarding/launch</code> endpoint only accepts these two
+        scopes; any other scope grants must happen from Settings, where their
+        own policy text is displayed.
       </p>
     </div>
   );
