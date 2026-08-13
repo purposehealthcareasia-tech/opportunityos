@@ -7,6 +7,12 @@ from services.storage import storage
 from services.text_extract import extract as extract_text
 from services.llm import parse_resume_text
 from services.queue_stub import enqueue
+from services.parse_failure_classifier import (
+    classify_extract_failure,
+    write_parse_failure,
+    REASON_EXTRACT_FAILED,
+    MIN_TEXT_CHARS_THRESHOLD,
+)
 from domains.documents import repository as doc_repo
 from domains.claims import service as claims_svc
 from domains.audit import service as audit
@@ -81,14 +87,60 @@ async def _parse_pipeline(document_id: str, user_id: str, s3_key: str, content_t
         tmp_path = Path(f"/tmp/oppos-resume-{document_id}")
         tmp_path.write_bytes(data)
         try:
-            text = extract_text(tmp_path, content_type)
+            try:
+                envelope = extract_text(tmp_path, content_type)
+            except RuntimeError as ex:
+                # Extractor failed hard (corrupt / encrypted / unsupported).
+                # Classify + telemetry + return; UI surfaces the extract_failed copy.
+                await write_parse_failure(
+                    user_id=user_id,
+                    document_id=document_id,
+                    file_kind="pdf" if "pdf" in (content_type or "") else "docx",
+                    file_bytes=len(data),
+                    extracted_chars=0,
+                    reason=REASON_EXTRACT_FAILED,
+                    pdf_num_pages=None,
+                )
+                await doc_repo.update_parse_status(
+                    document_id, status="failed", error=REASON_EXTRACT_FAILED,
+                    meta={"raw_exception": str(ex)[:200]},
+                )
+                return
         finally:
             try:
                 tmp_path.unlink(missing_ok=True)
             except Exception:
                 pass
-        if not text or len(text.strip()) < 30:
-            await doc_repo.update_parse_status(document_id, status="failed", error="extracted_text_too_short")
+        text = envelope["text"]
+        file_kind = envelope["kind"]
+        num_pages = envelope["num_pages"]
+        file_bytes = envelope["file_bytes"] or len(data)
+        extracted_chars = len(text.strip()) if text else 0
+        if extracted_chars < MIN_TEXT_CHARS_THRESHOLD:
+            reason = classify_extract_failure(
+                file_kind=file_kind,
+                file_bytes=file_bytes,
+                extracted_chars=extracted_chars,
+                pdf_num_pages=num_pages,
+            )
+            await write_parse_failure(
+                user_id=user_id,
+                document_id=document_id,
+                file_kind=file_kind,
+                file_bytes=file_bytes,
+                extracted_chars=extracted_chars,
+                reason=reason,
+                pdf_num_pages=num_pages,
+            )
+            await doc_repo.update_parse_status(
+                document_id, status="failed", error=reason,
+                meta={
+                    "extracted_chars": extracted_chars,
+                    "file_bytes": file_bytes,
+                    "file_kind": file_kind,
+                    "pdf_num_pages": num_pages,
+                },
+            )
             return
         await doc_repo.update_parse_status(document_id, status="parsing")
         result = await parse_resume_text(text, document_id, user_id=user_id)

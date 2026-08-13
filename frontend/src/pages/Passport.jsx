@@ -21,6 +21,17 @@ const STAGE_LABELS = {
   failed: 'Parse failed',
 };
 
+// Phase 6 prod-UX fix (2026-08-12): short human-readable labels for the
+// history list. The upload panel uses the full ParseFailureCard copy
+// (headline/body/tip/cta) fetched from `/parse-status`; this shorter map
+// is used only in the compact document-history list rows.
+const PARSE_ERROR_SHORT = {
+  scanned_pdf_suspected: 'PDF looks scanned — re-upload as DOCX or a text-based PDF.',
+  too_little_content: 'Very little text — add more content and re-upload.',
+  extract_failed: "We couldn't open this file — it may be corrupt or protected.",
+  extracted_text_too_short: 'Too little text extracted — re-upload.',
+};
+
 // Hoisted from an inline JSX literal (2026-08-09 code-review remediation).
 // The stage order is a module-level constant and the 4-bar progress
 // derivation is memoized against `stage`. Deduping via `indexOf(s) === i`
@@ -56,14 +67,17 @@ function UploadPanel({ onCompleted }) {
   const [documentId, setDocumentId] = useState(null);
   const [meta, setMeta] = useState(null);
   const [polling, setPolling] = useState(false);
+  // Phase 6 prod-UX fix (2026-08-12): friendly parse-failure copy + OCR
+  // offer envelope. Keeps raw slug as small-print support metadata.
+  const [failure, setFailure] = useState(null);
 
   const reset = useCallback(() => {
-    setFile(null); setError(''); setStage(null); setDocumentId(null); setMeta(null);
+    setFile(null); setError(''); setStage(null); setDocumentId(null); setMeta(null); setFailure(null);
     if (fileRef.current) fileRef.current.value = '';
   }, []);
 
   const onPick = (f) => {
-    setError('');
+    setError(''); setFailure(null);
     if (!f) return;
     if (!ALLOWED_MIMES.has(f.type) && !/\.(pdf|docx)$/i.test(f.name)) {
       setError('Only PDF and DOCX files are accepted.');
@@ -78,7 +92,7 @@ function UploadPanel({ onCompleted }) {
 
   const startUpload = async () => {
     if (!file) return;
-    setError(''); setStage('uploading');
+    setError(''); setFailure(null); setStage('uploading');
     try {
       const fd = new FormData();
       fd.append('file', file);
@@ -110,10 +124,23 @@ function UploadPanel({ onCompleted }) {
         setMeta(data.parse_meta || {});
         if (data.parse_status === 'completed') {
           setPolling(false);
+          setFailure(null);
           onCompleted?.();
         } else if (data.parse_status === 'failed') {
           setPolling(false);
-          setError(data.parse_error || 'Parse failed.');
+          // Prefer the classifier-driven friendly copy envelope; fall back
+          // to raw slug only when the envelope is missing (very old rows).
+          if (data.parse_error_copy) {
+            setFailure({
+              slug: data.parse_error,
+              copy: data.parse_error_copy,
+              ocrOffer: data.ocr_offer || null,
+              meta: data.parse_meta || {},
+            });
+            setError('');
+          } else {
+            setError(data.parse_error || 'Parse failed.');
+          }
         }
       } catch (e) { console.debug('parse-status poll transient failure', e); }
     };
@@ -146,6 +173,60 @@ function UploadPanel({ onCompleted }) {
         </div>
 
         {error && <ErrorBlock message={error} onRetry={reset} />}
+
+        {failure && (
+          <div
+            className="rounded-card border border-red-500/40 bg-red-500/5 p-4 space-y-3"
+            data-testid={`parse-failure-card-${failure.slug}`}
+          >
+            <div className="flex items-start gap-3">
+              <XCircle className="h-5 w-5 text-red-500 shrink-0" />
+              <div className="min-w-0 flex-1">
+                <div className="font-semibold" data-testid="parse-failure-headline">
+                  {failure.copy?.headline}
+                </div>
+                <p className="text-sm mt-1" data-testid="parse-failure-body">
+                  {failure.copy?.body}
+                </p>
+                {failure.copy?.tip && (
+                  <p className="text-xs muted mt-1" data-testid="parse-failure-tip">
+                    {failure.copy.tip}
+                  </p>
+                )}
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 pl-8">
+              <Button
+                variant="accent"
+                onClick={reset}
+                data-testid="parse-failure-reupload-btn"
+              >
+                {failure.copy?.cta || 'Upload a different file'}
+              </Button>
+              {failure.ocrOffer && (
+                <Button
+                  variant="secondary"
+                  disabled={!failure.ocrOffer.available}
+                  data-testid="parse-failure-ocr-btn"
+                  title={
+                    failure.ocrOffer.available
+                      ? 'Attempt OCR — claims still require your explicit approval'
+                      : 'OCR is not currently available on this deployment'
+                  }
+                >
+                  {failure.ocrOffer.label}
+                  {!failure.ocrOffer.available && ' (unavailable)'}
+                </Button>
+              )}
+            </div>
+            <p className="text-[10px] muted pl-8 font-mono" data-testid="parse-failure-support-slug">
+              support ref: {failure.slug}
+              {failure.meta?.pdf_num_pages != null && ` · pages=${failure.meta.pdf_num_pages}`}
+              {failure.meta?.extracted_chars != null && ` · chars=${failure.meta.extracted_chars}`}
+              {failure.meta?.file_bytes != null && ` · bytes=${failure.meta.file_bytes}`}
+            </p>
+          </div>
+        )}
 
         {stage && (
           <div className="rounded-card border border-line dark:border-line-dark p-4">
@@ -456,7 +537,11 @@ function DocumentHistory() {
                     <span>·</span>
                     <span>{new Date(d.created_at).toLocaleString()}</span>
                   </div>
-                  {d.parse_error && <p className="text-xs text-red-600 mt-1">{d.parse_error}</p>}
+                  {d.parse_error && (
+                    <p className="text-xs text-red-600 mt-1" data-testid="passport-doc-parse-error">
+                      {PARSE_ERROR_SHORT[d.parse_error] || d.parse_error}
+                    </p>
+                  )}
                 </div>
                 <span className="text-[10px] muted font-mono truncate" title={d.sha256}>{(d.sha256 || '').slice(0, 10)}</span>
               </li>
