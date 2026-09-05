@@ -590,6 +590,18 @@ The single residual failure — `test_phase3_integration::test_match_score_and_f
 
 ### Test evidence
 
+**Full suite (2026-08-13, post-hotfix):** `748 passed / 2 failed / 3 skipped in 6:24`.
+
+Both failures are documented state-pollution flakes that pass in isolation:
+```
+$ python3 -m pytest tests/test_phase3_integration.py::test_match_score_and_feedback \
+    tests/test_milestone_e_google.py::TestStartGoogleSession::test_unknown_email_returns_pending_and_creates_no_user
+2 passed in 4.38s
+```
+
+Net **+37 vs. prior 719 baseline** (30 new hotfix tests + 7 minor from prior UX/Phase-6 work). **+97 vs. the 651-suite founder reference.**
+
+**Focused hotfix set (post-fix):**
 ```
 $ cd /app/backend && CI_TEST_ISSUER_ENABLED=true python3 -m pytest --tb=short -q \
     tests/test_parse_failure_classifier.py \
