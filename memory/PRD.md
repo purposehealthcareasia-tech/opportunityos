@@ -1,5 +1,26 @@
 # Fynd — Product Requirements Document
 
+## 🔧 HOTFIX GATE FIX — SHIPPED (2026-08-13 · commit `c00b7737` · pending Re-publish)
+
+Founder gate result on §11 hotfix trio: **HOTFIX 4/4 PASS**, 2 narrow corrections required before Re-publish clears. Both applied at `c00b7737`.
+
+**Fix 1 · Manual-claim lifecycle is DRAFT (not auto-approved).** `domains/claims/service.py::create_manual` now saves `status="pending"` / `user_approved=False`. Explicit approve (`POST /api/v1/claims/{id}/approve`) is the attestation moment. Directive→implementation mapping documented in `docs/MERGE-PACKET.md` §11.1: directive says "draft", implemented as `pending` for zero enum churn (semantic equivalence — both parse + manual paths share the identical Approve endpoint). `Passport.jsx` empty-state + modal copy corrected to reflect this.
+
+**Fix 2 · Identity modal exposes structured fields.** `schema.py` adds `TYPE_IDENTITY` + `IDENTITY_VALUE_KEYS=("legal_first","legal_last","preferred_name")` in `VALUE_KEYS_BY_TYPE`. `services/preflight_validator.py::_canonical_identity` now dual-shape: legacy `{"name":...}` still works; new shape derives `name = preferred_name || f"{legal_first} {legal_last}".strip()`. Signature-check math unchanged. Fixture-data migration deliberately skipped (dual-shape reader makes it unnecessary; filed as optional P2 cleanup).
+
+**Test evidence:**
+- Focused hotfix set: `37 passed in 2.60s` (`test_manual_claim_activation_path.py` grew 4→6 tests locking the pending-draft lifecycle + explicit-approve flow + dual-shape identity reader).
+- Claims/preflight/schema-guard/spectrum/phase6/consent surface: `107 passed in 17.13s`. Zero regressions.
+- **Live preview E2E (2026-08-13):** POST `/api/v1/claims` with structured identity → 201 `status=pending, user_approved=False`. POST `/api/v1/claims/{id}/approve` → 200 `status=approved, user_approved=True`. Persistence + auth transport verified against real preview.
+
+**Tripwire:** `git ls-files | grep -E "\.env$|test_credentials\.md$|tmp_"` → empty. TRIPWIRE_CLEAN.
+
+**Push blocked** per Save-to-GitHub-via-chat rail. Awaiting founder Save-to-GitHub + Re-publish.
+
+**Next after Re-publish:** P0 TRUTH AUDIT items (a-h) per FYND ATLAS. BLOCKED until founder confirms Re-publish clears.
+
+---
+
 ## 🚀 Phase 6 — GATE PASS (2026-08-12) · WARN resolved · merge complete on `main`
 
 **Backend split-brief: 4/4 PASS · UI split-brief: 3/3 PASS · WARN resolved. Pytest floor 719 passed / 1 known-flake / 3 skipped in 5:15. .env tripwire CLEAN. Push blocked per Save-to-GitHub-via-chat rail — awaits founder Re-publish.**
