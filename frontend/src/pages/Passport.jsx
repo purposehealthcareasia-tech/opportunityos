@@ -401,13 +401,20 @@ function SealedSection({ claims, onEdit, onAddManual }) {
   );
 }
 
-// Phase 6 P0 hotfix (2026-08-12) — structured manual-claim entry.
+// Phase 6 P0 hotfix (2026-08-13 Gate) — structured manual-claim entry.
 // Historical UI was a raw JSON textarea; onboarding-blocked users
 // (parse-pipeline broken) could not reach activation without a working
 // parse. Backend value-key contracts pinned by
 // `domains/claims/schema.py::VALUE_KEYS_BY_TYPE`.
+// Identity uses `legal_first / legal_last / preferred_name` — matches
+// `IDENTITY_VALUE_KEYS`. Backend preflight `_canonical_identity` derives
+// the outbound `name` from `preferred_name` OR `f"{legal_first} {legal_last}"`.
 const MANUAL_FIELDS_BY_TYPE = {
-  identity:    [{ key: 'name',        label: 'Full name',            placeholder: 'e.g. Jane Doe',                   required: true }],
+  identity:    [
+    { key: 'legal_first',    label: 'Legal first name',       placeholder: 'e.g. Jane',                        required: true },
+    { key: 'legal_last',     label: 'Legal last name',        placeholder: 'e.g. Doe',                         required: true },
+    { key: 'preferred_name', label: 'Preferred name (optional)', placeholder: 'What should employers call you? e.g. J.D.', required: false },
+  ],
   contact:     [
     { key: 'email',       label: 'Email',                required: false, placeholder: 'you@example.com' },
     { key: 'phone',       label: 'Phone',                required: false, placeholder: '+1 555 …' },
@@ -500,7 +507,7 @@ function ManualClaimModal({ type: initialType, sensitivity = 'normal', onClose, 
       <div className="card max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto">
         <CardHeader
           title="Add a claim manually"
-          subtitle="You author it, we mark it user_provided and approve it immediately. Full provenance on your Passport."
+          subtitle="You author it, we mark it user_provided and save it as a pending draft — you tap Approve on the row to attest. Full provenance on your Passport."
         />
 
         <div className="mt-3">
@@ -879,7 +886,8 @@ export default function PassportPage() {
               </div>
               <p className="text-[10px] muted mt-3">
                 Manual claims are marked <code className="font-mono">source.kind = user_provided</code>{' '}
-                and approved immediately — the same provenance rails as any parsed claim, just user-attested.
+                and saved as pending drafts — you explicitly tap Approve on the row to attest.
+                Same provenance rails as any parsed claim.
               </p>
             </div>
           </div>

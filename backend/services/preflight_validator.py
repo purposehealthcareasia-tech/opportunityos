@@ -149,13 +149,37 @@ async def _load_manifest_lines(application_id: str, user_id: str) -> tuple[list[
 
 
 def _canonical_identity(approved_claims: list[dict]) -> dict:
-    """Extract normalized Passport identity facts from approved claims."""
+    """Extract normalized Passport identity facts from approved claims.
+
+    Hotfix Gate (2026-08-13) — dual-shape acceptance:
+      * Legacy identity claim shape: `{"name": "Full Name"}` (fixtures +
+        historical prod rows written before the Two-Tap Onboarding gate).
+      * New identity claim shape from the manual-claim modal:
+        `{"legal_first": "...", "legal_last": "...", "preferred_name": "..."}`.
+        `name` is DERIVED as `preferred_name` (if present) else
+        `f"{legal_first} {legal_last}".strip()`. Signature-check math
+        downstream is unchanged — it operates on the derived `name`.
+    """
     ident = {"name": None, "email": None, "phone": None}
     for c in approved_claims:
         if c.get("type") == "identity":
             v = c.get("value") or {}
             if isinstance(v, dict):
-                for k in ("name", "email", "phone"):
+                # legacy shape first
+                if v.get("name") and not ident["name"]:
+                    ident["name"] = str(v["name"]).strip()
+                # new structured shape — derive name if legacy not present
+                if not ident["name"]:
+                    preferred = str(v.get("preferred_name") or "").strip()
+                    if preferred:
+                        ident["name"] = preferred
+                    else:
+                        legal_first = str(v.get("legal_first") or "").strip()
+                        legal_last = str(v.get("legal_last") or "").strip()
+                        derived = f"{legal_first} {legal_last}".strip()
+                        if derived:
+                            ident["name"] = derived
+                for k in ("email", "phone"):
                     if v.get(k) and not ident[k]:
                         ident[k] = str(v[k]).strip()
         elif c.get("type") == "contact":

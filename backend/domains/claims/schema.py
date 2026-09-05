@@ -36,12 +36,13 @@ STATUS_APPROVED = "approved"
 STATUS_PENDING = "pending"
 STATUS_REJECTED = "rejected"
 
+TYPE_IDENTITY = "identity"
 TYPE_EDUCATION = "education"
 TYPE_EMPLOYMENT = "employment"
 TYPE_SKILL = "skill"
 TYPE_PROJECT = "project"
 
-ALLOWED_TYPES = frozenset({TYPE_EDUCATION, TYPE_EMPLOYMENT, TYPE_SKILL, TYPE_PROJECT})
+ALLOWED_TYPES = frozenset({TYPE_IDENTITY, TYPE_EDUCATION, TYPE_EMPLOYMENT, TYPE_SKILL, TYPE_PROJECT})
 
 
 # ------------------------------------------------------------------
@@ -57,13 +58,24 @@ ALLOWED_TYPES = frozenset({TYPE_EDUCATION, TYPE_EMPLOYMENT, TYPE_SKILL, TYPE_PRO
 #     ("YYYY-MM") — see FIXTURE_CLAIMS.
 #   * interview_prep expected employment["title"] / ["start_year"];
 #     the collection stores employment["role"] + ["start"] ("YYYY-MM").
+#
+# Hotfix Gate (2026-08-13) — IDENTITY_VALUE_KEYS: the manual-claim
+# modal now exposes structured identity fields matching what a candidate
+# actually says on a resume: legal first + legal last (both required for
+# signature-check math) + preferred_name (optional, what they'd like to
+# be called in outbound emails). Legacy `{"name": "..."}` payload shape
+# still accepted by `preflight_validator._canonical_identity` for
+# backward compat with pre-Hotfix stored identity claims — the reader
+# derives `name` from `preferred_name` OR `f"{legal_first} {legal_last}"`.
 # ------------------------------------------------------------------
+IDENTITY_VALUE_KEYS   = ("legal_first", "legal_last", "preferred_name")
 EDUCATION_VALUE_KEYS  = ("institution", "degree", "field", "start", "end")
 EMPLOYMENT_VALUE_KEYS = ("company", "role", "start", "end", "summary")
 SKILL_VALUE_KEYS      = ("name",)
 PROJECT_VALUE_KEYS    = ("name", "description")
 
 VALUE_KEYS_BY_TYPE = {
+    TYPE_IDENTITY:   IDENTITY_VALUE_KEYS,
     TYPE_EDUCATION:  EDUCATION_VALUE_KEYS,
     TYPE_EMPLOYMENT: EMPLOYMENT_VALUE_KEYS,
     TYPE_SKILL:      SKILL_VALUE_KEYS,

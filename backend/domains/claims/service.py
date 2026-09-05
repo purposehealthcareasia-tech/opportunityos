@@ -40,6 +40,17 @@ async def insert_from_parse(
 
 
 async def create_manual(user_id: str, *, ctype: str, value: dict, sensitivity: str = "normal") -> dict:
+    """Persist a user-authored claim as a DRAFT (status='pending', not yet approved).
+
+    Founder Hotfix Gate (2026-08-13): manual entry authors the claim but the
+    approve/attestation moment MUST be explicit — the user has to tap
+    "Approve" on the Passport row after creating it. `pending` is the same
+    status parsed claims use, so they route through the identical approve
+    flow (`POST /api/v1/claims/{id}/approve`). See
+    `/app/docs/MERGE-PACKET.md` §9.8 for the directive→implementation
+    mapping (directive says "draft" → implemented as `pending`; semantic
+    equivalence: "awaiting explicit user attestation").
+    """
     now = utc_now()
     doc = {
         "id": str(uuid.uuid4()),
@@ -50,8 +61,8 @@ async def create_manual(user_id: str, *, ctype: str, value: dict, sensitivity: s
         "evidence": [],
         "verification": {"level": 0, "note": "unverified"},
         "confidence": None,
-        "user_approved": True,       # user is authoring — implicit approval
-        "status": "approved",
+        "user_approved": False,      # authoring != attestation — explicit approve required
+        "status": "pending",
         "sensitivity": sensitivity,
         "version": 1,
         "superseded_by": None,

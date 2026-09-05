@@ -640,6 +640,78 @@ $ git ls-files | grep -E "\.env$|test_credentials\.md$|tmp_"
 
 ---
 
+## §11.1 · HOTFIX GATE FIX ADDENDUM (2026-08-13) — 2 narrow founder-mandated corrections
+
+**Gate result on §11:** HOTFIX 4/4 PASS, with 2 narrow corrections required before Re-publish clears:
+
+**Fix 1 — Manual-claim lifecycle must be DRAFT (not auto-approved).** Founder rail: authoring is NOT attestation. Manual entry saves the claim; the user MUST explicitly tap "Approve" on the Passport row for the attestation moment. Original §11 (b) shipped `create_manual` with `status="approved" / user_approved=True` (auto-approved on write) — this bypasses attestation.
+
+- **Directive→implementation mapping:** the founder directive says "draft"; we implement as `status="pending"`. Semantic equivalence: `pending` is already the same status parsed claims use, so BOTH paths (parse + manual) route through the identical `POST /api/v1/claims/{id}/approve` endpoint on the same Approve button. No new enum value introduced (`ClaimStatus = Literal["pending","approved","rejected","superseded"]` unchanged) — minimal blast radius, zero drift to downstream readers of `status="approved"`.
+- **Backend change (`domains/claims/service.py::create_manual`):** `status="pending"`, `user_approved=False`. Docstring updated to name this as the founder rail.
+- **UI flow verified:** `Passport.jsx` empty-state → click "Add identity" → modal → submit → `POST /api/v1/claims` (pending) → reload → `totalClaims > 0` → exits empty state → renders `ClaimGroup` with the new pending claim + Approve button. No dead ends. Post-Approve → activation checklist counts it → Activate button unlocks (identity + edu/emp both approved).
+
+**Fix 2 — Identity manual-claim modal exposes structured fields.** Original §11 (b) shipped a single `Full name` input. Founder rail: structured fields matching the schema — `legal_first`, `legal_last`, `preferred_name`.
+
+- **Backend change (`domains/claims/schema.py`):** added `TYPE_IDENTITY` + `IDENTITY_VALUE_KEYS = ("legal_first", "legal_last", "preferred_name")`; extended `VALUE_KEYS_BY_TYPE`. Anti-drift guard extended to lock the identity value keys structurally.
+- **Backend change (`services/preflight_validator.py::_canonical_identity`):** dual-shape acceptance. Legacy `{"name": ...}` still wins if present (backward compat for existing fixtures + prod data — see decision log below); otherwise derives `name = preferred_name` if set else `f"{legal_first} {legal_last}".strip()`. Signature-check math on outbound emails is unchanged — operates on the derived `name`.
+- **Frontend change (`Passport.jsx::MANUAL_FIELDS_BY_TYPE.identity`):** 3 fields — `legal_first` (required), `legal_last` (required), `preferred_name` (optional, hint "What should employers call you?"). Same data-testids pattern (`manual-claim-field-legal_first`, etc.).
+- **Decision log — no fixture data migration:** existing `fixture-ead@` / `fixture-broad@` / Ujjwal identity claims stay on legacy `{"name": "..."}` shape. The dual-shape reader makes migration unnecessary; migrating right before Re-publish adds regression risk for zero user value. Filed as optional cleanup in the P2 backlog.
+
+### Test evidence (§11.1 close)
+
+**Focused hotfix set (2026-08-13, post-Gate-Fix):**
+```
+$ cd /app/backend && python3 -m pytest --tb=short -q \
+    tests/test_manual_claim_activation_path.py \
+    tests/test_authed_shell_ctas_have_handlers.py \
+    tests/test_onboarding_launch_scope_rail.py \
+    tests/test_parse_failure_classifier.py
+
+37 passed in 2.60s
+```
+
+**Claims / preflight surface sanity (2026-08-13):**
+```
+$ cd /app/backend && python3 -m pytest -q \
+    tests/test_claims_attest_all.py \
+    tests/test_claims_schema_no_drift_guard.py \
+    tests/test_preflight_validator.py \
+    tests/test_spectrum_suggest.py \
+    tests/test_phase6_acceptance.py \
+    tests/test_consent_scope_enum_guard.py
+
+70 passed in 15.43s
+```
+
+Breakdown of the §11 → §11.1 delta in `test_manual_claim_activation_path.py` (was 4 tests → now 6):
+- **NEW** `test_manual_create_lands_as_pending_draft_not_approved` — locks the DRAFT lifecycle rail: `status=="pending"`, `user_approved==False`, and activation checklist is NOT satisfied by an unapproved manual claim.
+- **UPDATED** `test_manual_identity_and_employment_reach_activation_checklist` — now models the correct 3-step flow: create-as-pending → explicit approve → activation unlocks. Includes structured identity value shape (`legal_first`/`legal_last`/`preferred_name`).
+- **UPDATED** `test_manual_identity_and_education_also_qualifies_after_approve` — adds the explicit approve step; asserts `can_activate=False` before approve, `True` after.
+- **UPDATED** `test_manual_identity_only_is_not_sufficient` — walks through the approve step; identity-only still fails the education/employment gate.
+- **UPDATED** `test_manual_and_parsed_paths_coexist_no_interference` — locks that BOTH manual + parsed rows land as `pending` (no auto-approve for either).
+- **NEW** `test_canonical_identity_derives_name_from_structured_shape` — locks the dual-shape identity reader: preferred_name wins → legal parts fallback → legacy `{name}` still works → legacy takes precedence when both present.
+
+### .env / secret tripwire (§11.1 close)
+
+```
+$ git ls-files | grep -E "\.env$|test_credentials\.md$|tmp_"
+(empty)
+```
+
+**TRIPWIRE_CLEAN** — no tracked secrets.
+
+### Commits landing this Gate-Fix (§11.1)
+
+- **(next)** — fix(hotfix-gate): manual claims land as pending draft + structured identity fields + dual-shape reader
+
+### Push state
+
+Push blocked per the Save-to-GitHub-via-chat rail. **HOTFIX GATE-FIX READY FOR RE-PUBLISH.** STOP for founder's Save-to-GitHub click and Re-publish.
+
+---
+
+---
+
 ## §10 · Phase 6 branch pack (2026-08-12) — TESTER-BRIEF READY  ·  UI-GATE PASS
 
 **Scope:** Two-tap onboarding + credit-metered auto-apply (Founder Directive Phase 6, all six sub-items 6a-6f) + sanctioned Step-0 email-route go-live wiring + Step-0.5 smoke-hygiene fix + Batch D `/onboarding/launch` React screen + WARN-resolution scope rail.
