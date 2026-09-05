@@ -555,6 +555,79 @@ The single residual failure — `test_phase3_integration::test_match_score_and_f
 
 ---
 
+## §11 · HOTFIX READY FOR RE-PUBLISH — Onboarding trio (2026-08-13)
+
+**Preempted Tier-2 P2b + Phase-6 UX-batch resumption to land three prod-blocking hotfix items in a single lane per founder directive. FYND ATLAS supersedes the Planetary Constitution as the standing program; both persisted verbatim in /app/docs/.**
+
+### The three items
+
+**(a) Parse pipeline root cause + error-code split + telemetry** — the historical `extracted_text_too_short` slug was a catch-all: it fired for image-only PDFs, `pypdf`/`python-docx` text-blind cases, AND swallowed extractor exceptions. This misdiagnosis is what caused the founder's prod triage: a real user reported BOTH a re-exported text PDF AND a DOCX failing under the same slug — pointing at pipeline mislabeling, not deps.
+
+- **Deploy-image dep audit:** `pypdf==5.0.1` and `python-docx==1.1.2` — both pinned in `backend/requirements.txt`, both pure-Python, zero system binaries required. No smoking gun in deps.
+- **Local prod-mode reproduction (2026-08-13):**
+  ```
+  [known-good text PDF]  bytes=1766   pages=1   extracted_chars=395   → passes threshold
+  [known-good DOCX]      bytes=36859  pages=—   extracted_chars=330   → passes threshold
+  ```
+- **Split enforced in `services/parse_failure_classifier.py`:** four distinct reason slugs replace the catch-all — `extractor_error` (raised, w/ `exception_class` in telemetry, NEVER raw trace to user), `scanned_pdf_suspected` (image-only PDF), `docx_extractor_blind` (DOCX with content trapped in text-boxes/headers/footers python-docx can't see), `too_little_content` (genuinely thin doc). Plus `pipeline_error` for the outer catch (post-extraction LLM/DB failures) — stable slug, never leaks `str(e)`.
+- **Telemetry (`parse_failures` collection, append-only):** `{id, user_id, document_id, file_kind, bytes, extracted_chars, pdf_num_pages, extractor, reason, exception_class?, ts}`. Enables offline classification by extractor library + exception class.
+- **UI:** Passport.jsx `ParseFailureCard` renders the verbatim FRIENDLY_COPY headline/body/tip/cta per reason; raw slug preserved only as small-print `support ref:` metadata; recovery CTA (`Upload a different file`) always present.
+- **Fixture:** `tests/fixtures/scanned_resume_sample.pdf` — 124KB image-only PDF (ReportLab-built) that classifies deterministically as `scanned_pdf_suspected`.
+- **OCR opt-in:** deploy image lacks tesseract-ocr + poppler-utils + pytesseract + pdf2image. Marked CONFIGURATION_REQUIRED; interface boundary stubbed via `ocr_available()` probe + `try_ocr_pdf()` raising `NotImplementedError(OCR_CONFIG_REQUIRED_KEY)`. UI surfaces the button disabled with `(unavailable)` suffix.
+
+**(b) Manual-claim entry mounted on Passport** — the empty-state copy previously said "add claims manually below" but rendered ONLY an Upload button. With parse broken, users had ZERO path to activation.
+
+- Redesigned `ManualClaimModal` from a raw JSON textarea to structured per-kind fields (identity/contact/location/education/employment/skill/project/certification/work_auth/visa_timeline) with plain-English labels and validation.
+- Empty-state now renders three quick-launch buttons: **Add identity · Add education · Add employment** — the exact set required by the activation checklist.
+- Empty-state copy rewritten to match reality: *"Two paths to your Passport: parse a résumé, or add claims by hand. Either works — you're always in control."*
+- Backend: existing `POST /api/v1/claims` + `claims_svc.create_manual` (user_provided source, auto-approved) — no backend change, only UI mount + regression coverage.
+
+**(c) "Finish Passport — 2 min" CTA inert-click bug fixed + CI rail** — the SmartCTA `<Link to='/passport'>` navigated to the SAME URL the user was already on, producing an observable no-op ("inert click"). Founder-observed on prod screenshots.
+
+- **Root cause:** `<Link to='/passport'>` with the user already on `/passport` = same-URL history push = React re-renders nothing = no observable action.
+- **Fix:** deep-link `to='/passport?action=add-identity'`; `Passport.jsx` reads `useSearchParams()` on mount, opens the manual-claim modal for the requested action, then strips the param via `setSearchParams(next, { replace: true })` so refresh doesn't re-open.
+- **CI rail (`tests/test_authed_shell_ctas_have_handlers.py`):** static AST scan of `frontend/src/pages/` + `frontend/src/components/` fails CI if any primary `<Button variant='accent|primary'>` or `.liquid-primary` `<Link>` / `<a>` lacks `onClick` / `to=` / `href=` / `type='submit'`. Plus dedicated regressions locking the deep-link + the param-consumer.
+
+### Test evidence
+
+```
+$ cd /app/backend && CI_TEST_ISSUER_ENABLED=true python3 -m pytest --tb=short -q \
+    tests/test_parse_failure_classifier.py \
+    tests/test_manual_claim_activation_path.py \
+    tests/test_authed_shell_ctas_have_handlers.py
+
+30 passed in 2.56s
+```
+
+Breakdown: 23 parse-failure classifier + telemetry + pipeline-integration tests · 4 manual-claim activation-path tests · 3 CI-rail tests (no-inert-CTAs + deep-link contract + param-consumer contract).
+
+### Commits landing this hotfix
+
+- `657f3b4f` — checkpoint(phase6-ux-parse-fail): UX batch in-flight
+- `dc9fc946` — feat(phase6-batch-d): UI-gate WARN — verbatim-consent scope rail
+- `cb176c84` — fix(phase6-batch-d): pin fixture-broad@ credits plan to 'founder'
+- `867ca939` — docs(constitution): persist Planetary Opportunity Intelligence directive verbatim
+- `be825549` — docs(atlas): persist FYND ATLAS as standing program
+- `65097dca` — docs(atlas): persist ATLAS-FEATURE-MAP mapping every discussed feature
+- **(next)** — hotfix(parse-pipeline + manual-claim + smart-cta + ci-rail)
+
+### .env / secret tripwire
+
+```
+$ git ls-files | grep -E "\.env$|test_credentials\.md$|tmp_"
+(empty)
+```
+
+**TRIPWIRE_CLEAN** — no tracked secrets. Safe to push.
+
+### Push state
+
+`git push origin main` → `fatal: could not read Username for 'https://github.com'`. Sandbox lacks GitHub auth; founder pushes via **Save to GitHub** chat feature (pre-agreed rail).
+
+**HOTFIX READY FOR RE-PUBLISH.** STOP for gate spot-check before founder's Re-publish click.
+
+---
+
 ## §10 · Phase 6 branch pack (2026-08-12) — TESTER-BRIEF READY  ·  UI-GATE PASS
 
 **Scope:** Two-tap onboarding + credit-metered auto-apply (Founder Directive Phase 6, all six sub-items 6a-6f) + sanctioned Step-0 email-route go-live wiring + Step-0.5 smoke-hygiene fix + Batch D `/onboarding/launch` React screen + WARN-resolution scope rail.

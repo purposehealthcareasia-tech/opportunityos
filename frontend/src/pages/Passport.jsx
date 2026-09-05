@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Upload, FileText, CheckCircle2, XCircle, ShieldCheck, Lock, Pencil, RotateCcw, Plus, Loader2 } from 'lucide-react';
 import { api, withIdempotency } from '../lib/api';
 import { LoadingBlock, ErrorBlock, EmptyBlock } from '../lib/scope';
@@ -27,8 +28,11 @@ const STAGE_LABELS = {
 // is used only in the compact document-history list rows.
 const PARSE_ERROR_SHORT = {
   scanned_pdf_suspected: 'PDF looks scanned — re-upload as DOCX or a text-based PDF.',
+  docx_extractor_blind: 'DOCX uses shapes/headers we can\u2019t read — re-save as plain DOCX.',
   too_little_content: 'Very little text — add more content and re-upload.',
+  extractor_error: "We couldn't open this file — it may be corrupt or protected.",
   extract_failed: "We couldn't open this file — it may be corrupt or protected.",
+  pipeline_error: 'Something went wrong on our side — please try again.',
   extracted_text_too_short: 'Too little text extracted — re-upload.',
 };
 
@@ -397,35 +401,172 @@ function SealedSection({ claims, onEdit, onAddManual }) {
   );
 }
 
-function ManualClaimModal({ type, sensitivity = 'normal', onClose, onSubmit }) {
-  const [draft, setDraft] = useState('{\n  "name": ""\n}');
+// Phase 6 P0 hotfix (2026-08-12) — structured manual-claim entry.
+// Historical UI was a raw JSON textarea; onboarding-blocked users
+// (parse-pipeline broken) could not reach activation without a working
+// parse. Backend value-key contracts pinned by
+// `domains/claims/schema.py::VALUE_KEYS_BY_TYPE`.
+const MANUAL_FIELDS_BY_TYPE = {
+  identity:    [{ key: 'name',        label: 'Full name',            placeholder: 'e.g. Jane Doe',                   required: true }],
+  contact:     [
+    { key: 'email',       label: 'Email',                required: false, placeholder: 'you@example.com' },
+    { key: 'phone',       label: 'Phone',                required: false, placeholder: '+1 555 …' },
+  ],
+  location:    [
+    { key: 'city',        label: 'City',                 required: false, placeholder: 'San Francisco' },
+    { key: 'state',       label: 'State / region',       required: false, placeholder: 'CA' },
+    { key: 'country',     label: 'Country',              required: false, placeholder: 'USA' },
+  ],
+  education:   [
+    { key: 'institution', label: 'School / institution', required: true,  placeholder: 'e.g. UC Berkeley' },
+    { key: 'degree',      label: 'Degree',               required: false, placeholder: 'e.g. BS Computer Science' },
+    { key: 'field',       label: 'Field of study',       required: false, placeholder: 'e.g. Software Engineering' },
+    { key: 'start',       label: 'Start (YYYY-MM)',      required: false, placeholder: '2018-08' },
+    { key: 'end',         label: 'End (YYYY-MM)',        required: false, placeholder: '2022-05' },
+  ],
+  employment:  [
+    { key: 'company',     label: 'Company',              required: true,  placeholder: 'e.g. Acme Corp' },
+    { key: 'role',        label: 'Role / title',         required: true,  placeholder: 'e.g. Senior Backend Engineer' },
+    { key: 'start',       label: 'Start (YYYY-MM)',      required: false, placeholder: '2021-04' },
+    { key: 'end',         label: 'End (YYYY-MM or Present)', required: false, placeholder: '2024-12' },
+    { key: 'summary',     label: 'One-line summary',     required: false, placeholder: 'Led migration of monolith to microservices', textarea: true },
+  ],
+  skill:       [{ key: 'name',        label: 'Skill',                required: true,  placeholder: 'e.g. Python' }],
+  project:     [
+    { key: 'name',        label: 'Project name',         required: true,  placeholder: 'e.g. Latency dashboard' },
+    { key: 'description', label: 'Description',          required: false, placeholder: 'What it does + your role', textarea: true },
+  ],
+  certification: [{ key: 'name', label: 'Certification', required: true, placeholder: 'e.g. AWS Solutions Architect' }],
+  work_auth:   [
+    { key: 'status',      label: 'Status',               required: true,  placeholder: 'e.g. us_citizen, ead_opt, h1b' },
+    { key: 'notes',       label: 'Notes',                required: false, placeholder: 'Optional context', textarea: true },
+  ],
+  visa_timeline: [
+    { key: 'visa',        label: 'Visa type',            required: true,  placeholder: 'e.g. H-1B, F-1' },
+    { key: 'expires',     label: 'Expires (YYYY-MM-DD)', required: false, placeholder: '2027-09-30' },
+  ],
+};
+const MANUAL_TYPE_LABELS = {
+  identity: 'Identity',
+  contact: 'Contact',
+  location: 'Location',
+  education: 'Education',
+  employment: 'Employment',
+  skill: 'Skill',
+  project: 'Project',
+  certification: 'Certification',
+  work_auth: 'Work authorization',
+  visa_timeline: 'Visa timeline',
+};
+
+function ManualClaimModal({ type: initialType, sensitivity = 'normal', onClose, onSubmit }) {
+  const [type, setType] = useState(initialType || 'identity');
+  const [values, setValues] = useState({});
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState('');
+
+  const fields = MANUAL_FIELDS_BY_TYPE[type] || [];
+
+  const patch = (k, v) => setValues((p) => ({ ...p, [k]: v }));
+
   const submit = async () => {
     setErr('');
+    const value = {};
+    for (const f of fields) {
+      const raw = (values[f.key] ?? '').toString();
+      const v = raw.trim();
+      if (v) value[f.key] = v;
+      if (f.required && !v) {
+        setErr(`Please fill ${f.label}.`);
+        return;
+      }
+    }
+    setSubmitting(true);
     try {
-      const value = JSON.parse(draft);
-      setSubmitting(true);
-      await onSubmit(value);
+      await onSubmit({ type, value });
       onClose();
-    } catch {
-      setErr('Value must be valid JSON.');
-    } finally { setSubmitting(false); }
+    } catch (e) {
+      setErr(e?.response?.data?.detail?.message || e?.message || 'Failed to add claim.');
+    } finally {
+      setSubmitting(false);
+    }
   };
+
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 backdrop-blur-sm p-4 animate-fadeIn">
-      <div className="card max-w-lg w-full p-6">
-        <CardHeader title={`Add a manual ${type} claim`} subtitle="You are authoring this claim yourself. It will be marked user_provided and immediately approved." />
-        <textarea
-          className="field-input font-mono text-xs h-56"
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
+    <div
+      className="fixed inset-0 z-50 grid place-items-center bg-black/40 backdrop-blur-sm p-4 animate-fadeIn"
+      data-testid="manual-claim-modal"
+    >
+      <div className="card max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto">
+        <CardHeader
+          title="Add a claim manually"
+          subtitle="You author it, we mark it user_provided and approve it immediately. Full provenance on your Passport."
         />
-        {err && <p className="text-xs text-red-600 mt-2">{err}</p>}
-        <div className="flex items-center justify-end gap-2 mt-4">
-          <Button variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button variant="accent" onClick={submit} loading={submitting}>Add claim</Button>
+
+        <div className="mt-3">
+          <label className="field-label" htmlFor="manual-claim-type">Kind of claim</label>
+          <select
+            id="manual-claim-type"
+            className="field-input"
+            value={type}
+            onChange={(e) => { setType(e.target.value); setValues({}); setErr(''); }}
+            data-testid="manual-claim-type-select"
+          >
+            {Object.keys(MANUAL_FIELDS_BY_TYPE).map((k) => (
+              <option key={k} value={k}>{MANUAL_TYPE_LABELS[k] || k}</option>
+            ))}
+          </select>
         </div>
+
+        <div className="space-y-3 mt-4">
+          {fields.map((f) => (
+            <div key={f.key}>
+              <label className="field-label" htmlFor={`manual-claim-field-${f.key}`}>
+                {f.label}{f.required && <span className="text-red-500 ml-1">*</span>}
+              </label>
+              {f.textarea ? (
+                <textarea
+                  id={`manual-claim-field-${f.key}`}
+                  className="field-input min-h-[64px]"
+                  placeholder={f.placeholder}
+                  value={values[f.key] || ''}
+                  onChange={(e) => patch(f.key, e.target.value)}
+                  data-testid={`manual-claim-field-${f.key}`}
+                />
+              ) : (
+                <input
+                  id={`manual-claim-field-${f.key}`}
+                  type="text"
+                  className="field-input"
+                  placeholder={f.placeholder}
+                  value={values[f.key] || ''}
+                  onChange={(e) => patch(f.key, e.target.value)}
+                  data-testid={`manual-claim-field-${f.key}`}
+                />
+              )}
+            </div>
+          ))}
+        </div>
+
+        {err && (
+          <p className="text-xs text-red-600 mt-3" data-testid="manual-claim-error">{err}</p>
+        )}
+
+        <div className="flex items-center justify-end gap-2 mt-5">
+          <Button variant="secondary" onClick={onClose} data-testid="manual-claim-cancel">Cancel</Button>
+          <Button
+            variant="accent"
+            onClick={submit}
+            loading={submitting}
+            data-testid="manual-claim-submit"
+          >
+            Add claim
+          </Button>
+        </div>
+        <p className="text-[10px] muted mt-3 text-center">
+          Provenance: <code className="font-mono">source.kind = user_provided</code>.
+          Sensitivity: <code className="font-mono">{sensitivity}</code>.
+        </p>
       </div>
     </div>
   );
@@ -562,6 +703,29 @@ export default function PassportPage() {
   const [activating, setActivating] = useState(false);
   const [busyId, setBusyId] = useState(null);
   const [manualModal, setManualModal] = useState(null); // {type, sensitivity}
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // FYND ATLAS hotfix (2026-08-13): deep-link the "Finish Passport"
+  // SmartCTA so a click on it observably OPENS the manual-claim modal
+  // — even when the user is already on /passport. Fires once on
+  // mount + on every param change; consumes the param so refresh
+  // doesn't re-trigger the modal after they dismiss it.
+  useEffect(() => {
+    const action = searchParams.get('action');
+    if (!action) return;
+    const map = {
+      'add-identity': { type: 'identity', sensitivity: 'normal' },
+      'add-education': { type: 'education', sensitivity: 'normal' },
+      'add-employment': { type: 'employment', sensitivity: 'normal' },
+    };
+    const target = map[action];
+    if (target) setManualModal(target);
+    // Strip the param so refresh / back doesn't re-open the modal.
+    const next = new URLSearchParams(searchParams);
+    next.delete('action');
+    setSearchParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const reload = useCallback(async () => {
     setLoading(true); setError('');
@@ -621,7 +785,7 @@ export default function PassportPage() {
     await api.post('/api/v1/claims/bulk-approve', { type }, withIdempotency());
     await reload();
   };
-  const addManual = async (type, sensitivity, value) => {
+  const addManual = async ({ type, value }, sensitivity = 'normal') => {
     await api.post('/api/v1/claims', { type, sensitivity, value }, withIdempotency());
     await reload();
   };
@@ -670,11 +834,55 @@ export default function PassportPage() {
         loading ? <LoadingBlock /> :
         error ? <ErrorBlock message={error} onRetry={reload} /> :
         totalClaims === 0 ? (
-          <EmptyBlock
-            title="No claims yet"
-            hint="Upload a résumé to parse it into structured draft claims, or add claims manually below."
-            action={<Button variant="accent" onClick={() => setTab('upload')}>Upload résumé</Button>}
-          />
+          <div className="space-y-4" data-testid="passport-empty-state">
+            <EmptyBlock
+              title="No claims yet"
+              hint="Two paths to your Passport: parse a résumé, or add claims by hand. Either works — you're always in control."
+            />
+            <div className="card p-5">
+              <p className="text-sm font-semibold mb-2">Two paths to activate your Passport</p>
+              <p className="text-xs muted mb-4">
+                Activation needs one approved <span className="font-mono">identity</span> claim
+                AND one approved <span className="font-mono">education</span> or{' '}
+                <span className="font-mono">employment</span> claim. You can add both by hand right here.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="accent"
+                  onClick={() => setTab('upload')}
+                  data-testid="empty-state-upload-btn"
+                >
+                  <Upload className="h-4 w-4" /> Upload résumé
+                </Button>
+                <span className="text-xs muted self-center px-1">or add by hand:</span>
+                <Button
+                  variant="secondary"
+                  onClick={() => setManualModal({ type: 'identity', sensitivity: 'normal' })}
+                  data-testid="empty-state-add-identity-btn"
+                >
+                  <Plus className="h-4 w-4" /> Add identity
+                </Button>
+                <Button
+                  variant="secondary"
+                  onClick={() => setManualModal({ type: 'education', sensitivity: 'normal' })}
+                  data-testid="empty-state-add-education-btn"
+                >
+                  <Plus className="h-4 w-4" /> Add education
+                </Button>
+                <Button
+                  variant="secondary"
+                  onClick={() => setManualModal({ type: 'employment', sensitivity: 'normal' })}
+                  data-testid="empty-state-add-employment-btn"
+                >
+                  <Plus className="h-4 w-4" /> Add employment
+                </Button>
+              </div>
+              <p className="text-[10px] muted mt-3">
+                Manual claims are marked <code className="font-mono">source.kind = user_provided</code>{' '}
+                and approved immediately — the same provenance rails as any parsed claim, just user-attested.
+              </p>
+            </div>
+          </div>
         ) : (
           <div className="space-y-10">
             {normalGroups.map((g) => (
@@ -700,7 +908,7 @@ export default function PassportPage() {
               <p className="text-xs muted mb-3">Missing a category? Add it manually.</p>
               <div className="flex flex-wrap gap-2">
                 {missingClaimTypes.map((t) => (
-                  <button key={t} type="button" onClick={() => setManualModal({ type: t, sensitivity: 'normal' })} className="pill pill-neutral hover:bg-neutral-100 dark:hover:bg-neutral-800">
+                  <button key={t} type="button" onClick={() => setManualModal({ type: t, sensitivity: 'normal' })} className="pill pill-neutral hover:bg-neutral-100 dark:hover:bg-neutral-800" data-testid={`add-missing-category-${t}`}>
                     <Plus className="h-3 w-3" /> {t}
                   </button>
                 ))}
@@ -715,7 +923,7 @@ export default function PassportPage() {
           type={manualModal.type}
           sensitivity={manualModal.sensitivity}
           onClose={() => setManualModal(null)}
-          onSubmit={(value) => addManual(manualModal.type, manualModal.sensitivity, value)}
+          onSubmit={(payload) => addManual(payload, manualModal.sensitivity)}
         />
       )}
     </div>

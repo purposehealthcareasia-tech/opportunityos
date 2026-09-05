@@ -10,7 +10,8 @@ from services.queue_stub import enqueue
 from services.parse_failure_classifier import (
     classify_extract_failure,
     write_parse_failure,
-    REASON_EXTRACT_FAILED,
+    REASON_EXTRACTOR_ERROR,
+    REASON_PIPELINE_ERROR,
     MIN_TEXT_CHARS_THRESHOLD,
 )
 from domains.documents import repository as doc_repo
@@ -80,6 +81,14 @@ async def upload_resume(user_id: str, *, filename: str, content_type: str, data:
 
 async def _parse_pipeline(document_id: str, user_id: str, s3_key: str, content_type: str) -> None:
     log.info("parse start doc=%s", document_id)
+    # File kind derived once, up-front — used across every telemetry write
+    # so we never mislabel because of a mid-pipeline branch. Pipeline-level
+    # failures (before/after the extractor) get file_kind="unknown" and
+    # extractor="n/a"; classifier-classified rows carry the specific
+    # extractor library that ran.
+    file_kind_guess = "pdf" if "pdf" in (content_type or "").lower() else \
+                        ("docx" if "docx" in (content_type or "").lower() or "wordprocessing" in (content_type or "").lower() else "unknown")
+    data: bytes | None = None
     try:
         await doc_repo.update_parse_status(document_id, status="extracting")
         # Read from storage to a temporary path for the extractor libraries
@@ -89,21 +98,35 @@ async def _parse_pipeline(document_id: str, user_id: str, s3_key: str, content_t
         try:
             try:
                 envelope = extract_text(tmp_path, content_type)
-            except RuntimeError as ex:
-                # Extractor failed hard (corrupt / encrypted / unsupported).
-                # Classify + telemetry + return; UI surfaces the extract_failed copy.
+            except Exception as ex:
+                # HOTFIX (2026-08-12): the extractor RAISED. NEVER label
+                # this as "too_short" — that misdiagnosis is what caused
+                # the founder's prod triage. Split: reason=extractor_error,
+                # exception_class carried in telemetry only, never surfaced
+                # to the user (raw traces cannot leak; the UI renders the
+                # verbatim FRIENDLY_COPY for `extractor_error`).
+                exception_class = type(ex).__name__
+                log.warning("extractor raised doc=%s cls=%s msg=%s",
+                            document_id, exception_class, str(ex)[:200])
                 await write_parse_failure(
                     user_id=user_id,
                     document_id=document_id,
-                    file_kind="pdf" if "pdf" in (content_type or "") else "docx",
-                    file_bytes=len(data),
+                    file_kind=file_kind_guess,
+                    file_bytes=len(data) if data else 0,
                     extracted_chars=0,
-                    reason=REASON_EXTRACT_FAILED,
+                    reason=REASON_EXTRACTOR_ERROR,
                     pdf_num_pages=None,
+                    extractor="pypdf" if file_kind_guess == "pdf" else ("python-docx" if file_kind_guess == "docx" else "n/a"),
+                    exception_class=exception_class,
                 )
                 await doc_repo.update_parse_status(
-                    document_id, status="failed", error=REASON_EXTRACT_FAILED,
-                    meta={"raw_exception": str(ex)[:200]},
+                    document_id, status="failed", error=REASON_EXTRACTOR_ERROR,
+                    meta={
+                        "extractor": "pypdf" if file_kind_guess == "pdf" else ("python-docx" if file_kind_guess == "docx" else "n/a"),
+                        "exception_class": exception_class,
+                        "file_kind": file_kind_guess,
+                        "file_bytes": len(data) if data else 0,
+                    },
                 )
                 return
         finally:
@@ -131,6 +154,7 @@ async def _parse_pipeline(document_id: str, user_id: str, s3_key: str, content_t
                 extracted_chars=extracted_chars,
                 reason=reason,
                 pdf_num_pages=num_pages,
+                extractor="pypdf" if file_kind == "pdf" else "python-docx",
             )
             await doc_repo.update_parse_status(
                 document_id, status="failed", error=reason,
@@ -139,6 +163,7 @@ async def _parse_pipeline(document_id: str, user_id: str, s3_key: str, content_t
                     "file_bytes": file_bytes,
                     "file_kind": file_kind,
                     "pdf_num_pages": num_pages,
+                    "extractor": "pypdf" if file_kind == "pdf" else "python-docx",
                 },
             )
             return
@@ -179,8 +204,39 @@ async def _parse_pipeline(document_id: str, user_id: str, s3_key: str, content_t
             })
         log.info("parse OK doc=%s model=%s claims=%d", document_id, model_used, inserted)
     except Exception as e:
-        log.exception("parse failed doc=%s", document_id)
-        await doc_repo.update_parse_status(document_id, status="failed", error=str(e))
+        # HOTFIX (2026-08-12): the pipeline itself failed AFTER the
+        # extractor call (LLM call, claims write, resume_versions insert,
+        # DB error…). Historically this leaked `str(e)` into
+        # `parse_error` — which surfaced raw traces to the user AND
+        # contaminated support triage. Now:
+        #   - parse_error → stable slug `pipeline_error`
+        #   - exception class + user_id + file_kind → parse_failures
+        #   - raw message logged (server-side) but never persisted on
+        #     the document row.
+        exception_class = type(e).__name__
+        log.exception("parse failed doc=%s cls=%s", document_id, exception_class)
+        try:
+            await write_parse_failure(
+                user_id=user_id,
+                document_id=document_id,
+                file_kind=file_kind_guess,
+                file_bytes=len(data) if data else 0,
+                extracted_chars=0,
+                reason=REASON_PIPELINE_ERROR,
+                pdf_num_pages=None,
+                extractor="n/a",
+                exception_class=exception_class,
+            )
+        except Exception:
+            log.exception("pipeline_error telemetry write failed doc=%s", document_id)
+        await doc_repo.update_parse_status(
+            document_id, status="failed", error=REASON_PIPELINE_ERROR,
+            meta={
+                "exception_class": exception_class,
+                "file_kind": file_kind_guess,
+                "file_bytes": len(data) if data else 0,
+            },
+        )
 
 
 def _to_response(d: dict) -> dict:

@@ -48,8 +48,14 @@ export default function SmartCTA({ hide = false, className = '' }) {
   if (hide || state.loading) return null;
 
   let cta;
+  // FYND ATLAS §44 zero-tolerance rail: primary CTAs must produce an
+  // observable action. When the user is ALREADY on the destination and
+  // clicking the SmartCTA would push a same-URL history entry (which is
+  // a no-op — the founder-observed "inert click" bug), we deep-link with
+  // a query param (?action=…) so the destination page can react by
+  // opening its resume-flow modal / scrolling to the action area.
   if (state.passportActivated === false) {
-    cta = { to: '/passport', label: 'Finish Passport — 2 min', Icon: IdCard, tone: 'primary' };
+    cta = { to: '/passport?action=add-identity', label: 'Finish Passport — 2 min', Icon: IdCard, tone: 'primary' };
   } else if (state.awaitingCount > 0) {
     cta = { to: '/approvals', label: `Review ${state.awaitingCount} approval${state.awaitingCount === 1 ? '' : 's'}`, Icon: ClipboardCheck, tone: 'primary' };
   } else if (state.shortlistedCount >= 3) {

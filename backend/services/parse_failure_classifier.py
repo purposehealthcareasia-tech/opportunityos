@@ -38,9 +38,29 @@ SCANNED_PDF_MIN_PAGES = 1
 SCANNED_PDF_BYTES_PER_CHAR_HEURISTIC = 5000  # bytes / extracted_chars
 
 # Reason slugs — stable identifiers written to parse_failures.reason.
+# NAMING CONTRACT (2026-08-12 P0 hotfix): the founder's directive requires
+# a hard split so mislabeled errors become impossible going forward:
+#   - REASON_EXTRACTOR_ERROR: the extractor RAISED. `exception_class` MUST
+#     be recorded in telemetry. Raw traces NEVER surface to the user.
+#   - REASON_SCANNED_PDF_SUSPECTED / REASON_TOO_LITTLE_CONTENT /
+#     REASON_DOCX_EXTRACTOR_BLIND: extraction RAN and returned <30 chars.
+#     Sub-classified from file/byte ratios so support copy is accurate.
 REASON_SCANNED_PDF_SUSPECTED = "scanned_pdf_suspected"
 REASON_TOO_LITTLE_CONTENT = "too_little_content"
-REASON_EXTRACT_FAILED = "extract_failed"
+REASON_DOCX_EXTRACTOR_BLIND = "docx_extractor_blind"
+REASON_EXTRACTOR_ERROR = "extractor_error"
+REASON_PIPELINE_ERROR = "pipeline_error"
+
+# Kept as a documented alias so any legacy `parse_error="extract_failed"`
+# rows in the collection remain discoverable in ledger queries.
+REASON_EXTRACT_FAILED = REASON_EXTRACTOR_ERROR
+
+# DOCX-specific heuristic: a DOCX with a plausible file size (>10KB, so
+# it's not an empty template) but <30 chars extracted is almost always a
+# text-blind case — content lives in text boxes / headers / footers /
+# WordArt / images that `python-docx` doesn't iterate over. This is
+# distinct from a genuinely-empty docx and needs distinct copy.
+DOCX_EXTRACTOR_BLIND_MIN_BYTES = 10 * 1024
 
 
 # Friendly copy shown to users (verbatim; the raw slug is small-print
@@ -54,6 +74,16 @@ FRIENDLY_COPY: dict[str, dict[str, str]] = {
         "tip": "Tip: if you can't select text in your PDF, neither can we.",
         "cta": "Upload a different file",
     },
+    REASON_DOCX_EXTRACTOR_BLIND: {
+        "headline": "We couldn't read this DOCX's content",
+        "body": "Your DOCX likely uses text boxes, headers, footers, or "
+                "images-with-text that our reader can't see. In Word or "
+                "Google Docs, choose File → Save As and pick 'Plain DOCX' "
+                "(unchecked 'Compatibility mode'), or re-export as PDF.",
+        "tip": "Tip: if the text sits inside a coloured box / shape, our "
+                "reader will miss it.",
+        "cta": "Upload a different file",
+    },
     REASON_TOO_LITTLE_CONTENT: {
         "headline": "This résumé has very little text",
         "body": "There isn't enough content on the page for us to build a "
@@ -62,12 +92,20 @@ FRIENDLY_COPY: dict[str, dict[str, str]] = {
         "tip": None,
         "cta": "Upload a different file",
     },
-    REASON_EXTRACT_FAILED: {
+    REASON_EXTRACTOR_ERROR: {
         "headline": "We couldn't open this file",
         "body": "The file may be corrupt or password-protected. Try "
                 "re-exporting it, or upload a DOCX instead.",
         "tip": None,
         "cta": "Upload a different file",
+    },
+    REASON_PIPELINE_ERROR: {
+        "headline": "Something went wrong while reading your résumé",
+        "body": "This looks like an issue on our side, not a problem with "
+                "your file. Please try uploading again in a moment; if the "
+                "issue persists, contact support.",
+        "tip": None,
+        "cta": "Try again",
     },
 }
 
@@ -82,15 +120,21 @@ def classify_extract_failure(
     """Return one of the REASON_ slugs describing why extraction fell
     below the usable threshold.
 
+    - DOCX with a plausibly-sized file (>10KB) but ~0 chars → the
+      python-docx extractor is blind to its contents (text boxes,
+      headers/footers, WordArt, embedded images). `docx_extractor_blind`.
     - PDFs with 0 or very few chars but non-trivial byte size and at
-      least one page → `scanned_pdf_suspected` (opt-in OCR could help).
-    - Anything else (thin DOCX, thin natively-text PDF) →
-      `too_little_content` (user should add more content).
+      least one page → `scanned_pdf_suspected` (opt-in OCR could help;
+      also covers pypdf text-blind cases — the recovery guidance is
+      identical: re-export from Word/Google Docs).
+    - Anything else (tiny thin PDF, empty DOCX) → `too_little_content`.
     """
     kind = (file_kind or "").lower()
+    if kind == "docx" and file_bytes >= DOCX_EXTRACTOR_BLIND_MIN_BYTES:
+        return REASON_DOCX_EXTRACTOR_BLIND
     if kind == "pdf" and pdf_num_pages and pdf_num_pages >= SCANNED_PDF_MIN_PAGES:
         # High bytes-per-char ratio → we got lots of PDF but ~no text →
-        # image-based / scanned. Also handles the extracted_chars=0 case.
+        # image-based / scanned OR pypdf-blind. Also handles chars=0.
         if extracted_chars == 0 and file_bytes >= SCANNED_PDF_MIN_BYTES:
             return REASON_SCANNED_PDF_SUSPECTED
         if extracted_chars > 0:
@@ -109,9 +153,20 @@ async def write_parse_failure(
     extracted_chars: int,
     reason: str,
     pdf_num_pages: Optional[int] = None,
+    extractor: Optional[str] = None,
+    exception_class: Optional[str] = None,
 ) -> str:
     """Append a `parse_failures` row for offline analysis. Never fails
-    the parse pipeline — logs and swallows exceptions."""
+    the parse pipeline — logs and swallows exceptions.
+
+    Row shape (2026-08-12 P0 hotfix): the founder's directive requires
+    every field so prod failures become diagnosable from data:
+      {id, user_id, document_id, file_kind, bytes, extracted_chars,
+       pdf_num_pages, extractor, reason, exception_class?, ts}
+    `extractor` is the library that ran (e.g. "pypdf", "python-docx",
+    or "n/a" when the pipeline failed before the extractor). Never
+    include raw exception traces here — only the exception CLASS name.
+    """
     row_id = str(uuid.uuid4())
     doc = {
         "id": row_id,
@@ -121,7 +176,9 @@ async def write_parse_failure(
         "bytes": int(file_bytes),
         "extracted_chars": int(extracted_chars),
         "pdf_num_pages": pdf_num_pages,
+        "extractor": extractor,
         "reason": reason,
+        "exception_class": exception_class,
         "ts": utc_now(),
     }
     try:
