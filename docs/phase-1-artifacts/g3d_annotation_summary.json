@@ -1,5 +1,5 @@
 {
-  "run_at": "2026-08-12T16:45:40.938250+00:00",
+  "run_at": "2026-09-05T12:51:10.358742+00:00",
   "reason": "phase-1-g3d-fix: `_snapshot_consents` reader in `domains/wave/__init__.py` was addressing legacy field names (`status` / `granted_at` / `revoked_at`) that never existed in the Phase-6-hardened `consent_records` schema (correct: `granted: bool` + `ts: datetime`). Every projected value collapsed to falsy, so the returned dict fell through empty for every scope the user had actually granted. Bug class: schema drift after a hardening pass that didn't sweep all readers.",
   "candidates_scanned": 6,
   "already_annotated_skipped": 6,
