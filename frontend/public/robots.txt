@@ -1,0 +1,49 @@
+# Fynd — https://fynd.llc
+# Consent-first job-application platform. Public content is welcome
+# to be indexed; user-scoped pages, admin, and the API surface are not.
+
+User-agent: *
+Allow: /
+Allow: /login
+Allow: /signup
+Allow: /privacy.html
+Allow: /privacy-policy
+Allow: /delete-account.html
+Allow: /standards
+Allow: /about
+Allow: /employers
+
+Disallow: /api/
+Disallow: /admin
+Disallow: /admin/
+Disallow: /auth/
+Disallow: /auth/callback
+Disallow: /passport
+Disallow: /preferences
+Disallow: /eligibility
+Disallow: /feed
+Disallow: /jobs/
+Disallow: /applications
+Disallow: /applications/
+Disallow: /approvals
+Disallow: /tracker
+Disallow: /outcomes
+Disallow: /analytics
+Disallow: /billing
+Disallow: /privacy
+Disallow: /settings
+Disallow: /submit-sprint
+Disallow: /follow-ups
+Disallow: /onboarding/
+
+# AI-signals: we permit indexing + AI-input for the public marketing
+# and policy content. We do NOT permit training on the API surface or
+# authed shell content (both are already Disallow'd above). Follows
+# the RFC-9309 sibling "Content-Signal" convention used by major AI
+# crawlers.
+#
+# search:   yes    (traditional search indices are welcome)
+# ai-input: yes    (RAG / grounding on public policy + standards)
+# ai-train: no     (training corpora — we don't grant blanket training rights)
+
+Sitemap: https://fynd.llc/sitemap.xml
