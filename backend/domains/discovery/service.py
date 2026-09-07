@@ -86,6 +86,31 @@ def _to_jobs_doc(row: dict, existing: Optional[dict]) -> dict:
     # ATS jobs surface a truthful note when they explicitly require a level
     # the candidate doesn't hold. Never fabricates — unparseable → None.
     parsed = jd_parser.parse_requirements(row.get("jd_text") or "")
+
+    # P1 Batch 4 Item 1 — freshness ≠ liveness. This upsert observed the
+    # row in the source response, so we can legitimately mark it `active`
+    # with citable evidence. `apply_transition()` enforces the evidence
+    # requirement (raises if we ever try to reach `active` without it).
+    from domains.liveness import (
+        apply_transition, LivenessState, freshness_block,
+    )
+    now_iso = now.isoformat()
+    evidence = {
+        "check": "connector_fetch_all_returned_id",
+        "at": now_iso,
+        "observed": {
+            "source_ats": row["source_ats"],
+            "external_id": row["external_id"],
+            "employer_token": row.get("employer_token"),
+        },
+    }
+    prior_liveness = (existing or {}).get("liveness")
+    new_liveness = apply_transition(
+        current_block=prior_liveness,
+        new_state=LivenessState.ACTIVE,
+        evidence=evidence,
+    )
+    fresh = freshness_block(row["source_ats"], last_polled_at_iso=now_iso)
     doc = {
         "id": (existing or {}).get("id") or _new_uuid(),
         "canonical_key": _canonical_key(row["source_ats"], row["external_id"]),
@@ -133,6 +158,9 @@ def _to_jobs_doc(row: dict, existing: Optional[dict]) -> dict:
         # Two-lane classification (Phase 2)
         "lane": lane,
         "distance_from_phoenix_mi": distance_mi,
+        # P1 Batch 4 Item 1 — freshness ≠ liveness.
+        "liveness":  new_liveness,
+        "freshness": fresh,
     }
     return doc
 

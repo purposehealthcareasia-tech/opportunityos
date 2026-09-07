@@ -61,6 +61,8 @@ REASON_IDENTITY_MISMATCH = "identity_mismatch"
 REASON_NUMBER_NOT_IN_CLAIMS = "number_not_in_claims"
 REASON_DATE_NOT_IN_CLAIMS = "date_not_in_claims"
 REASON_SENSITIVE_LEAK = "sensitive_leak"
+# P1 Batch 4 Item 1 — liveness gate at dispatch chokepoint.
+REASON_LIVENESS_GATE = "liveness_gate_blocked"
 
 
 # Channels — every dispatch path must declare which channel it's on.
@@ -371,6 +373,37 @@ async def preflight_check(
         application_id=application_id,
         checked_at=now_iso,
     )
+
+    # 0. Liveness gate — P1 Batch 4 Item 1. Strongest allowed check
+    # before prepare/approve: read the job's stored liveness + freshness
+    # blocks and refuse to proceed if not active + fresh + evidence-backed.
+    # This closes the "candidate prepares a submission for a stale row"
+    # gap. Fixture channel skips this gate (`sprint_fixture` operates on
+    # SampleCo demo rows whose liveness stamp is generated at rebase
+    # time with the sample-source cadence).
+    from domains.liveness import (
+        enforce_liveness_before_dispatch, LivenessGateError,
+    )
+    app_doc = await core_db.get_db().applications.find_one(
+        {"id": application_id}, {"job_id": 1, "_id": 0},
+    )
+    if app_doc and app_doc.get("job_id"):
+        job_id = app_doc["job_id"]
+        # Skip liveness gate for the fixture channel — the SampleCo
+        # rows are seed fixtures used exclusively by the sprint test
+        # path; they are stamped active on rebase but the gate would
+        # otherwise force test setup to also stamp freshness.
+        if channel != CHANNEL_SPRINT_FIXTURE and not str(job_id).startswith("walkin:"):
+            try:
+                liveness = await enforce_liveness_before_dispatch(job_id)
+                verdict.line_stats["liveness"] = liveness
+            except LivenessGateError as e:
+                verdict.ok = False
+                verdict.reasons.append(f"{REASON_LIVENESS_GATE}:{e.reason}")
+                verdict.line_stats["liveness_gate"] = {
+                    "reason": e.reason, "details": e.details,
+                }
+                return _finalize_blocked(verdict)
 
     # 1. Approved claims must exist.
     approved = await _load_approved_claims(user_id)
