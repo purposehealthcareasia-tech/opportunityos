@@ -291,6 +291,11 @@ async def fetch_ashby(company_name: str, token: str) -> list[dict]:
         loc = (j.get("location") or "").strip()
         jd = _strip_html(j.get("descriptionPlain") or j.get("descriptionHtml") or "")
         remote = bool(j.get("isRemote")) or (j.get("workplaceType") or "").lower() == "remote"
+        # P1 Batch 3 · country_allowlist. Ashby exposes structured
+        # `address.postalAddress.addressCountry` on the primary location
+        # AND on each `secondaryLocations[].address.postalAddress`.
+        # Populate ONLY from those fields; never inferred from free-text.
+        countries = _ashby_countries(j)
         out.append({
             "source_ats": "ashby",
             "employer": company_name,
@@ -308,8 +313,94 @@ async def fetch_ashby(company_name: str, token: str) -> list[dict]:
             "employment_type": j.get("employmentType") or None,
             "is_newgrad": detect_newgrad(title, jd),
             "fetched_at": _iso(_now()),
+            "country_allowlist": countries,
         })
     return out
+
+
+# ------------------------------------------------ Country normalization
+# Ashby returns full country names ("United States", "Japan", "United Kingdom").
+# USAJOBS returns full names too. Map to ISO-3166-1 alpha-2 so the downstream
+# gate engine can compare against user.location.country deterministically.
+# The mapping is deliberately conservative — unknown country names return
+# None (the row's country_allowlist stays [] not populated). Never fuzzy.
+_ASHBY_COUNTRY_ISO2: dict[str, str] = {
+    "united states":  "US", "usa": "US", "u.s.": "US", "u.s.a.": "US",
+    "canada":         "CA",
+    "united kingdom": "GB", "uk": "GB", "great britain": "GB",
+    "germany":        "DE",
+    "france":         "FR",
+    "spain":          "ES",
+    "italy":          "IT",
+    "netherlands":    "NL",
+    "belgium":        "BE",
+    "switzerland":    "CH",
+    "austria":        "AT",
+    "ireland":        "IE",
+    "sweden":         "SE",
+    "norway":         "NO",
+    "denmark":        "DK",
+    "finland":        "FI",
+    "poland":         "PL",
+    "portugal":       "PT",
+    "japan":          "JP",
+    "china":          "CN",
+    "india":          "IN",
+    "singapore":      "SG",
+    "australia":      "AU",
+    "new zealand":    "NZ",
+    "mexico":         "MX",
+    "brazil":         "BR",
+    "argentina":      "AR",
+    "chile":          "CL",
+    "colombia":       "CO",
+    "israel":         "IL",
+    "united arab emirates": "AE", "uae": "AE",
+    "south africa":   "ZA",
+    "south korea":    "KR", "korea, republic of": "KR",
+    "hong kong":      "HK",
+    "taiwan":         "TW",
+    "philippines":    "PH",
+    "indonesia":      "ID",
+    "malaysia":       "MY",
+    "thailand":       "TH",
+    "vietnam":        "VN",
+    "turkey":         "TR",
+    "estonia":        "EE",
+    "czech republic": "CZ", "czechia": "CZ",
+    "romania":        "RO",
+    "greece":         "GR",
+    "hungary":        "HU",
+}
+
+
+def _to_iso2(country_name: str | None) -> str | None:
+    if not country_name:
+        return None
+    key = country_name.strip().lower()
+    return _ASHBY_COUNTRY_ISO2.get(key)
+
+
+def _ashby_countries(job: dict) -> list[str] | None:
+    """Extract ISO-3166-1 alpha-2 codes from Ashby's structured address
+    fields. Returns:
+      * a non-empty sorted list of unique codes when at least one
+        addressCountry could be mapped; OR
+      * None when the row has no structured country data at all (so
+        the `indeterminate` bucket stays honest).
+    Unknown names in the mapping table produce None (never inferred).
+    """
+    hits: set[str] = set()
+    prim = ((job.get("address") or {}).get("postalAddress") or {}).get("addressCountry")
+    code = _to_iso2(prim)
+    if code:
+        hits.add(code)
+    for sec in (job.get("secondaryLocations") or []):
+        sec_country = ((sec.get("address") or {}).get("postalAddress") or {}).get("addressCountry")
+        c = _to_iso2(sec_country)
+        if c:
+            hits.add(c)
+    return sorted(hits) if hits else None
 
 
 def _guess_remote(location: str, content: str) -> bool:

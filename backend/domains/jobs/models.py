@@ -9,6 +9,12 @@ class EligibilityRequirements(BaseModel):
     offers_sponsorship: bool | None = None
     accepted_statuses: list[str] | None = None
     requires_security_clearance: bool = False
+    # P1 FOUNDATION Batch 3 · country_allowlist.
+    # ISO-3166-1 alpha-2 codes populated ONLY from real source fields
+    # (Ashby address.postalAddress.addressCountry; USAJOBS PositionLocation
+    # CountryCode). None means "source did not expose a structured country";
+    # never inferred — remote/indeterminate stays honest.
+    country_allowlist: list[str] | None = None
     notes: str | None = None
 
 

@@ -174,6 +174,10 @@ async def per_country_coverage() -> dict:
 
     # Remote classification (US-only vs India-tagged vs indeterminate)
     remote_total = remote_us_only = remote_india_plausible = remote_indeterminate = 0
+    # P1 Batch 3 · country_allowlist-classified. Rows whose adapter
+    # emitted a structured country_allowlist shrink the indeterminate
+    # bucket by exactly that count. Never inferred from free-text.
+    remote_country_classified = 0
     async for j in db.jobs.find(
         {"is_sample": False, "geo": {"$regex": "[Rr]emote"}},
         {"geo": 1, "eligibility_requirements": 1, "_id": 0},
@@ -182,6 +186,20 @@ async def per_country_coverage() -> dict:
         g = j.get("geo") or ""
         er = j.get("eligibility_requirements") or {}
         req_us = er.get("requires_us_person")
+        allowlist = er.get("country_allowlist")
+        # If the source provided an explicit allowlist, it is the
+        # authoritative signal — count it as classified and place into
+        # the appropriate bucket.
+        if allowlist:
+            remote_country_classified += 1
+            if allowlist == ["US"]:
+                remote_us_only += 1
+            elif "IN" in allowlist:
+                remote_india_plausible += 1
+            # Non-US, non-IN allowlists still count as classified but
+            # don't feed the india/us-only bucket totals — they simply
+            # reduce the indeterminate count.
+            continue
         if _US_ONLY_RX.search(g) or req_us is True:
             remote_us_only += 1
         elif _INDIA_RX.search(g):
@@ -194,11 +212,15 @@ async def per_country_coverage() -> dict:
     return {
         "note": (
             "Field-based on jobs.geo (free-text) + "
-            "eligibility_requirements.requires_us_person. "
-            "No country-allowlist field exists in the current schema; "
-            "the `indeterminate` bucket is labelled honestly. "
-            "SAMPLE/fixture rows are excluded from every count "
-            "(reported separately)."
+            "eligibility_requirements.requires_us_person + "
+            "eligibility_requirements.country_allowlist (P1 Batch 3). "
+            "country_allowlist is populated ONLY when the source adapter "
+            "exposes a structured country field (Ashby "
+            "address.postalAddress.addressCountry; USAJOBS federal). "
+            "GH/Lever leave it None until their sources expose it, and "
+            "those rows still route through the free-text `indeterminate` "
+            "bucket honestly. SAMPLE/fixture rows excluded from every "
+            "count (reported separately)."
         ),
         "india_by_city_real": india_hits,
         "india_total_real": india_total,
@@ -207,6 +229,8 @@ async def per_country_coverage() -> dict:
             "us_only": remote_us_only,
             "india_explicit": remote_india_plausible,
             "indeterminate": remote_indeterminate,
+            # New in P1 Batch 3.
+            "country_allowlist_classified": remote_country_classified,
         },
         "sample_rows_excluded": sample_total,
     }

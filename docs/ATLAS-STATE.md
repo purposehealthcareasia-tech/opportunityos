@@ -77,6 +77,9 @@ Every P0-produced metric that renders on `/standards` MUST filter `is_sample=Fal
 - **2026-08-13T13:45Z** — P0 Truth Audit COMPLETE (items a-i + init + evidence). All 11 sequence items landed on `main` under continuous-releasability discipline. Evidence in `docs/P0-TRUTH-EVIDENCE.md`. 83 P0-focused tests passing. Tripwire clean. STOPPED for founder split-brief gate + Save-to-GitHub push + Re-publish. P1 Foundation remains BLOCKED.
 - **2026-08-13T14:10Z** — P0 gate: 4/4 PASS with ONE WARN (/privacy-policy SPA shell). WARN CLOSED at commit `1f120e82` (static file at frontend/public/privacy-policy/index.html byte-identical to privacy.html; SPA route dropped; live curl proof + 3 tests). Rendered-copy walk of /employers + /about confirmed no visible OpportunityOS strings. Evidence §7 appended.
 - **2026-08-13T14:15Z** — **P1 FOUNDATION UNBLOCKED** by orchestrator decide-and-document. Rationale recorded in §9 below. Founder split-brief gate on P0 still pending; publish clicks remain deferred; main stays continuously releasable.
+- **2026-08-13T14:30Z** — P1 Batch 1 (Source Access Policy Engine + Global Source Registry) landed. Focused pytest 30 passed. Commit chain ending at `b7b8979a`+.
+- **2026-08-13T15:00Z** — P1 Batch 2 (Opportunity Source Connector SDK) landed at `42367234`. Every network op now routes through `source_policy.allow(...)` at the network-op site itself (fail-CLOSED). Byte-identical output vs. pre-SDK on real Greenhouse response (621 postings verified). 9 SDK tests pass. Kill switch in-flight halt + PolicyDenied-fails-CLOSED tripwire tests locked. Total P1 focused: 36 passed.
+- **2026-08-13T15:30Z** — P1 Batch 3 (Canonical Opportunity Model + `country_allowlist`) landed at (this commit). `EligibilityRequirements.country_allowlist: list[str] | None` populated ONLY from Ashby `address.postalAddress.addressCountry` + `secondaryLocations[].address.postalAddress.addressCountry` (real source field); USAJOBS federal → `["US"]`; GH/Lever stay `None`. Full refresh_all executed against preview: 21,664 postings ingested; **3,532 rows carry country_allowlist** (Ashby-sourced structured address extraction); of the remote pool (n=2,622), **318 remote rows moved from indeterminate → country_allowlist_classified** (12.1% shift). `/standards` per_country_coverage now surfaces `country_allowlist_classified` bucket alongside `us_only / india_explicit / indeterminate`. SAMPLE-exclusion invariant preserved. 8 country-allowlist tests + 11 standards metrics tests pass. Total P1 focused: 49 passed. STOP for founder split-brief review before Batch 4 (hostile-content defense / SSRF / prompt-injection — highest-risk P1 item).
 
 ## §9 · P1 FOUNDATION unblock — decide-and-document (2026-08-13, orchestrator)
 
@@ -97,10 +100,10 @@ Batches are self-contained. STOP at each batch boundary for a report; founder ma
 
 | Batch | Item | Status | Commit |
 |---|---|---|---|
-| **1** | Source Access Policy Engine (deterministic, fail-closed, no-LLM; robotsStatus/termsStatus/licenseStatus/legalReviewStatus × 8 operations; kill switch) | pending | — |
-| **1** | Global Source Registry (16 verified providers as first records; full lifecycle; no source skips shadow) | pending | — |
-| **2** | Connector SDK — `OpportunitySourceConnector` incl. `normalize()`; refactor Greenhouse / Lever / Ashby onto it | pending | — |
-| **3** | Canonical Opportunity Model + category extensions; **includes `country_allowlist: list[str] \| null` on `eligibility_requirements`** — populated ONLY from real source fields, never inferred | pending | — |
+| **1** | Source Access Policy Engine (deterministic, fail-closed, no-LLM; robotsStatus/termsStatus/licenseStatus/legalReviewStatus × 8 operations; kill switch) | **DONE** | `b7b8979a`… |
+| **1** | Global Source Registry (16 verified providers as first records; full lifecycle; no source skips shadow) | **DONE** | `b7b8979a`… |
+| **2** | Connector SDK — `OpportunitySourceConnector` incl. `normalize()`; refactor Greenhouse / Lever / Ashby onto it | **DONE** | `42367234` |
+| **3** | Canonical Opportunity Model + category extensions; **includes `country_allowlist: list[str] \| null` on `eligibility_requirements`** — populated ONLY from real source fields, never inferred | **DONE** | (this commit) |
 | **4** | Freshness ≠ liveness (per-source freshness stamp separate from is_live) | pending | — |
 | **4** | Entity resolution + dedup clusters (deterministic clustering key + membership records) | pending | — |
 | **4** | Hostile-content defense — full SSRF/prompt-injection test set | pending | — |

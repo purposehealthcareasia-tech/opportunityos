@@ -162,6 +162,9 @@ async def fetch_usajobs(location_name: Optional[str] = "Phoenix, Arizona",
                     "is_newgrad": False,
                     "fetched_at": datetime.now(timezone.utc).isoformat(),
                     "hiring_path": path_display or None,
+                    # P1 Batch 3 · federal-only source; every posting
+                    # is US-jurisdictional by definition of USAJOBS.
+                    "country_allowlist": ["US"],
                 })
             # If fewer than requested, we're done.
             if len(items) < results_per_page:

@@ -99,8 +99,12 @@ def _to_jobs_doc(row: dict, existing: Optional[dict]) -> dict:
         "comp": None,
         "jd_text": row.get("jd_text") or "",
         "apply_method": "external",
+        # P1 Batch 3 · country_allowlist. Populated ONLY when the
+        # source adapter emits a structured list; None otherwise
+        # (indeterminate bucket stays honest).
         "eligibility_requirements": {"requires_us_person": False,
-                                      "offers_sponsorship": None},
+                                      "offers_sponsorship": None,
+                                      "country_allowlist": row.get("country_allowlist")},
         "requirements": {"skills_required": [],
                           "degree_level": parsed["degree_level"],
                           "years_min": parsed["years_min"],
