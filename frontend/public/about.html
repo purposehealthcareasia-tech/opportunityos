@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>About — Fynd</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="description" content="Fynd is operated by Purpose Healthcare Labs. Legal entity, mailing address, and contact channels." />
+<meta name="robots" content="index,follow" />
+<link rel="canonical" href="https://fynd.llc/about.html" />
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background: #0B0D10; color: #E9EDF1; line-height: 1.55; font-size: 16px;
+  }
+  a { color: #7CD1FF; text-decoration: underline; }
+  a:hover { color: #A9E1FF; }
+  main { max-width: 720px; margin: 0 auto; padding: 40px 20px 80px; }
+  header.crumbs {
+    max-width: 720px; margin: 0 auto; padding: 16px 20px;
+    border-bottom: 1px solid #1F252B;
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 14px;
+  }
+  header.crumbs a { color: #9AA4AE; text-decoration: none; }
+  h1 { font-size: 28px; margin: 0 0 8px; letter-spacing: -0.01em; }
+  h2 { font-size: 18px; margin: 32px 0 8px; letter-spacing: -0.005em; }
+  h2 .sec { color: #9AA4AE; margin-right: 8px; font-weight: 500; }
+  p, li { font-size: 15px; }
+  ul { padding-left: 22px; margin: 8px 0 12px; }
+  li { margin: 6px 0; }
+  .muted { color: #9AA4AE; font-size: 13px; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 14px; }
+  footer { border-top: 1px solid #1F252B; margin-top: 40px; padding-top: 16px; font-size: 12px; color: #9AA4AE; display: flex; justify-content: space-between; }
+  strong { color: #F5F7FA; }
+  em { color: #D1D6DC; }
+  @media (prefers-color-scheme: light) {
+    body { background: #FFFFFF; color: #14181D; }
+    header.crumbs { border-color: #E4E8EC; }
+    header.crumbs a { color: #5A6470; }
+    a { color: #0958D9; }
+    .muted { color: #5A6470; }
+    footer { border-color: #E4E8EC; color: #5A6470; }
+    strong { color: #14181D; }
+    em { color: #333940; }
+  }
+</style>
+</head>
+<body>
+
+<header class="crumbs">
+  <a href="/">← Fynd</a>
+  <a href="/standards">Measuring state</a>
+</header>
+
+<main>
+  <h1>About Fynd</h1>
+  <p class="muted">Operator information · updated 2026-08-13</p>
+
+  <h2 id="operator"><span class="sec">§1</span>Who operates Fynd</h2>
+  <p>Fynd is a product name of <strong>Purpose Healthcare Labs</strong> ("Purpose Healthcare Labs" or the "Operator"). Purpose Healthcare Labs designs and runs the consent-first job-application platform at <code>https://fynd.llc</code> and the connected mobile clients.</p>
+  <p>The Operator is the data controller for personal data processed through the service, as described in the <a href="/privacy.html">Privacy Policy</a> and enumerated on the <a href="/standards">measuring-state page</a>.</p>
+
+  <h2 id="mission"><span class="sec">§2</span>What Fynd is optimized for</h2>
+  <p>Fynd exists to help candidates reach <em>qualified interviews</em>, not to inflate application volume. Every claim in a Fynd Career Passport is owner-attested, versioned, and approved by the candidate before it leaves the account. Fynd never invents facts, never scrapes third-party sites, and never auto-submits an application without an explicit human approval on that specific submission.</p>
+  <p>The full rail list — dry-run email dispatch, follow-ups never auto-sent, apply caps that are never bypassed, employer supply always human-in-the-loop, honest unknowns in the eligibility engine, HMAC-signed evidence exports, ledger-derived-only receipts — is visible in real time on the <a href="/standards">measuring-state page</a>.</p>
+
+  <h2 id="contact"><span class="sec">§3</span>How to reach us</h2>
+  <ul>
+    <li><strong>General:</strong> <a href="mailto:hello@fynd.llc">hello@fynd.llc</a></li>
+    <li><strong>Privacy / data rights:</strong> <a href="mailto:privacy@fynd.llc">privacy@fynd.llc</a></li>
+    <li><strong>Employers:</strong> <a href="mailto:employers@fynd.llc">employers@fynd.llc</a> — or the <a href="/employers">/employers</a> intake form</li>
+    <li><strong>Security disclosures:</strong> <a href="mailto:security@fynd.llc">security@fynd.llc</a></li>
+  </ul>
+  <p>We aim to respond to non-security inquiries within five business days. Data-rights requests (access, portability, erasure, restriction, objection) are answered within thirty days, per GDPR Article 12(3).</p>
+
+  <h2 id="jurisdiction"><span class="sec">§4</span>Legal + jurisdiction</h2>
+  <p>Purpose Healthcare Labs operates Fynd. All personal data processed through Fynd is stored in the United States. Where GDPR applies, the legal basis for every data category is consent (Article 6(1)(a)), captured at signup and re-affirmed on every material policy change.</p>
+  <p>Users can revoke any non-required consent at any time from <a href="/privacy">/privacy</a>, export their data as JSON, or start a 30-day soft-delete window. Details in <a href="/privacy.html">the Privacy Policy §7</a>.</p>
+
+  <h2 id="build"><span class="sec">§5</span>Which build you are viewing</h2>
+  <p>The live application build version is exposed at <code>GET /api/v1/meta/version</code>, is rendered on the marketing footer + inside the authenticated shell, and is derived from the <code>frontend/package.json</code> version and the deployed git SHA at process boot. If you're auditing a specific claim, quote the build metadata alongside your finding.</p>
+
+  <footer>
+    <span>© 2026 Purpose Healthcare Labs, operating Fynd.</span>
+    <span>
+      <a href="/privacy.html">Privacy</a> ·
+      <a href="/standards">Measuring state</a> ·
+      <a href="/">Back to Fynd</a>
+    </span>
+  </footer>
+</main>
+
+</body>
+</html>

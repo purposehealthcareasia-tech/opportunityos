@@ -153,6 +153,13 @@ export default function Landing() {
       <footer className="px-6 md:px-10 py-10 border-t border-white/10 dark:border-white/5">
         <div className="max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-4">
           <BuildVersion />
+          <div className="flex items-center gap-3 text-xs muted">
+            <Link to="/standards" className="hover:text-fg" data-testid="landing-footer-standards">Measuring state</Link>
+            <span>·</span>
+            <Link to="/about" className="hover:text-fg" data-testid="landing-footer-about">About</Link>
+            <span>·</span>
+            <a href="/privacy.html" className="hover:text-fg" data-testid="landing-footer-privacy">Privacy</a>
+          </div>
           <div className="text-xs muted">This build lights up features only when they can deliver honestly.</div>
         </div>
       </footer>
