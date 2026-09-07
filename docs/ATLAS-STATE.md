@@ -75,3 +75,38 @@ Every P0-produced metric that renders on `/standards` MUST filter `is_sample=Fal
 
 - **2026-08-13T13:00Z** — ATLAS-STATE.md initialized. P0 Truth Audit unblocked by orchestrator decide-and-document. Founder's Re-publish click remains outstanding.
 - **2026-08-13T13:45Z** — P0 Truth Audit COMPLETE (items a-i + init + evidence). All 11 sequence items landed on `main` under continuous-releasability discipline. Evidence in `docs/P0-TRUTH-EVIDENCE.md`. 83 P0-focused tests passing. Tripwire clean. STOPPED for founder split-brief gate + Save-to-GitHub push + Re-publish. P1 Foundation remains BLOCKED.
+- **2026-08-13T14:10Z** — P0 gate: 4/4 PASS with ONE WARN (/privacy-policy SPA shell). WARN CLOSED at commit `1f120e82` (static file at frontend/public/privacy-policy/index.html byte-identical to privacy.html; SPA route dropped; live curl proof + 3 tests). Rendered-copy walk of /employers + /about confirmed no visible OpportunityOS strings. Evidence §7 appended.
+- **2026-08-13T14:15Z** — **P1 FOUNDATION UNBLOCKED** by orchestrator decide-and-document. Rationale recorded in §9 below. Founder split-brief gate on P0 still pending; publish clicks remain deferred; main stays continuously releasable.
+
+## §9 · P1 FOUNDATION unblock — decide-and-document (2026-08-13, orchestrator)
+
+**Decision.** P1 Foundation begins immediately on `main`. Same continuous-releasability rail as P0.
+
+**Rationale.** Founder's brief on the P0 gate result: "P1 FOUNDATION IS UNBLOCKED (decide-and-document; founder's publish clicks remain deferred, main stays continuously releasable; record the unblock decision in ATLAS-STATE.md as with P0)."
+
+**Rails held (identical to P0).**
+- Continuous releasability: `main` stays green after every commit.
+- Publish clicks remain the founder's alone.
+- SAMPLE / fixture rows NEVER surface in P1 metrics or registry records.
+- Zero-tolerance items encoded as CI checks where testable (§44 of FYND-ATLAS).
+- No connector code path bypasses the Source Access Policy Engine.
+
+## §10 · P1 FOUNDATION scope — 13 items in dependency order
+
+Batches are self-contained. STOP at each batch boundary for a report; founder may gate mid-phase for high-risk batches.
+
+| Batch | Item | Status | Commit |
+|---|---|---|---|
+| **1** | Source Access Policy Engine (deterministic, fail-closed, no-LLM; robotsStatus/termsStatus/licenseStatus/legalReviewStatus × 8 operations; kill switch) | pending | — |
+| **1** | Global Source Registry (16 verified providers as first records; full lifecycle; no source skips shadow) | pending | — |
+| **2** | Connector SDK — `OpportunitySourceConnector` incl. `normalize()`; refactor Greenhouse / Lever / Ashby onto it | pending | — |
+| **3** | Canonical Opportunity Model + category extensions; **includes `country_allowlist: list[str] \| null` on `eligibility_requirements`** — populated ONLY from real source fields, never inferred | pending | — |
+| **4** | Freshness ≠ liveness (per-source freshness stamp separate from is_live) | pending | — |
+| **4** | Entity resolution + dedup clusters (deterministic clustering key + membership records) | pending | — |
+| **4** | Hostile-content defense — full SSRF/prompt-injection test set | pending | — |
+| **5** | Matching constitution — Stage 1 deterministic gates SEPARATE from Stage 2 explainable ranking | pending | — |
+| **5** | Application route engine | pending | — |
+| **5** | Fastest-path engine | pending | — |
+| **6** | Lanes with exposed logic (career / income-now / newgrad / etc.; logic surfaced per-card) | pending | — |
+| **6** | i18n foundation (message-catalog scaffold, no runtime language switch yet) | pending | — |
+| **6** | AI boundaries (grounding invariants, no-fabrication test suite, generation firewall reuse) | pending | — |

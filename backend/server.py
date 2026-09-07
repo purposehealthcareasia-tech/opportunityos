@@ -127,6 +127,18 @@ async def lifespan(_app: FastAPI):
         log.info("Seed complete: %s", counts)
     except Exception:
         log.exception("Seeder failed")
+    # P1 FOUNDATION · Global Source Registry (idempotent, seed-on-boot).
+    # Populates the canonical verified providers as first-class records
+    # so every connector code path can look up the source_id + statuses
+    # and route through source_policy.allow(). Failure here is not
+    # fatal — connectors that ask for a missing source will fail-closed
+    # in the policy engine, but everything else keeps working.
+    try:
+        from domains.source_registry import seed_verified_sources
+        _sr_counts = await seed_verified_sources()
+        log.info("Source registry seed: %s", _sr_counts)
+    except Exception:
+        log.exception("Source registry seed failed")
     try:
         swept = await sweep_expired_deletions()
         if swept:

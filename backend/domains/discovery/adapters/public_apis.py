@@ -9,6 +9,15 @@ to the outside world. They must:
   * Never construct or invent an `apply_url`. Only pass through what
     the ATS returned.
   * Never touch LinkedIn / Indeed / Handshake.
+
+P1 FOUNDATION Batch 2 · policy gate. Every module-level fetch function
+below routes its (source_id, Operation.FETCH) tuple through
+`source_policy.allow(...)` BEFORE constructing the HTTP client. This
+makes fail-CLOSED an invariant of the network op site itself — the
+gate runs whether the caller uses the SDK connector classes at the
+bottom of this file OR calls the module-level functions directly.
+`_gate` is async so it can read the (small) `source_registry` record
+via motor without blocking the loop.
 """
 from __future__ import annotations
 
@@ -17,6 +26,34 @@ from datetime import datetime, timezone
 from typing import Iterable, Optional
 
 import httpx
+
+from domains.source_policy import Operation
+from domains.discovery.connector_sdk import OpportunitySourceConnector
+
+
+async def _gate(source_id: str, operation: Operation) -> None:
+    """Deferred import to avoid a circular import chain through
+    `connector_sdk` at module load time (public_apis is imported by
+    `discovery/service.py`, which is imported very early in
+    `server.py`). Raises `PolicyDenied` on any DENY. Kill switch is
+    re-evaluated on every call — no cache."""
+    from domains.source_policy import PolicyDenied, allow  # noqa: F401
+    from domains.source_registry import get as _reg_get
+    from core.time_utils import utc_now
+    from domains.source_policy import PolicyDecision
+
+    rec = await _reg_get(source_id)
+    if rec is None:
+        raise PolicyDenied(PolicyDecision(
+            allowed=False,
+            reason="source_not_in_registry",
+            source_id=source_id,
+            operation=operation.value if hasattr(operation, "value") else str(operation),
+            evaluated_at=utc_now().isoformat(),
+            field_values={},
+        ))
+    decision = allow(source_record=rec, operation=operation)
+    decision.raise_if_denied()
 
 
 USER_AGENT = "LYNK-Autopilot/preview (contact: privacy@fynd.llc)"
@@ -124,7 +161,12 @@ def _strip_html(html: str, max_len: int = 6000) -> str:
 async def fetch_greenhouse(company_name: str, token: str) -> list[dict]:
     """Public Greenhouse Job Board API — unauthenticated JSON.
     Docs: https://developers.greenhouse.io/job-board.html
+
+    P1 Batch 2 · gate: FETCH must be permitted by source_policy for
+    `greenhouse` before the HTTP client is constructed. Fail-CLOSED —
+    no network op fires on DENY.
     """
+    await _gate("greenhouse", Operation.FETCH)
     url = f"https://boards-api.greenhouse.io/v1/boards/{token}/jobs?content=true"
     async with _client() as c:
         r = await c.get(url)
@@ -166,7 +208,11 @@ async def fetch_greenhouse(company_name: str, token: str) -> list[dict]:
 async def fetch_lever(company_name: str, token: str) -> list[dict]:
     """Public Lever Postings API — unauthenticated JSON.
     Docs: https://github.com/lever/postings-api
+
+    P1 Batch 2 · gate: FETCH must be permitted by source_policy for
+    `lever` before the HTTP client is constructed. Fail-CLOSED.
     """
+    await _gate("lever", Operation.FETCH)
     for host in ("api.lever.co", "api.eu.lever.co"):
         url = f"https://{host}/v0/postings/{token}?mode=json"
         try:
@@ -223,7 +269,11 @@ def _lever_normalize(company_name: str, token: str, data: list, host: str) -> li
 async def fetch_ashby(company_name: str, token: str) -> list[dict]:
     """Public Ashby Job-Posting API — unauthenticated JSON.
     Docs: https://developers.ashbyhq.com/docs/public-job-posting-api
+
+    P1 Batch 2 · gate: FETCH must be permitted by source_policy for
+    `ashby` before the HTTP client is constructed. Fail-CLOSED.
     """
+    await _gate("ashby", Operation.FETCH)
     url = f"https://api.ashbyhq.com/posting-api/job-board/{token}"
     async with _client() as c:
         r = await c.get(url)
@@ -276,4 +326,65 @@ FETCHERS = {
     "greenhouse": fetch_greenhouse,
     "lever":      fetch_lever,
     "ashby":      fetch_ashby,
+}
+
+
+# ============================================================================
+# P1 FOUNDATION Batch 2 · SDK connector classes
+#
+# Thin wrappers over the module-level fetchers. Each class exposes the
+# `OpportunitySourceConnector` interface so the eventual scheduler (and
+# admin ops surfaces) can consume every source through a single contract.
+# Byte-identical output rail: the connector's `fetch(name, token)` returns
+# EXACTLY what `fetch_<source>(name, token)` returns for the same inputs.
+# The policy gate runs inside the module-level fetcher (single choke-
+# point), so calling the connector or the raw function produces the same
+# fail-CLOSED behaviour.
+# ============================================================================
+class GreenhouseConnector(OpportunitySourceConnector):
+    source_id = "greenhouse"
+
+    async def discover(self) -> list[tuple[str, str]]:
+        await self.check_policy(Operation.DISCOVER)
+        from domains.discovery.catalog import ALL_BOARDS
+        return [(name, token) for (ats, name, token) in ALL_BOARDS
+                if ats == self.source_id]
+
+    async def fetch(self, company_name: str, token: str) -> list[dict]:
+        # Module-level fetcher enforces the policy gate at the network
+        # op site — no double gate, byte-identical output vs. calling
+        # `fetch_greenhouse(...)` directly.
+        return await fetch_greenhouse(company_name, token)
+
+
+class LeverConnector(OpportunitySourceConnector):
+    source_id = "lever"
+
+    async def discover(self) -> list[tuple[str, str]]:
+        await self.check_policy(Operation.DISCOVER)
+        from domains.discovery.catalog import ALL_BOARDS
+        return [(name, token) for (ats, name, token) in ALL_BOARDS
+                if ats == self.source_id]
+
+    async def fetch(self, company_name: str, token: str) -> list[dict]:
+        return await fetch_lever(company_name, token)
+
+
+class AshbyConnector(OpportunitySourceConnector):
+    source_id = "ashby"
+
+    async def discover(self) -> list[tuple[str, str]]:
+        await self.check_policy(Operation.DISCOVER)
+        from domains.discovery.catalog import ALL_BOARDS
+        return [(name, token) for (ats, name, token) in ALL_BOARDS
+                if ats == self.source_id]
+
+    async def fetch(self, company_name: str, token: str) -> list[dict]:
+        return await fetch_ashby(company_name, token)
+
+
+CONNECTORS: dict[str, type[OpportunitySourceConnector]] = {
+    "greenhouse": GreenhouseConnector,
+    "lever":      LeverConnector,
+    "ashby":      AshbyConnector,
 }
