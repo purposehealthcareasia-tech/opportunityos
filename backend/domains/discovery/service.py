@@ -245,6 +245,23 @@ async def refresh_all(actor: str = "discovery-scheduler") -> dict:
                 await db.jobs.insert_one(doc)
                 inserted_here += 1
                 inserted_ids.append(doc["id"])
+            # P1 Batch 4 Item 2 · entity resolution + dedup cluster.
+            # Idempotent — safe to call on every ingest / re-ingest.
+            try:
+                from domains.entity_resolution import upsert_cluster_member
+                await upsert_cluster_member({
+                    "id":                     doc["id"],
+                    "canonical_key":          doc["canonical_key"],
+                    "source_ats":             row["source_ats"],
+                    "company_name":           doc["company_name"],
+                    "company_domain":         doc["company_domain"],
+                    "requisition_reference":  row.get("requisition_reference"),
+                    "title":                  doc["title"],
+                    "geo":                    doc["geo"],
+                    "discovery":              doc.get("discovery"),
+                })
+            except Exception:
+                log.exception("cluster upsert failed for canonical_key=%s", key)
             # Cooperative yield — see INGEST_YIELD_EVERY_N_ROWS comment.
             if (_i + 1) % INGEST_YIELD_EVERY_N_ROWS == 0:
                 await asyncio.sleep(0)

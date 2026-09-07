@@ -894,6 +894,19 @@ async def submit_application(application_id: str, user: dict = Depends(get_curre
             "message": "You already submitted an application for this employer/req.",
             "prior_receipt": dup,
         }))
+    # P1 Batch 4 Item 2 · cluster-aware dedup — same requisition reached
+    # via a different source (ATS record vs. employer-page copy vs.
+    # government mirror) must still block. Reads only THIS user's
+    # receipts.
+    from domains.entity_resolution import dedup_check as _cluster_dedup
+    cluster_dup = await _cluster_dedup(user["id"], app_row.get("job_id"))
+    if cluster_dup and cluster_dup.get("id") != (dup or {}).get("id"):
+        raise HTTPException(status_code=409, detail=jsonable_encoder({
+            "error": "duplicate_application_cross_source",
+            "message": ("You already submitted for this requisition via "
+                        "a different source (same opportunity cluster)."),
+            "prior_receipt": cluster_dup,
+        }))
 
     auth, current_hash, accepted = await _validate_authorization_and_gates(user["id"], app_row)
     used_today, cap = await _check_daily_cap(user["id"])
