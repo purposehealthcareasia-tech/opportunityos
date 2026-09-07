@@ -12,6 +12,11 @@ frontend/.env
 mobile/.env
 .env.local
 .env.*.local
+# Universal catch-all for any nested .env; .env.example is preserved because
+# example files carry only key NAMES with empty placeholders (config schema
+# preserved for founder + fork agents).
+**/*.env
+!**/*.env.example
 # Candidate prod secrets are handed to the founder out-of-band and MUST
 # never enter git history.
 memory/.prod_secrets_DO_NOT_COMMIT
@@ -24,6 +29,12 @@ tmp_*.json
 tmp_cookies.txt
 tmp_*.txt
 oa.json
+
+# Local runtime storage for uploaded artifacts (documents, resumes, etc.).
+# Keep the directory itself via .gitkeep so app boot doesn't fail on
+# missing STORAGE_ROOT; ignore every real payload.
+backend/storage/*
+!backend/storage/.gitkeep
 
 # Python
 __pycache__/
