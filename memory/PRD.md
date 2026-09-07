@@ -1,5 +1,51 @@
 # Fynd — Product Requirements Document
 
+## 🌊 P1 FOUNDATION Batches 2 & 3 — SHIPPED (2026-08-13 · commits `42367234`, `d748de56`)
+
+**Rails held.** Continuous releasability; publish clicks deferred; decide-and-document protocol; pytest+curl in-loop (external tester runs at orchestrator gates only); TRIPWIRE_CLEAN on every commit.
+
+### Batch 2 — Opportunity Source Connector SDK (commit `42367234`)
+
+**Delta.** Every network op in the discovery layer now routes through `source_policy.allow(...)` at the network-op site itself. Fail-CLOSED by construction — the HTTP client is never instantiated on DENY. Kill switch (`ADMIN_KILL_SWITCH_SOURCES`) re-evaluated per call (no cache), so a founder revoke halts an in-flight connector instantly.
+
+- **New**: `backend/domains/discovery/connector_sdk.py` — `OpportunitySourceConnector` ABC with `source_id` classvar, async `check_policy(op)`, and `discover / fetch / normalize / close` interface. Raises `PolicyDenied` if `source_id` is missing from `source_registry` ("no source skips shadow").
+- **Refactor**: `adapters/public_apis.py` + `adapters/usajobs.py` — every module-level fetcher (`fetch_greenhouse / fetch_lever / fetch_ashby / fetch_usajobs`) calls `await _gate(source_id, Operation.FETCH)` BEFORE any HTTP client is built.
+- **New classes**: `GreenhouseConnector`, `LeverConnector`, `AshbyConnector` + `CONNECTORS` registry.
+- **Byte-identical rail proven**: SDK output vs. raw fetcher on real Greenhouse response (621 postings, first 3 diffed field-by-field).
+- **Tests**: `test_connector_sdk.py` — 9 passing (ABC contract; source_id-to-registry mapping; PolicyDenied fails-CLOSED tripwire that asserts `httpx.AsyncClient` is never instantiated on DENY; kill-switch halts in-flight; byte-identical output; NO-LLM static grep; normalize contract).
+- **Pre-existing state-pollution fix**: `test_source_registry.py` fixture now drops the collection per test (was passing only on fresh DB before).
+
+### Batch 3 — Canonical Opportunity Model + `country_allowlist` (commit `d748de56`)
+
+**Delta.** Adds `country_allowlist: list[str] | None` to `EligibilityRequirements`. Populated ONLY from real source fields — never inferred from free-text.
+
+- **Schema**: `domains/jobs/models.py` — `EligibilityRequirements.country_allowlist: list[str] | None = None`.
+- **Ashby extraction**: `fetch_ashby` reads `address.postalAddress.addressCountry` (primary) AND `secondaryLocations[].address.postalAddress.addressCountry` (secondary). Verified against Notion's live Ashby board — real structured field exposed. Deterministic name→ISO-3166-1 alpha-2 mapping table (~50 countries). Unknown names return None — never fuzzy-matched.
+- **USAJOBS**: federal-only source; every row emits `["US"]`.
+- **GH / Lever**: leave `country_allowlist=None` (their public APIs expose no structured country field today).
+- **Service wire**: `discovery/service.py::_to_jobs_doc` copies the field into `eligibility_requirements`.
+- **Standards surface**: `/standards` `per_country_coverage.remote_classification_real` now includes `country_allowlist_classified`. Rows with an explicit allowlist shrink the `indeterminate` bucket by exactly that count. SAMPLE-exclusion invariant preserved.
+- **Tests**: `test_opportunity_model_country_allowlist.py` — 8 passing.
+
+**Live measured impact (preview refresh_all, 210.35s, 21,664 postings ingested):**
+| Metric | Before Batch 3 | After Batch 3 |
+|---|---|---|
+| Total non-sample jobs | 881 (partial corpus) | 23,427 |
+| Ashby non-sample jobs | 0 | 3,677 |
+| Jobs with `country_allowlist` populated | 0 | **3,532** |
+| Remote non-sample jobs | 38 | 2,622 |
+| Remote jobs with allowlist | 0 | **318** |
+| `remote.us_only` | — | 657 |
+| `remote.india_explicit` | — | 59 |
+| `remote.indeterminate` | — | 1,850 |
+| `remote.country_allowlist_classified` | — | **318** (new bucket; 12.1% of remote pool moved from indeterminate → classified) |
+
+**Focused pytest at the batch boundary:** 49 passed (policy engine 14 + registry 7 + connector SDK 9 + country_allowlist 8 + standards metrics 11). Zero regressions in gate_engine / phase3_safeguards / preflight_validator / form_map_cache / outcome_autopilot / self_healing (106 passing across those files).
+
+**STOP for founder split-brief gate.** Batch 4 (freshness ≠ liveness; entity resolution + dedup; **hostile-content defense — SSRF / prompt-injection**) is the highest-risk P1 item and awaits founder review.
+
+---
+
 ## 🔧 HOTFIX GATE FIX — SHIPPED (2026-08-13 · commit `c00b7737` · pending Re-publish)
 
 Founder gate result on §11 hotfix trio: **HOTFIX 4/4 PASS**, 2 narrow corrections required before Re-publish clears. Both applied at `c00b7737`.
