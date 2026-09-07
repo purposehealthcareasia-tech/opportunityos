@@ -1,348 +1,57 @@
-import React from 'react';
-import { Link } from 'react-router-dom';
-import { ArrowLeft, ShieldCheck } from 'lucide-react';
-import ThemeToggle from '../components/ThemeToggle';
-
-// Version pin — must equal backend `settings.POLICY_TEXT_VERSION`.
-const POLICY_TEXT_VERSION = '1.0';
-const EFFECTIVE_DATE = 'February 21, 2026';
-const CONTACT_EMAIL = 'privacy@fynd.llc';
+import React, { useEffect } from 'react';
 
 /**
- * Public, unauthenticated Privacy Policy page.
+ * P0 Truth Audit (a) — /privacy-policy is now a static-file redirect stub.
  *
- * Rendered OUTSIDE <ProtectedRoute> so App Store reviewers, search engines,
- * and any user (signed in or not) can read the full policy without logging
- * in. Contains the substantive policy text (§1 – §12); the authenticated
- * console for exercising your rights (revoke consent, export data, delete
- * account) lives at /privacy and is linked from §7.
+ * The real, crawlable, versioned policy lives at /privacy.html
+ * (frontend/public/privacy.html, Version 1.0, served with text/html,
+ * canonical https://fynd.llc/privacy.html, robots index,follow).
  *
- * Version pin (POLICY_TEXT_VERSION) MUST match the backend
- * settings.POLICY_TEXT_VERSION returned by GET /api/v1/meta/policy. Bump
- * both together whenever material copy changes.
+ * Before this pass, /privacy-policy was a 349-line React component
+ * rendering the same content through JavaScript. Search crawlers, screen
+ * readers, and headless auditors couldn't reliably see the policy text
+ * without executing JS — violating the founder rail "serve the real
+ * policy as static crawlable text, versioned".
+ *
+ * Behaviour now:
+ *  - Any browser that lands on /privacy-policy is redirected via
+ *    window.location.replace() to /privacy.html on first render.
+ *  - The <noscript> fallback below carries a direct visible link for
+ *    browsers with JS disabled.
+ *  - The sitemap.xml (P0 item g) advertises /privacy.html as the
+ *    canonical location.
  */
-export default function PrivacyPolicy() {
+export default function PrivacyPolicyRedirect() {
+  useEffect(() => {
+    // Preserve query/hash if the founder ever appends anchors like #your-rights.
+    const target = '/privacy.html' + (window.location.hash || '');
+    window.location.replace(target);
+  }, []);
+
   return (
-    <div className="min-h-screen bg-canvas text-fg" data-testid="privacy-policy-page">
-      <header className="border-b border-line dark:border-line-dark">
-        <div className="max-w-3xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
-          <Link to="/" className="inline-flex items-center gap-2 text-sm muted hover:text-fg" data-testid="back-to-home">
-            <ArrowLeft className="h-4 w-4" /> Fynd
-          </Link>
-          <ThemeToggle />
-        </div>
-      </header>
-
-      <main className="max-w-3xl mx-auto px-4 sm:px-6 py-10 space-y-10">
-        <section className="space-y-3">
-          <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight flex items-center gap-2">
-            <ShieldCheck className="h-7 w-7" /> Privacy Policy
-          </h1>
-          <p className="muted text-sm">
-            Effective&nbsp;{EFFECTIVE_DATE} · Version&nbsp;
-            <span className="font-mono" data-testid="policy-text-version">{POLICY_TEXT_VERSION}</span>
+    <div
+      className="min-h-screen bg-canvas text-fg p-6 flex items-center justify-center"
+      data-testid="privacy-policy-redirect"
+    >
+      <div className="max-w-md space-y-3 text-center">
+        <p className="text-sm muted">Redirecting to the current Fynd Privacy Policy…</p>
+        <noscript>
+          <p className="text-sm">
+            Please open{' '}
+            <a className="text-accent underline" href="/privacy.html">
+              /privacy.html
+            </a>{' '}
+            to read the current Fynd Privacy Policy (Version 1.0).
           </p>
-          <p className="muted max-w-2xl text-sm">
-            This document explains what data Fynd collects, why we collect it, who we
-            share it with, how long we keep it, and the controls you have. It applies
-            to the Fynd web application at{' '}
-            <span className="font-mono">https://fynd.llc</span> and the Fynd mobile
-            apps that connect to the same backend.
-          </p>
-        </section>
-
-        <PolicySection id="who-we-are" number="1" title="Who we are">
-          <p>
-            &ldquo;Fynd&rdquo; is the product name of the consent-first job-application
-            platform operated by Purpose Healthcare Labs
-            (the &ldquo;Operator&rdquo;). The Operator is the data controller for the
-            personal data described below. You can reach the Operator at{' '}
-            <a className="underline" href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>.
-          </p>
-        </PolicySection>
-
-        <PolicySection id="scope" number="2" title="Scope of this policy">
-          <p>
-            This policy covers personal data you provide directly to Fynd, data
-            generated by your use of Fynd (application receipts, drafts, audit
-            trails), and data received from third-party sign-in providers you choose
-            to link (Google, Apple).
-          </p>
-          <p>
-            It does <em>not</em> cover the practices of employers you apply to
-            through Fynd, or of any external site you navigate to from a job link.
-          </p>
-        </PolicySection>
-
-        <PolicySection id="data-we-collect" number="3" title="What data we collect">
-          <p>We only collect data that maps to a service you have explicitly consented to.</p>
-          <ul className="list-disc pl-6 space-y-2 text-sm">
-            <li>
-              <strong>Account identity.</strong> Email address, display name,
-              hashed password (bcrypt), and any linked third-party identity records
-              (Google subject id, Apple user id) — collected only if you sign in
-              with the corresponding provider.
-            </li>
-            <li>
-              <strong>Career Passport.</strong> Résumé content, skill claims,
-              project descriptions, education/employment history — <em>only</em>{' '}
-              the values you explicitly enter or approve.
-            </li>
-            <li>
-              <strong>Preferences &amp; eligibility signals.</strong> Locations,
-              seniority range, work authorization, salary expectations,
-              deal-breakers — used to score your Opportunity Feed.
-            </li>
-            <li>
-              <strong>Application activity.</strong> Jobs you import, resumes and
-              cover letters you draft in-app, approvals you record, submission
-              receipts, interview notes.
-            </li>
-            <li>
-              <strong>Consent &amp; audit trail.</strong> Every consent grant,
-              revocation, and material action against your account is timestamped
-              and stored so we — and you — can inspect the history of any release.
-            </li>
-            <li>
-              <strong>Notification subscriptions.</strong> If you opt in to Web
-              Push, we store your browser&rsquo;s VAPID push subscription; if you
-              opt in to SMS OTP, we store your phone number for the sole purpose of
-              delivering the OTP code.
-            </li>
-            <li>
-              <strong>Billing (only if you subscribe).</strong> Subscription plan,
-              coupon usage, and Stripe customer/session ids. Fynd does not store
-              full card numbers; card processing is handled entirely by Stripe.
-            </li>
-            <li>
-              <strong>Technical telemetry.</strong> Request-scoped diagnostics
-              (route, response code, latency, session id) required to run the
-              service. We do <em>not</em> load third-party analytics trackers or
-              advertising SDKs.
-            </li>
-          </ul>
-        </PolicySection>
-
-        <PolicySection id="purposes" number="4" title="Why we collect it — the consent scopes">
-          <p>
-            Every data category above is bound to at least one of the five
-            consent scopes you accept at signup. You can revoke any non-required
-            scope at any time from the authenticated{' '}
-            <Link className="underline" to="/privacy">/privacy</Link> console;
-            revocation stops future processing under that scope immediately.
-          </p>
-          <ol className="list-decimal pl-6 space-y-2 text-sm">
-            <li>
-              <span className="font-mono">process_career_data</span> (required) —
-              lets Fynd process the résumé data, claims, and projects you approve
-              so that you can build a verified Career Passport. Without this
-              scope Fynd cannot function; declining it prevents account creation.
-            </li>
-            <li>
-              <span className="font-mono">discover_jobs</span> — lets Fynd
-              discover job openings that match your approved Passport.
-            </li>
-            <li>
-              <span className="font-mono">generate_materials</span> — lets Fynd
-              help you draft résumés and cover letters that are grounded strictly
-              in your approved Passport. Every draft is reviewed by you before it
-              leaves your account. Fynd never fabricates claims.
-            </li>
-            <li>
-              <span className="font-mono">track_applications</span> — records the
-              status of applications you explicitly submit so you can see the
-              pipeline in one place.
-            </li>
-            <li>
-              <span className="font-mono">email_me</span> — allows periodic
-              email updates about relevant opportunities and account changes.
-            </li>
-          </ol>
-        </PolicySection>
-
-        <PolicySection id="legal-basis" number="5" title="Legal basis for processing">
-          <p>
-            Where GDPR applies, our legal basis for every category above is your{' '}
-            <strong>freely given, specific, informed, and unambiguous consent</strong>{' '}
-            (Article 6(1)(a) GDPR), captured at signup and re-affirmed each time
-            the policy text version changes. Where you sign a Stripe checkout, the
-            legal basis for processing your payment information is{' '}
-            <em>performance of a contract</em> (Article 6(1)(b) GDPR).
-          </p>
-        </PolicySection>
-
-        <PolicySection id="sharing" number="6" title="Who we share data with">
-          <p>Fynd only releases data to a third party when the release is:</p>
-          <ul className="list-disc pl-6 space-y-2 text-sm">
-            <li>necessary to deliver a scope you have consented to, and</li>
-            <li>logged in your data-release audit trail with a materials hash you can inspect.</li>
-          </ul>
-          <p>The categories of recipients are:</p>
-          <ul className="list-disc pl-6 space-y-2 text-sm">
-            <li>
-              <strong>Employers</strong> — receive the exact application materials
-              (résumé, cover letter, screener answers) you explicitly approve for
-              each submission. Fynd never sends materials without your click-through
-              approval on a per-application basis.
-            </li>
-            <li>
-              <strong>Stripe</strong> — processes subscription payments; receives
-              your email and billing metadata. See{' '}
-              <a className="underline" href="https://stripe.com/privacy">stripe.com/privacy</a>.
-            </li>
-            <li>
-              <strong>Emergent Google Sign-In</strong> — if you sign in with
-              Google, Emergent&rsquo;s managed OAuth service handles the OAuth
-              handshake. Fynd never sees your Google password. See{' '}
-              <a className="underline" href="https://emergent.sh/privacy">emergent.sh/privacy</a>.
-            </li>
-            <li>
-              <strong>Apple</strong> — if you sign in with Apple, Apple handles
-              the OIDC handshake. Fynd receives the pseudonymous Apple user id and,
-              if you allow it, your email relay.
-            </li>
-            <li>
-              <strong>Twilio</strong> — if you enable phone sign-in, Twilio Verify
-              delivers your OTP code. Twilio receives only the phone number and
-              the verification challenge.
-            </li>
-            <li>
-              <strong>Push service providers</strong> — if you enable Web Push,
-              your browser vendor&rsquo;s push service (Apple, Google,
-              Mozilla) receives the encrypted notification payload for delivery
-              to your device.
-            </li>
-          </ul>
-          <p>
-            Fynd does <strong>not</strong> sell personal data, does{' '}
-            <strong>not</strong> share personal data with advertising networks,
-            and does <strong>not</strong> permit third parties to derive their
-            own profiles of you from your Fynd data.
-          </p>
-        </PolicySection>
-
-        <PolicySection id="your-rights" number="7" title="Your rights and controls">
-          <p>You can exercise all of the following from the authenticated{' '}
-            <Link className="underline" to="/privacy">/privacy</Link> console
-            once you sign in:
-          </p>
-          <ul className="list-disc pl-6 space-y-2 text-sm">
-            <li><strong>Access &amp; portability.</strong> One-click JSON export of every record we hold on you.</li>
-            <li><strong>Rectification.</strong> Edit your Passport, preferences, eligibility, and application drafts at any time.</li>
-            <li><strong>Erasure.</strong> Start a 30-day soft-delete window; sign in during that window to restore, or let it expire for permanent deletion.</li>
-            <li><strong>Restriction &amp; objection.</strong> Revoke any non-required consent scope; future processing under that scope stops immediately.</li>
-            <li><strong>Withdraw consent.</strong> Revocation is one click; historical audit rows are retained as legally required, but no further processing occurs under a revoked scope.</li>
-          </ul>
-          <p>
-            You may also contact us at{' '}
-            <a className="underline" href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>{' '}
-            to exercise any right. We respond within 30 days.
-          </p>
-        </PolicySection>
-
-        <PolicySection id="retention" number="8" title="How long we keep data">
-          <ul className="list-disc pl-6 space-y-2 text-sm">
-            <li>
-              <strong>Active account:</strong> retained until you delete the
-              account or a consent is revoked.
-            </li>
-            <li>
-              <strong>Soft-deleted account:</strong> 30 days. During that window
-              you can restore by signing in.
-            </li>
-            <li>
-              <strong>Permanent deletion:</strong> after the 30-day window
-              expires, all personal data associated with your account is
-              erased from primary storage; audit-log entries required for legal
-              defense are retained in pseudonymized form for up to 24 months.
-            </li>
-            <li>
-              <strong>Application receipts &amp; materials hashes:</strong>{' '}
-              retained for 24 months after the submission so you can prove what
-              was sent, then purged.
-            </li>
-          </ul>
-        </PolicySection>
-
-        <PolicySection id="security" number="9" title="Security">
-          <p>
-            Passwords are hashed with bcrypt at cost 12. Sessions are cookie-based,
-            HttpOnly, Secure, SameSite=Lax, with a rotating CSRF token
-            double-submit protection on all state-changing requests. All
-            traffic between your browser or device and Fynd is served over HTTPS.
-            Access to production data is limited to the Operator&rsquo;s founding
-            team under least-privilege discipline and every access is audited.
-          </p>
-          <p>
-            No system is impregnable. If we ever discover a breach that materially
-            affects your data, we will notify you and (where required) the
-            relevant regulator within 72 hours.
-          </p>
-        </PolicySection>
-
-        <PolicySection id="international" number="10" title="International transfers">
-          <p>
-            Fynd&rsquo;s primary infrastructure runs in United States data
-            centers. If you access Fynd from outside the United States, your
-            data will be transferred to and processed in the United States. Where
-            required by GDPR, we rely on the European Commission&rsquo;s Standard
-            Contractual Clauses (2021/914) as the transfer mechanism.
-          </p>
-        </PolicySection>
-
-        <PolicySection id="cookies" number="11" title="Cookies and similar technologies">
-          <p>Fynd sets only the following cookies:</p>
-          <ul className="list-disc pl-6 space-y-2 text-sm">
-            <li>
-              <span className="font-mono">oppos_session</span> — HttpOnly, Secure,
-              SameSite=Lax. Session identifier. Required for you to be signed in.
-            </li>
-            <li>
-              <span className="font-mono">oppos_csrf</span> — Secure, JS-readable.
-              CSRF double-submit token. Required for state-changing requests.
-            </li>
-          </ul>
-          <p>
-            Fynd does not load third-party tracking pixels, advertising tags, or
-            web analytics scripts.
-          </p>
-        </PolicySection>
-
-        <PolicySection id="changes" number="12" title="Changes to this policy">
-          <p>
-            When we make a material change to this policy we bump the version
-            string above and prompt you to accept the new version the next time
-            you sign in. You will not be denied access to your data if you decline
-            a new version — you can always export your data and delete your
-            account. Non-material changes (typo fixes, formatting) do not bump
-            the version.
-          </p>
-          <p>
-            Current version:{' '}
-            <span className="font-mono">{POLICY_TEXT_VERSION}</span>. Effective:{' '}
-            {EFFECTIVE_DATE}.
-          </p>
-        </PolicySection>
-
-        <footer className="pt-6 border-t border-line dark:border-line-dark text-xs muted flex items-center justify-between">
-          <span>
-            © {new Date().getFullYear()} Purpose Healthcare Labs, operating Fynd.
-          </span>
-          <Link to="/" className="underline">Back to Fynd</Link>
-        </footer>
-      </main>
+        </noscript>
+        <a
+          className="text-xs muted underline"
+          href="/privacy.html"
+          data-testid="privacy-policy-fallback-link"
+        >
+          Go to the current Privacy Policy
+        </a>
+      </div>
     </div>
-  );
-}
-
-function PolicySection({ id, number, title, children }) {
-  return (
-    <section id={id} data-testid={`policy-section-${id}`} className="space-y-3">
-      <h2 className="text-xl font-semibold">
-        <span className="muted mr-2">§{number}</span>
-        {title}
-      </h2>
-      <div className="space-y-3 text-sm leading-relaxed">{children}</div>
-    </section>
   );
 }
