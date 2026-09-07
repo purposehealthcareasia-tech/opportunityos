@@ -1,6 +1,7 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
 import clsx from 'clsx';
+import { BuildVersion } from './BuildVersion';
 import {
   IdCard,
   Sliders,
@@ -102,8 +103,9 @@ export function Sidebar({ isAdminOrSupport }) {
             )}
           </ul>
         </nav>
-        <div className="px-5 py-3 border-t border-white/10 dark:border-white/5 text-[11px] muted tracking-wide">
-          Fynd · Approve → Submit → Track
+        <div className="px-5 py-3 border-t border-white/10 dark:border-white/5 text-[11px] muted tracking-wide flex flex-col gap-1">
+          <span>Approve → Submit → Track</span>
+          <BuildVersion className="text-[10px] muted font-mono" prefix="Fynd" data-testid="sidebar-build-version" />
         </div>
       </div>
     </aside>

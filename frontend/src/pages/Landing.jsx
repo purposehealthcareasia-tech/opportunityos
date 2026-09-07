@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { ShieldCheck, FileCheck2, ListChecks, LockKeyhole, XCircle, ArrowRight } from 'lucide-react';
 import ThemeToggle from '../components/ThemeToggle';
 import { FyndWordmark } from '../components/FyndMark';
+import { BuildVersion } from '../components/BuildVersion';
 
 /**
  * Landing — Fynd Liquid.
@@ -151,7 +152,7 @@ export default function Landing() {
       {/* FOOTER */}
       <footer className="px-6 md:px-10 py-10 border-t border-white/10 dark:border-white/5">
         <div className="max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-4">
-          <div className="text-xs muted">Fynd · v0.1</div>
+          <BuildVersion />
           <div className="text-xs muted">This build lights up features only when they can deliver honestly.</div>
         </div>
       </footer>

@@ -325,6 +325,60 @@ async def policy_meta():
     }
 
 
+# P0 Truth Audit (c) — build-derived version string (2026-08-13).
+# The frontend footer previously read a literal `Fynd · v0.1`. Founder
+# rail: version derives from build, never a literal. This endpoint
+# reads `frontend/package.json.version` at process boot + captures the
+# git short SHA + boot time. Cached at import so we never pay a disk
+# hit per request. Falls back to `"unversioned"` if the file is missing
+# (should never happen in a real deploy — fail-loud in that case is
+# desirable because it means the deploy image is broken).
+import json as _json
+import subprocess as _subprocess
+from datetime import datetime as _dt, timezone as _tz
+from pathlib import Path as _Path
+
+
+def _load_build_version() -> dict:
+    """Read the frontend package.json version + git short SHA once at boot."""
+    pkg_version = "unversioned"
+    pkg_path = _Path(__file__).resolve().parent.parent / "frontend" / "package.json"
+    try:
+        pkg_version = str(_json.loads(pkg_path.read_text(encoding="utf-8")).get("version") or "unversioned")
+    except Exception:
+        pass
+    git_sha = "unknown"
+    try:
+        git_sha = _subprocess.check_output(
+            ["git", "rev-parse", "--short=8", "HEAD"],
+            cwd=str(_Path(__file__).resolve().parent.parent),
+            stderr=_subprocess.DEVNULL, timeout=2,
+        ).decode("utf-8").strip() or "unknown"
+    except Exception:
+        pass
+    return {
+        "version": pkg_version,
+        "git_sha": git_sha,
+        "booted_at": _dt.now(_tz.utc).isoformat(),
+        "source": "frontend/package.json",
+    }
+
+
+_BUILD_VERSION = _load_build_version()
+
+
+@app.get("/api/v1/meta/version", tags=["meta"])
+async def version_meta():
+    """Public build-derived version metadata for the footer + auditors.
+
+    Never a literal. Reads `frontend/package.json.version` + git short
+    SHA at process boot (cached). Rendered on the marketing footer and
+    consumed by external monitors / crawlers that need to prove which
+    build they're seeing.
+    """
+    return dict(_BUILD_VERSION)
+
+
 app.include_router(auth_router)
 app.include_router(consent_router)
 app.include_router(users_router)
