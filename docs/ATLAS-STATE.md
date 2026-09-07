@@ -30,17 +30,17 @@ Ordered by dependency, not by founder-list letter. Each item ships as its own co
 
 | # | Founder letter | Item | Status | Commit |
 |---|---|---|---|---|
-| 1 | init | Initialize ATLAS-STATE.md | **DONE** | (this commit) |
-| 2 | (b) | Brand sweep — kill `opportunityos.dev` from every user-facing served surface | pending | — |
-| 3 | (a) | `/privacy-policy` serves the real static crawlable versioned policy (no SPA shell) | pending | — |
-| 4 | (c) | Footer version string derives from build (`package.json`), no `v0.1` literal | pending | — |
-| 5 | (g) | `robots.txt` + `sitemap.xml` as real static files, correct content-types | pending | — |
-| 6 | (e) | Operator / about page (legal entity, contact) | pending | — |
-| 7 | (d) | `/standards` sync — reflect Phase 0-6 + hotfix, add change history | pending | — |
-| 8 | (f) | `/standards` outcome rows (median days-to-first-response, interviews/100 apps) + public claim-verification ladder | pending | — |
-| 9 | (i) | `/standards` per-country coverage row — real rows only, SAMPLE segregated, indeterminate bucket | pending | — |
-| 10 | (h) | North-star instrumentation — TQI + guardrails; measure baseline BEFORE optimization; SAMPLE excluded | pending | — |
-| 11 | evidence | `docs/P0-TRUTH-EVIDENCE.md` + tripwire + STOP for split-brief gate | pending | — |
+| 1 | init | Initialize ATLAS-STATE.md | **DONE** | `b7b8979a` |
+| 2 | (b) | Brand sweep — kill `opportunityos.dev` from every user-facing served surface | **DONE** | `41a29043` |
+| 3 | (a) | `/privacy-policy` serves the real static crawlable versioned policy (no SPA shell) | **DONE** | `8249bd73` |
+| 4 | (c) | Footer version string derives from build (`package.json`), no `v0.1` literal | **DONE** | (chained) |
+| 5 | (g) | `robots.txt` + `sitemap.xml` as real static files, correct content-types | **DONE** | (chained) |
+| 6 | (e) | Operator / about page (legal entity, contact) | **DONE** | (chained) |
+| 7 | (d) | `/standards` sync — reflect Phase 0-6 + hotfix, add change history | **DONE** | (chained) |
+| 8 | (f) | `/standards` outcome rows (median days-to-first-response, interviews/100 apps) + public claim-verification ladder | **DONE** | (chained) |
+| 9 | (i) | `/standards` per-country coverage row — real rows only, SAMPLE segregated, indeterminate bucket | **DONE** | (chained) |
+| 10 | (h) | North-star instrumentation — TQI + guardrails; measure baseline BEFORE optimization; SAMPLE excluded | **DONE** | (chained) |
+| 11 | evidence | `docs/P0-TRUTH-EVIDENCE.md` + tripwire + STOP for split-brief gate | **DONE** | (this commit) |
 
 ## §4 · Never-fabricate honest thresholds
 
@@ -74,3 +74,4 @@ Every P0-produced metric that renders on `/standards` MUST filter `is_sample=Fal
 ## §8 · Timeline (append-only)
 
 - **2026-08-13T13:00Z** — ATLAS-STATE.md initialized. P0 Truth Audit unblocked by orchestrator decide-and-document. Founder's Re-publish click remains outstanding.
+- **2026-08-13T13:45Z** — P0 Truth Audit COMPLETE (items a-i + init + evidence). All 11 sequence items landed on `main` under continuous-releasability discipline. Evidence in `docs/P0-TRUTH-EVIDENCE.md`. 83 P0-focused tests passing. Tripwire clean. STOPPED for founder split-brief gate + Save-to-GitHub push + Re-publish. P1 Foundation remains BLOCKED.

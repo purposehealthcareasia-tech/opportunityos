@@ -31,6 +31,11 @@ FORBIDDEN_PATTERNS = [
 # purposes (fixture allowlists, seeder tokens, comments explaining the
 # rebrand). Each entry MUST carry a rationale in the value.
 ALLOWLIST = {
+    "backend/domains/standards/metrics.py":
+        "FIXTURE_EMAILS constant — hardcoded list of fixture user emails "
+        "used to EXCLUDE those users from every public /standards metric. "
+        "The strings must equal what the seeder writes, so referencing them "
+        "here is internal exclusion machinery, not user-facing branding.",
     "backend/domains/fixtures/internal_router.py":
         "Internal-only endpoint gated by X-Service-Token; docstring + response "
         "'note' field name the stable fixture user email as an ID, not as user-"
