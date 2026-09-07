@@ -323,7 +323,7 @@ def forward_address_for(user_id: str) -> dict:
     """User-facing "labeled stub" address. Real parsing lands post-v0.1."""
     short = user_id.replace("-", "")[:10]
     return {
-        "address": f"inbound+{short}@opportunityos.example",
+        "address": f"inbound+{short}@fynd.llc",
         "label": "INBOUND PARSING — labeled stub in v0.1; log updates manually",
     }
 

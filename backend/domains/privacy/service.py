@@ -142,7 +142,7 @@ async def get_export(job_id: str, user: dict = Depends(get_current_user)):
     if row["status"] != "ready":
         return {"job_id": job_id, "status": row["status"]}
     return {"job_id": job_id, "status": "ready",
-            "download": {"filename": f"opportunityos-export-{job_id[:8]}.json",
+            "download": {"filename": f"fynd-export-{job_id[:8]}.json",
                          "content": row["bundle"]}}
 
 

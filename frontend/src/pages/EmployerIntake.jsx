@@ -136,7 +136,7 @@ export default function EmployerIntake() {
       </form>
 
       <p className="text-xs muted mt-6 text-center">
-        Prefer email? Reach us at <a className="text-accent hover:underline" href="mailto:employers@opportunityos.dev">employers@opportunityos.dev</a>.
+        Prefer email? Reach us at <a className="text-accent hover:underline" href="mailto:employers@fynd.llc">employers@fynd.llc</a>.
       </p>
     </div>
   );
