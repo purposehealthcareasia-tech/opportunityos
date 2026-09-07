@@ -191,9 +191,44 @@ The P0-new endpoints (`GET /api/v1/meta/version`) are auto-discovered by FastAPI
 
 P0 Truth Audit is complete on `main` at the head SHA below. The hotfix trio + hotfix gate fix ride together in the same unpushed segment (179+ commits ahead of `origin/main`).
 
-**Founder next actions:**
-1. Split-brief gate the P0 items (a)–(i) using this evidence file.
-2. Save-to-GitHub push (native platform button) — pushes hotfix + P0 together in one wave.
+## §7 · WARN fix — /privacy-policy at HTTP layer (2026-08-13, post-gate)
+
+**Founder gate result:** 4/4 PASS with ONE WARN. Curl request to `/privacy-policy` was returning the SPA shell because the SPA-level `window.location.replace` fired only after JS ran. Real crawlers and headless auditors were seeing the React `<div id="root">`, not the policy.
+
+**Fix landed:** `frontend/public/privacy-policy/index.html` is a byte-identical mirror of `privacy.html`. The static-file server returns it directly at `/privacy-policy(/)`, so a `curl -L` request follows one 301 (`/privacy-policy` → `/privacy-policy/`) and lands on the real 14KB policy body with `content-type: text/html`. NO SPA index.html in the chain. The React `/privacy-policy` route + `PrivacyPolicy.jsx` redirect stub were deleted to eliminate the ambiguity.
+
+**Live curl proof (2026-09-07 on preview):**
+```
+$ curl -sI https://lynk-preview-2.preview.emergentagent.com/privacy-policy
+HTTP/2 301 · location: /privacy-policy/
+$ curl -sL https://lynk-preview-2.preview.emergentagent.com/privacy-policy -w "final %{http_code} %{content_type} %{size_download}\n" | tail -1
+final 200 text/html; charset=UTF-8 14418
+$ curl -sL .../privacy-policy | grep -E "Privacy Policy|Version.*1\\.0"
+<title>Privacy Policy — Fynd</title>
+<h1>Privacy Policy</h1>
+<p class="muted">Effective February 21, 2026 · Version <code>1.0</code></p>
+```
+
+**Rendered-copy walk of /employers + /about (Playwright, 1280×1400 viewport, JS enabled):**
+- `/employers` — no `opportunityos` strings visible; `employers@fynd.llc` visible in the footer contact line ✓. Rendered heading: "Connect your ATS to Fynd".
+- `/about` — bounces via redirect stub to `/about.html`; renders full operator page with Purpose Healthcare Labs identified as the operator + hello@/privacy@/employers@/security@ at `fynd.llc`. No `opportunityos` strings.
+- `/privacy-policy` — final URL `/privacy-policy/`, page contains "Privacy Policy" heading + "Version 1.0" marker.
+- Screenshots: `/app/docs/p0-warn-privacy-policy-rendered.jpeg`, `/app/docs/p0-warn-about-rendered.jpeg`, `/app/docs/p0-warn-employers-rendered.jpeg`.
+
+**Tests locking the WARN fix (`test_privacy_policy_static_serves.py`, 3 passed):**
+1. Physical `frontend/public/privacy-policy/index.html` exists + carries "Privacy Policy" + "Version 1.0" + no `opportunityos`.
+2. It is byte-identical to `privacy.html` (version bumps stay in one place; a divergence would fail CI).
+3. Live curl `-L` against `REACT_APP_BACKEND_URL/privacy-policy` returns http 200, text/html, ≥8KB body, "Privacy Policy" + "1.0" text; SPA-shell detection assertion locks against regression.
+
+**Files touched by the WARN fix:**
+- Added: `frontend/public/privacy-policy/index.html` (mirror of `privacy.html`).
+- Added: `backend/tests/test_privacy_policy_static_serves.py` (3 tests).
+- Removed: `frontend/src/pages/PrivacyPolicy.jsx` (redirect stub — obsoleted by the static file winning at the HTTP layer).
+- Modified: `frontend/src/App.js` — dropped `PrivacyPolicy` lazy import + `/privacy-policy` route; inline comment explains the static-file rail.
+
+**Founder next actions (post-WARN):**
+1. Split-brief gate the 9 P0 items using this evidence file + this §7 addendum.
+2. Save-to-GitHub push (native platform button) — pushes hotfix + P0 + WARN fix together in one wave.
 3. Re-publish click — brings hotfix + P0 to prod.
 
 **P1 Foundation remains BLOCKED** until the founder split-brief gate on this P0. `country_allowlist` schema addition, licensed partner-feed connectors, registry/policy/SDK/graph/freshness≠liveness/dedup/security items — all queued, all untouched.

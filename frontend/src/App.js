@@ -24,7 +24,6 @@ const Analytics        = lazy(() => import('./pages/Analytics'));
 const Outcomes         = lazy(() => import('./pages/Outcomes'));
 const Billing          = lazy(() => import('./pages/Billing'));
 const Privacy          = lazy(() => import('./pages/Privacy'));
-const PrivacyPolicy    = lazy(() => import('./pages/PrivacyPolicy'));
 const About            = lazy(() => import('./pages/About'));
 const Standards        = lazy(() => import('./pages/Standards'));
 const EmployerIntake   = lazy(() => import('./pages/EmployerIntake'));
@@ -46,7 +45,11 @@ export default function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
         <Route path="/auth/callback" element={<GoogleCallback />} />
-        <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+        {/* /privacy-policy is served directly by the static-file layer from
+            frontend/public/privacy-policy/index.html (byte-identical mirror of
+            /privacy.html). NOT a React route — the static file wins at the
+            HTTP layer so curl/crawlers land on the real 14KB policy body,
+            not the SPA shell. See P0 Truth Audit (a) + WARN fix. */}
         <Route path="/about" element={<About />} />
         <Route path="/standards" element={<Standards />} />
         <Route path="/employers" element={<EmployerIntake />} />
