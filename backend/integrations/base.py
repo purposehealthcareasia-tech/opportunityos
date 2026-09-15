@@ -59,6 +59,7 @@ class ProviderCategory(str, Enum):
     VOICE = "voice"
     STORAGE = "storage"
     NOTIFICATIONS = "notifications"
+    DISCOVERY = "discovery"
 
 
 @dataclass

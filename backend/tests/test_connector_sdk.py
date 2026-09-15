@@ -34,6 +34,11 @@ from domains.source_policy import (
 @pytest_asyncio.fixture(autouse=True)
 async def _reset_motor_client_per_test():
     from core import db as _core_db
+    if _core_db._client is not None:
+        try:
+            _core_db._client.close()
+        except Exception:
+            pass
     _core_db._client = None
     _core_db._db = None
     # Symmetry with test_source_registry — always seed against a fresh

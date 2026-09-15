@@ -83,6 +83,7 @@ def load_all() -> None:
     _try("integrations.payments.paypal_provider")
     _try("integrations.payments.paystack_provider")
     _try("integrations.push.webpush_provider")
+    _try("integrations.discovery.collider_provider")
 
 
 def _try(dotted: str) -> None:

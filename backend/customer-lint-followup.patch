@@ -1,0 +1,11 @@
+
+diff --git a/frontend/src/lib/researchScans.js b/frontend/src/lib/researchScans.js
+--- a/frontend/src/lib/researchScans.js
++++ b/frontend/src/lib/researchScans.js
+@@ -129,5 +129,5 @@
+   const status = error?.response?.status;
+   const mutation = ['start', 'cancel', 'resume'].includes(operation);
+-  const uncertain = mutation && (error?.response?.data?.detail?.uncertain === true || error instanceof ResearchScanError && error.code === 'SCAN_INVALID_RESPONSE' || !Number.isInteger(status) || status >= 500 || status === 409);
++  const uncertain = mutation && (error?.response?.data?.detail?.uncertain === true || (error instanceof ResearchScanError && error.code === 'SCAN_INVALID_RESPONSE') || !Number.isInteger(status) || status >= 500 || status === 409);
+   if (status === 401) return { sessionExpired: true, uncertain: false, message: 'Your Fynd session has expired. Scan details were cleared. Sign in again, then check availability.' };
+   if (error instanceof ResearchScanError) return { sessionExpired: false, uncertain, message: uncertain ? 'The scan request could not be confirmed. It may have started; refresh saved scans or retry the same request.' : error.message };

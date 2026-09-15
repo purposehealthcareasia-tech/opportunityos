@@ -34,6 +34,11 @@ from domains.entity_resolution import (
 @pytest_asyncio.fixture(autouse=True)
 async def _reset_and_wipe():
     from core import db as _core_db
+    if _core_db._client is not None:
+        try:
+            _core_db._client.close()
+        except Exception:
+            pass
     _core_db._client = None
     _core_db._db = None
     db = _core_db.get_db()

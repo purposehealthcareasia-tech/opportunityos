@@ -1,0 +1,257 @@
+diff --git a/frontend/src/pages/Research.jsx b/frontend/src/pages/Research.jsx
+--- a/frontend/src/pages/Research.jsx
++++ b/frontend/src/pages/Research.jsx
+@@ -11,8 +11,9 @@
+   const body = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+   const url = URL.createObjectURL(new Blob([body], { type: mime }));
+   const a = document.createElement('a');
+-  a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+-  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
++  a.href = url; a.download = name;
++  try { document.body.appendChild(a); a.click(); }
++  finally { a.remove(); window.setTimeout(() => URL.revokeObjectURL(url), 1000); }
+ }
+ 
+ export default function Research() {
+@@ -27,15 +28,23 @@
+   const [domain, setDomain] = useState('');
+   const [dossier, setDossier] = useState(null);
+   const [paste, setPaste] = useState('');
++  const [exportPreview, setExportPreview] = useState(null);
++  const [exportNotice, setExportNotice] = useState('');
++  const [copyStatus, setCopyStatus] = useState('');
+   const sequence = useRef(0);
++  const exportSequence = useRef(0);
+   const fileInput = useRef(null);
+-  useEffect(() => () => { ++sequence.current; }, []);
++  useEffect(() => () => { ++sequence.current; ++exportSequence.current; }, []);
+   const rows = useMemo(() => report ? filterRecords(report, { query, kind, contentStatus }) : [], [report, query, kind, contentStatus]);
+   const recordMap = useMemo(() => new Map((report?.records || []).map(r => [r.id, r])), [report]);
+ 
++  function resetExport() {
++    ++exportSequence.current; setExportPreview(null); setExportNotice(''); setCopyStatus('');
++  }
+   function accept(text, name) {
+     const next = parseReport(text, name);
+     setReport(next); setError(''); setPage(0); setQuery(''); setKind('all'); setContentStatus('all'); setDossier(null); setDomain('');
++    resetExport();
+   }
+   async function importFile(event) {
+     const file = event.target.files?.[0];
+@@ -56,13 +65,31 @@
+   }
+   function clear() {
+     ++sequence.current; setBusy(false); setReport(null); setDossier(null); setPaste(''); setError('');
++    resetExport();
+   }
+   function exportData(csv = false) {
+     try {
+       const bundle = exportReport(report);
+-      downloadFile(csv ? 'fynd-evidence.csv' : 'fynd-research-bundle.json', csv ? bundle.files['evidence.csv'] : bundle, csv ? 'text/csv;charset=utf-8' : 'application/json');
++      const name = csv ? 'fynd-evidence.csv' : 'fynd-research-bundle.json';
++      const text = csv ? bundle.files['evidence.csv'] : JSON.stringify(bundle, null, 2);
++      ++exportSequence.current; setExportPreview({ name, text }); setCopyStatus(''); setError('');
++      setExportNotice('Download requested. This page cannot confirm whether your browser saved the file.');
++      try { downloadFile(name, text, csv ? 'text/csv;charset=utf-8' : 'application/json'); }
++      catch { setExportNotice('The download could not be started. Your export text is still available below.'); }
+     } catch (e) { setError(e.message || 'Download could not be created.'); }
+   }
++  async function copyExport() {
++    if (!exportPreview) return;
++    const version = exportSequence.current;
++    setCopyStatus('Copying…');
++    try {
++      if (typeof navigator.clipboard?.writeText !== 'function') throw new Error('Clipboard unavailable.');
++      await navigator.clipboard.writeText(exportPreview.text);
++      if (version === exportSequence.current) setCopyStatus('Export copied. Paste it into a text file and save it with the filename shown above.');
++    } catch {
++      if (version === exportSequence.current) setCopyStatus('Clipboard access is unavailable. Select all text in the Export text box, copy it manually, and save it with the filename shown above.');
++    }
++  }
+   function applyDomain(event) {
+     event.preventDefault();
+     try { setDossier(buildDossier(report, domain)); setError(''); } catch (e) { setDossier(null); setError(e.message || 'Enter a valid company hostname.'); }
+@@ -97,9 +124,16 @@
+       </div></details>
+     </section> : <>
+       <section className="liquid-card p-5 space-y-4">
+-        <div className="flex flex-wrap gap-3 justify-between items-center"><div className="min-w-0"><h2 className="text-xl font-semibold break-words">{report.title || 'Imported research'}</h2><p className="text-xs muted mt-1">{report.records.length} retained evidence records · {report.relations.length} identifier relationships</p></div><div className="flex flex-wrap gap-2"><button type="button" className="liquid-capsule liquid-secondary" onClick={() => exportData(false)}><Download size={15} />Download bundle</button><button type="button" className="liquid-capsule liquid-secondary" onClick={clear}><X size={15} />Clear report</button></div></div>
++        <div className="flex flex-wrap gap-3 justify-between items-center"><div className="min-w-0"><h2 className="text-xl font-semibold break-words">{report.title || 'Imported research'}</h2><p className="text-xs muted mt-1">{report.records.length} retained evidence records · {report.relations.length} identifier {report.relations.length === 1 ? 'relationship' : 'relationships'}</p></div><div className="flex flex-wrap gap-2"><button type="button" className="liquid-capsule liquid-secondary" onClick={() => exportData(false)}><Download size={15} />Download bundle</button><button type="button" className="liquid-capsule liquid-secondary" onClick={clear}><X size={15} />Clear report</button></div></div>
+         {!!report.warnings?.length && <details><summary className="cursor-pointer text-xs muted">Import notes ({report.warnings.length})</summary><ul className="list-disc pl-5 text-xs muted mt-2 space-y-1">{report.warnings.map((warning, i) => <li key={i}>{typeof warning === 'string' ? warning : JSON.stringify(warning)}</li>)}</ul></details>}
+       </section>
++      {exportPreview && <section className="liquid-card p-5 space-y-3" aria-labelledby="export-heading">
++        <div className="flex flex-wrap justify-between items-start gap-3"><div className="min-w-0"><h2 id="export-heading" className="text-lg font-semibold">Your export is ready</h2><p className="text-xs muted mt-1 break-all">Filename: {exportPreview.name}</p></div><button type="button" className="liquid-capsule liquid-secondary" onClick={copyExport} disabled={copyStatus === 'Copying…'}>Copy export</button></div>
++        <p className="text-sm muted" role="status">{exportNotice}</p>
++        <p className="text-xs muted">If no file appears, copy the text below and save it with the filename shown above. The preview is kept in this tab and removed when you clear or replace the report. Downloaded files and clipboard copies are not removed.</p>
++        <label className="block text-xs muted" htmlFor="export-text">Export text</label><textarea id="export-text" className={`${inputClass} font-mono h-48 resize-y`} value={exportPreview.text} readOnly spellCheck={false} wrap="off" />
++        {copyStatus && <p className="text-sm muted" role="status">{copyStatus}</p>}
++      </section>}
+       <nav className="flex gap-2 flex-wrap" aria-label="Research views">{tabs.map(([key, title, Icon]) => <button key={key} type="button" aria-pressed={tab === key} onClick={() => setTab(key)} className={`liquid-capsule ${tab === key ? 'liquid-primary' : 'liquid-secondary'}`}><Icon size={15} />{title}</button>)}</nav>
+ 
+       {tab === 'evidence' && <section className="space-y-4">
+diff --git a/frontend/src/pages/Research.test.jsx b/frontend/src/pages/Research.test.jsx
+--- a/frontend/src/pages/Research.test.jsx
++++ b/frontend/src/pages/Research.test.jsx
+@@ -1,6 +1,7 @@
+ import React from 'react';
+ import { act, fireEvent, render, screen, within } from '@testing-library/react';
+ import Research from './Research';
++import { parseReport, exportReport } from '../lib/researchReport';
+ 
+ const reportFixture = {
+   title: 'Fixture evidence — not live research',
+@@ -124,6 +125,7 @@
+   test('shows shared DOI relationships while keeping distinct evidence records', () => {
+     render(<Research />);
+     openPastedReport();
++    expect(screen.getByText('3 retained evidence records · 1 identifier relationship')).toBeTruthy();
+     fireEvent.click(screen.getByRole('button', { name: 'Research links' }));
+ 
+     expect(screen.getByRole('heading', { name: 'Related, not interchangeable.' })).toBeTruthy();
+@@ -254,5 +256,146 @@
+     expect(screen.getByText('Retained discovery edges')).toBeTruthy();
+     expect(screen.getByText(/not every upstream search result or a complete archive/)).toBeTruthy();
+     expect(screen.getByRole('button', { name: 'Download traceable bundle' })).toBeTruthy();
++  });
++
++  describe('readable export fallback', () => {
++    let oldCreate, oldRevoke, oldClipboard, blobSpy, writeText;
++    beforeEach(() => {
++      oldCreate = URL.createObjectURL;
++      oldRevoke = URL.revokeObjectURL;
++      oldClipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
++      URL.createObjectURL = jest.fn().mockReturnValue('blob:research-export');
++      URL.revokeObjectURL = jest.fn();
++      const OriginalBlob = window.Blob;
++      blobSpy = jest.spyOn(window, 'Blob').mockImplementation((parts, options) => new OriginalBlob(parts, options));
++      jest.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
++      writeText = jest.fn().mockResolvedValue(undefined);
++      Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
++      jest.useFakeTimers();
++    });
++    afterEach(() => {
++      act(() => jest.runOnlyPendingTimers());
++      jest.useRealTimers();
++      jest.restoreAllMocks();
++      URL.createObjectURL = oldCreate;
++      URL.revokeObjectURL = oldRevoke;
++      if (oldClipboard) Object.defineProperty(navigator, 'clipboard', oldClipboard);
++      else delete navigator.clipboard;
++    });
++
++    test('shows JSON and CSV text identical to the attempted download bodies without copying automatically', () => {
++      render(<Research />);
++      openPastedReport();
++      const expected = exportReport(parseReport(JSON.stringify(reportFixture)));
++      fireEvent.click(screen.getByRole('button', { name: 'Download bundle' }));
++      const jsonText = screen.getByLabelText('Export text');
++      expect(jsonText.readOnly).toBe(true);
++      expect(jsonText.value).toBe(JSON.stringify(expected, null, 2));
++      expect(JSON.parse(jsonText.value)).toEqual(expected);
++      expect(blobSpy.mock.calls.find(([, options]) => options?.type === 'application/json')[0]).toEqual([jsonText.value]);
++      expect(screen.getByText('Filename: fynd-research-bundle.json')).toBeTruthy();
++      expect(screen.getByText(/cannot confirm whether your browser saved the file/)).toBeTruthy();
++      expect(screen.getByText(/Downloaded files and clipboard copies are not removed/)).toBeTruthy();
++      expect(writeText).not.toHaveBeenCalled();
++
++      fireEvent.click(screen.getByRole('button', { name: 'Export all evidence CSV' }));
++      const csvText = screen.getByLabelText('Export text').value;
++      // Textarea values normalize line endings; download and clipboard preserve the original CSV bytes.
++      expect(csvText).toBe(expected.files['evidence.csv'].replace(/\r\n/g, '\n'));
++      expect(blobSpy.mock.calls.find(([, options]) => options?.type === 'text/csv;charset=utf-8')[0]).toEqual([expected.files['evidence.csv']]);
++      expect(screen.getByText('Filename: fynd-evidence.csv')).toBeTruthy();
++      expect(screen.queryByText('Filename: fynd-research-bundle.json')).toBeNull();
++      expect(writeText).not.toHaveBeenCalled();
++    });
++
++    test.each([false, true])('copies the prepared export bytes only after an explicit click (CSV: %s)', async csv => {
++      render(<Research />);
++      openPastedReport();
++      const expected = exportReport(parseReport(JSON.stringify(reportFixture)));
++      fireEvent.click(screen.getByRole('button', { name: csv ? 'Export all evidence CSV' : 'Download bundle' }));
++      const text = csv ? expected.files['evidence.csv'] : JSON.stringify(expected, null, 2);
++      await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Copy export' })); });
++      expect(writeText).toHaveBeenCalledTimes(1);
++      expect(writeText).toHaveBeenCalledWith(text);
++      expect(screen.getByText(/Export copied\. Paste it into a text file/)).toBeTruthy();
++      expect(screen.getByRole('button', { name: 'Copy export' }).disabled).toBe(false);
++    });
++
++    test.each(['denied', 'unavailable'])('keeps selectable export text and manual instructions when the clipboard is %s', async mode => {
++      if (mode === 'denied') writeText.mockRejectedValue(new Error('Permission denied'));
++      else Object.defineProperty(navigator, 'clipboard', { configurable: true, value: undefined });
++      render(<Research />);
++      openPastedReport();
++      fireEvent.click(screen.getByRole('button', { name: 'Download bundle' }));
++      const text = screen.getByLabelText('Export text').value;
++      await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Copy export' })); });
++      expect(screen.getByText(/Select all text in the Export text box, copy it manually/)).toBeTruthy();
++      expect(screen.getByLabelText('Export text').value).toBe(text);
++      expect(screen.getAllByTestId('evidence-record')).toHaveLength(3);
++      expect(screen.queryByRole('alert')).toBeNull();
++    });
++
++    test('retains the valid report and fallback when starting the native download throws', () => {
++      URL.createObjectURL.mockImplementation(() => { throw new Error('Download unavailable'); });
++      render(<Research />);
++      openPastedReport();
++      fireEvent.click(screen.getByRole('button', { name: 'Download bundle' }));
++      expect(screen.getByText(/The download could not be started/)).toBeTruthy();
++      expect(JSON.parse(screen.getByLabelText('Export text').value).manifest.title).toBe(reportFixture.title);
++      expect(screen.getByRole('heading', { name: reportFixture.title })).toBeTruthy();
++      expect(screen.getAllByTestId('evidence-record')).toHaveLength(3);
++      expect(screen.queryByRole('alert')).toBeNull();
++    });
++
++    test('clears export text and copy feedback when clearing and pasting a new report', async () => {
++      render(<Research />);
++      openPastedReport();
++      fireEvent.click(screen.getByRole('button', { name: 'Download bundle' }));
++      await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Copy export' })); });
++      fireEvent.click(screen.getByRole('button', { name: 'Clear report' }));
++      expect(screen.queryByLabelText('Export text')).toBeNull();
++      expect(screen.queryByText(/Export copied/)).toBeNull();
++      openPastedReport(companyFixture);
++      expect(screen.queryByLabelText('Export text')).toBeNull();
++      expect(screen.getByRole('heading', { name: companyFixture.title })).toBeTruthy();
++    });
++
++    test('keeps fallback for a rejected replacement and resets it only after a valid file finishes importing', async () => {
++      render(<Research />);
++      openPastedReport();
++      fireEvent.click(screen.getByRole('button', { name: 'Download bundle' }));
++      const text = screen.getByLabelText('Export text').value;
++      await act(async () => { uploadFile({ name: 'broken.json', size: 12, text: jest.fn().mockResolvedValue('{ broken }') }); });
++      expect(screen.getByRole('alert').textContent).toContain('Your previously loaded report is unchanged.');
++      expect(screen.getByLabelText('Export text').value).toBe(text);
++      let finishRead;
++      uploadFile({ name: 'replacement.json', size: 200, text: () => new Promise(resolve => { finishRead = resolve; }) });
++      expect(screen.getByLabelText('Export text').value).toBe(text);
++      await act(async () => { finishRead(JSON.stringify(companyFixture)); });
++      expect(screen.getByRole('heading', { name: companyFixture.title })).toBeTruthy();
++      expect(screen.queryByLabelText('Export text')).toBeNull();
++      expect(screen.queryByRole('alert')).toBeNull();
++      expect(screen.getByRole('button', { name: 'Import report' }).disabled).toBe(false);
++    });
++
++    test('ignores stale clipboard completion after a different export or report clear', async () => {
++      let finishCopy;
++      writeText.mockImplementation(() => new Promise(resolve => { finishCopy = resolve; }));
++      render(<Research />);
++      openPastedReport();
++      fireEvent.click(screen.getByRole('button', { name: 'Download bundle' }));
++      fireEvent.click(screen.getByRole('button', { name: 'Copy export' }));
++      expect(screen.getByRole('button', { name: 'Copy export' }).disabled).toBe(true);
++      fireEvent.click(screen.getByRole('button', { name: 'Export all evidence CSV' }));
++      await act(async () => { finishCopy(); });
++      expect(screen.getByText('Filename: fynd-evidence.csv')).toBeTruthy();
++      expect(screen.queryByText(/Export copied/)).toBeNull();
++      fireEvent.click(screen.getByRole('button', { name: 'Copy export' }));
++      fireEvent.click(screen.getByRole('button', { name: 'Clear report' }));
++      await act(async () => { finishCopy(); });
++      expect(screen.queryByLabelText('Export text')).toBeNull();
++      expect(screen.queryByText(/Export copied/)).toBeNull();
++      expect(screen.getByTestId('research-empty')).toBeTruthy();
++    });
+   });
+ });

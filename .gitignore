@@ -58,3 +58,10 @@ dist/
 
 # Logs
 *.log
+.env
+.env.*
+*.env
+credentials.json
+*.pem
+*.key
+.credentials

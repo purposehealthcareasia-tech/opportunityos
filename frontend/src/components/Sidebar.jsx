@@ -3,6 +3,7 @@ import { NavLink } from 'react-router-dom';
 import clsx from 'clsx';
 import { BuildVersion } from './BuildVersion';
 import {
+  BookOpen,
   IdCard,
   Sliders,
   ShieldCheck,
@@ -34,6 +35,7 @@ const SECTIONS = [
   { to: '/eligibility',      label: 'Eligibility',  Icon: ShieldCheck,     phase: 2, active: true  },
   { to: '/onboarding/launch',label: 'Launch',       Icon: Rocket,          phase: 6, active: true  },
   { to: '/feed',             label: 'Feed',         Icon: Rss,             phase: 3, active: true  },
+  { to: '/research',         label: 'Research',     Icon: BookOpen,        phase: 1, active: true  },
   { to: '/applications',     label: 'Applications', Icon: SendHorizonal,   phase: 3, active: true  },
   { to: '/approvals',        label: 'Approvals',    Icon: ClipboardCheck,  phase: 5, active: true  },
   { to: '/tracker',          label: 'Tracker',      Icon: ListTodo,        phase: 5, active: true  },

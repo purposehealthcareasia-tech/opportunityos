@@ -206,6 +206,11 @@ export default function JobDetailPage() {
             </Button>
           </div>
         </div>
+        {!job.is_sample && !derived && job.origin_url && (
+          <Link to={`/research?job=${encodeURIComponent(jobId)}`} className="text-sm underline text-accent inline-flex mt-3" data-testid="job-detail-research-link">
+            Inspect stored evidence in Research
+          </Link>
+        )}
 
         {flash && (
           <div className={`mt-3 rounded-md px-3 py-2 text-sm border ${

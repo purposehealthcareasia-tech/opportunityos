@@ -1,0 +1,36 @@
+diff --git a/frontend/src/components/ResearchAccountLibrary.test.jsx b/frontend/src/components/ResearchAccountLibrary.test.jsx
+index 5ceaaba..ff6566d 100644
+--- a/frontend/src/components/ResearchAccountLibrary.test.jsx
++++ b/frontend/src/components/ResearchAccountLibrary.test.jsx
+@@ -4,7 +4,7 @@ import { api } from '../lib/api';
+ import { ResearchAccountError, accountSnapshot, reopenSavedSnapshot, validateAccountListing, validateSavedReceipt, validateDeleteReceipt } from '../lib/researchAccount';
+ import ResearchAccountLibrary from './ResearchAccountLibrary';
+ 
+-jest.mock('../lib/api', () => ({ api: { get: jest.fn(), post: jest.fn(), delete: jest.fn() } }), { virtual: true });
++jest.mock('../lib/api', () => ({ api: { get: jest.fn(), post: jest.fn(), delete: jest.fn() } }));
+ jest.mock('../lib/researchAccount', () => ({
+   ResearchAccountError: jest.requireActual('../lib/researchAccount').ResearchAccountError,
+   accountSnapshot: jest.fn(), reopenSavedSnapshot: jest.fn(), validateAccountListing: jest.fn(), validateSavedReceipt: jest.fn(), validateDeleteReceipt: jest.fn(),
+diff --git a/backend/domains/research_reports/privacy.py b/backend/domains/research_reports/privacy.py
+--- a/backend/domains/research_reports/privacy.py
++++ b/backend/domains/research_reports/privacy.py
+@@ -14,7 +14,7 @@
+         "content_included": False,
+         "download_instructions": (
+             "Report bodies are separate from this account export. In Research, "
+-            "choose Saved reports, open each report, then Download report. "
++            "choose Saved reports, open each report, then Download bundle. "
+             "Each entry also includes its authenticated download API path."
+         ),
+         "reports": [
+diff --git a/backend/tests/test_research_reports_privacy.py b/backend/tests/test_research_reports_privacy.py
+--- a/backend/tests/test_research_reports_privacy.py
++++ b/backend/tests/test_research_reports_privacy.py
+@@ -21,5 +21,6 @@
+             service.return_value.list.assert_awaited_once_with("owner-a")
+         self.assertIs(exported["content_included"], False)
++        self.assertIn("Download bundle", exported["download_instructions"])
+         self.assertEqual(exported["reports"][0]["download_path"], "/api/v1/research/reports/" + receipt["id"])
+         self.assertNotIn("bundle", exported["reports"][0])
+ 
+

@@ -1,0 +1,3000 @@
+diff --git a/backend/server.py b/backend/server.py
+--- a/backend/server.py
++++ b/backend/server.py
+@@ -28,5 +28,6 @@
+ from domains.consent.router import router as consent_router
+ from domains.users.router import router as users_router
+ from domains.research_reports.router import router as research_reports_router
++from domains.collider.customer_router import router as customer_collider_router
+ from domains.passport.router import router as passport_router
+ from domains.documents.router import router as documents_router
+@@ -396,4 +397,5 @@
+ app.include_router(consent_router)
+ app.include_router(users_router)
+ app.include_router(research_reports_router)
++app.include_router(customer_collider_router)
+ app.include_router(passport_router)
+diff --git a/backend/middleware/idempotency.py b/backend/middleware/idempotency.py
+--- a/backend/middleware/idempotency.py
++++ b/backend/middleware/idempotency.py
+@@ -55,5 +55,9 @@
+         path = request.url.path
+         if path == "/api/v1/research/reports" or path.startswith("/api/v1/research/reports/"):
+             return await call_next(request)
++        # Customer scans authenticate before using their owner-scoped run key.
++        # Never replay a legacy cached response across auth/consent boundaries.
++        if path == "/api/v1/collider/scans" or path.startswith("/api/v1/collider/scans/"):
++            return await call_next(request)
+         if request.method not in STATE_METHODS or not request.url.path.startswith("/api/v1/"):
+             return await call_next(request)
+diff --git a/backend/tests/test_hostile_content_defense.py b/backend/tests/test_hostile_content_defense.py
+--- a/backend/tests/test_hostile_content_defense.py
++++ b/backend/tests/test_hostile_content_defense.py
+@@ -469,6 +469,8 @@
+         # Private Collider service: fixed operator-only origin, no redirects,
+         # no caller-controlled URL; only admin readiness probes are routed.
+         "domains/collider/client.py",
++        # Separate customer service: fixed HTTPS origin, signed backend owner.
++        "domains/collider/customer_client.py",
+         "integrations/auth/apple_provider.py",
+         "integrations/auth/google_provider.py",
+         "integrations/payments/razorpay_provider.py",
+diff --git a/frontend/src/pages/Research.jsx b/frontend/src/pages/Research.jsx
+index d2b7bef..5c9d950 100644
+--- a/frontend/src/pages/Research.jsx
++++ b/frontend/src/pages/Research.jsx
+@@ -3,6 +3,7 @@ import { Upload, Download, Search, BookOpen, Link2, Building2, ListTree, Externa
+ import { parseReport, filterRecords, buildDossier, exportReport, REPORT_KINDS, CONTENT_STATUSES } from '../lib/researchReport';
+ import FyndJobResearchImport from '../components/FyndJobResearchImport';
+ import ResearchAccountLibrary from '../components/ResearchAccountLibrary';
++import ResearchScanPanel from '../components/ResearchScanPanel';
+ 
+ const label = value => String(value).replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[_-]/g, ' ');
+ const tabs = [['evidence', 'Evidence', BookOpen], ['links', 'Research links', Link2], ['company', 'Company dossier', Building2], ['trace', 'Discovery trail', ListTree]];
+@@ -35,6 +36,7 @@ export default function Research() {
+   const [copyStatus, setCopyStatus] = useState('');
+   const [jobImportReset, setJobImportReset] = useState(0);
+   const [accountReset, setAccountReset] = useState(0);
++  const [scanReset, setScanReset] = useState(0);
+   const sequence = useRef(0);
+   const exportSequence = useRef(0);
+   const fileInput = useRef(null);
+@@ -52,16 +54,23 @@ export default function Research() {
+   function accept(text, name) { acceptReport(parseReport(text, name)); }
+   function acceptFyndReport(next) {
+     setAccountReset(value => value + 1);
++    setScanReset(value => value + 1);
+     ++sequence.current; setBusy(false); acceptReport(next);
+   }
+   function onFyndBusy(active) {
+-    if (active) { ++sequence.current; setBusy(false); setAccountReset(value => value + 1); }
++    if (active) { ++sequence.current; setBusy(false); setAccountReset(value => value + 1); setScanReset(value => value + 1); }
+   }
+   function acceptAccountReport(next) {
+-    ++sequence.current; setBusy(false); setJobImportReset(value => value + 1); acceptReport(next);
++    ++sequence.current; setBusy(false); setJobImportReset(value => value + 1); setScanReset(value => value + 1); acceptReport(next);
+   }
+   function onAccountBusy(active) {
+-    if (active) { ++sequence.current; setBusy(false); setJobImportReset(value => value + 1); }
++    if (active) { ++sequence.current; setBusy(false); setJobImportReset(value => value + 1); setScanReset(value => value + 1); }
++  }
++  function acceptScanReport(next) {
++    ++sequence.current; setBusy(false); setJobImportReset(value => value + 1); setAccountReset(value => value + 1); acceptReport(next);
++  }
++  function onScanBusy(active) {
++    if (active) { ++sequence.current; setBusy(false); setJobImportReset(value => value + 1); setAccountReset(value => value + 1); }
+   }
+   async function importFile(event) {
+     const file = event.target.files?.[0];
+@@ -69,6 +78,7 @@ export default function Research() {
+     if (!file) return;
+     setAccountReset(value => value + 1);
+     setJobImportReset(value => value + 1);
++    setScanReset(value => value + 1);
+     const version = ++sequence.current;
+     setBusy(true); setError('');
+     try {
+@@ -81,12 +91,14 @@ export default function Research() {
+   function importPaste() {
+     setAccountReset(value => value + 1);
+     setJobImportReset(value => value + 1);
++    setScanReset(value => value + 1);
+     ++sequence.current; setBusy(false);
+     try { accept(paste, 'pasted.json'); setPaste(''); } catch (e) { setError(e.message || 'Invalid report.'); }
+   }
+   function clear() {
+     setAccountReset(value => value + 1);
+     setJobImportReset(value => value + 1);
++    setScanReset(value => value + 1);
+     ++sequence.current; setBusy(false); setReport(null); setDossier(null); setPaste(''); setError('');
+     resetExport();
+   }
+@@ -132,10 +144,11 @@ export default function Research() {
+       </div>
+     </header>
+ 
+-    <div className="liquid-card p-4 text-sm flex flex-col sm:flex-row gap-3 justify-between" role="note">
+-      <div><strong>Imported evidence only.</strong> Live crawling is not connected here. Imported claims are not independently verified.</div>
+-      <div className="muted sm:max-w-xs">Processed in this tab unless you explicitly save to your account below. Clearing this tab does not delete saved account copies.</div>
++    <div className="liquid-card p-4 text-sm flex flex-col sm:flex-row gap-3 justify-between" role="note" aria-label="Research evidence scope">
++      <div><strong>Source evidence, not verified claims.</strong> Scan availability depends on the configured service and permitted sources. Source claims are not independently verified.</div>
++      <div className="muted sm:max-w-xs">Manual imports are processed in this tab unless you explicitly save to your account. Starting a scan explicitly stores source content through the scan service. Clearing this tab does not delete saved account copies or scan records.</div>
+     </div>
++    <ResearchScanPanel onImportReport={acceptScanReport} onBusy={onScanBusy} resetKey={scanReset} />
+     <ResearchAccountLibrary report={report} onReport={acceptAccountReport} onBusy={onAccountBusy} resetKey={accountReset} />
+     {error && <div role="alert" className="rounded-xl border border-red-400 p-4 text-sm">{error} {report && 'Your previously loaded report is unchanged.'}</div>}
+ 
+diff --git a/frontend/src/pages/Research.test.jsx b/frontend/src/pages/Research.test.jsx
+index cc5b3d3..06cd46d 100644
+--- a/frontend/src/pages/Research.test.jsx
++++ b/frontend/src/pages/Research.test.jsx
+@@ -7,7 +7,16 @@ import { accountSnapshot, ACCOUNT_LIMITS } from '../lib/researchAccount';
+ import { api } from '../lib/api';
+ 
+ jest.mock('../lib/api', () => ({ api: { get: jest.fn(), post: jest.fn(), delete: jest.fn() } }));
+-const render = element => rtlRender(<MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>{element}</MemoryRouter>);
++const scanCapabilities = { available: true, reason: null, limits: { max_pages_per_run: 20, max_snapshot_bytes: 8388608, max_snapshots: 500 }, scope: 'Configured scan transport only.' };
++const render = (element, { scanAvailable = false } = {}) => {
++  // Legacy manual-import cases deliberately keep the independent availability
++  // request pending. Scan coordination cases opt into the real panel contract.
++  api.get.mockImplementationOnce(url => {
++    if (url !== '/api/v1/collider/scans/capabilities') throw new Error('Expected the bounded scan availability request first.');
++    return scanAvailable ? Promise.resolve({ data: scanCapabilities }) : new Promise(() => {});
++  });
++  return rtlRender(<MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>{element}</MemoryRouter>);
++};
+ 
+ describe('Research stored-job connection', () => {
+   const id = '1393c281-2d9f-4ed8-a38f-16b7c4b02f6d';
+@@ -47,7 +56,7 @@ describe('Research stored-job connection', () => {
+     let finishFile, finishJob;
+     api.get.mockReturnValue(new Promise(resolve => { finishJob = resolve; }));
+     render(<Research />); startJob();
+-    const signal = api.get.mock.calls[0][1].signal;
++    const signal = api.get.mock.calls.find(([url]) => url === `/api/v1/jobs/${id}`)[1].signal;
+     uploadFile({ name: 'new.json', size: 20, text: () => new Promise(resolve => { finishFile = resolve; }) });
+     expect(signal.aborted).toBe(true);
+     await act(async () => { finishJob({ data: storedJob }); });
+@@ -60,7 +69,7 @@ describe('Research stored-job connection', () => {
+     let finishJob;
+     api.get.mockReturnValue(new Promise(resolve => { finishJob = resolve; }));
+     render(<Research />); startJob();
+-    const signal = api.get.mock.calls[0][1].signal;
++    const signal = api.get.mock.calls.find(([url]) => url === `/api/v1/jobs/${id}`)[1].signal;
+     openPastedReport();
+     expect(signal.aborted).toBe(true);
+     await act(async () => { finishJob({ data: storedJob }); });
+@@ -255,9 +264,11 @@ describe('Research workspace', () => {
+     render(<Research />);
+ 
+     expect(screen.getByTestId('research-empty')).toBeTruthy();
+-    expect(screen.getByRole('note').textContent).toContain('Live crawling is not connected here');
+-    expect(screen.getByRole('note').textContent).toContain('unless you explicitly save to your account');
+-    expect(screen.getByRole('note').textContent).toContain('Clearing this tab does not delete saved account copies');
++    const scope = screen.getByRole('note', { name: 'Research evidence scope' }).textContent;
++    expect(scope).toContain('Scan availability depends on the configured service and permitted sources');
++    expect(scope).toContain('unless you explicitly save to your account');
++    expect(scope).toContain('Clearing this tab does not delete saved account copies');
++    expect(scope).toContain('Starting a scan explicitly stores source content');
+     expect(screen.queryAllByTestId('evidence-record')).toHaveLength(0);
+     expect(screen.queryByRole('button', { name: 'Download bundle' })).toBeNull();
+     expect(screen.getByLabelText('Report JSON').maxLength).toBe(20 * 1024 * 1024);
+diff --git a/backend/domains/collider/customer_client.py b/backend/domains/collider/customer_client.py
+new file mode 100644
+--- /dev/null
++++ b/backend/domains/collider/customer_client.py
+@@ -0,0 +1,485 @@
++"""Owner-fixed client for the private customer service, NOT the legacy gateway.
++
++Only authenticated backend code supplies owner_id, base_url and the separate
++FYND_COLLIDER_CUSTOMER_SECRET. No browser cookie, bearer token, owner claim or
++caller URL is forwarded. Each request is signed with a fresh replay nonce; run
++idempotency keys remain stable across explicit reconciliation. No automatic retry
++or source fetch occurs here. Metadata reads do not start collection.
++"""
++from __future__ import annotations
++
++import asyncio
++import hashlib
++import hmac
++import ipaddress
++import json
++import math
++import re
++import time
++import uuid
++from typing import Any
++from urllib.parse import urlsplit
++
++import httpx
++
++from .client import (_COUNT_KEYS, _INPUT_KEYS, _RUN_STATES, _UNIT_STATES,
++                     _coverage, _integer, _source_url, _timestamp, _validate_run)
++
++
++OWNER = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")
++SECRET = re.compile(r"[A-Za-z0-9_-]{32,128}")
++UUID = re.compile(r"[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}")
++NONCE = re.compile(r"[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}")
++HASH = re.compile(r"[a-f0-9]{64}")
++LABEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,79}")
++PREFIX = "/v1/customer"
++SNAPSHOT_FIELDS = {"id", "runId", "unitId", "evidenceKind", "url", "title", "provider", "kind", "observedAt", "contentHash", "capturedAt", "snapshotHash"}
++
++
++class CustomerColliderConfigurationError(ValueError):
++    def __init__(self):
++        super().__init__("Private customer service configuration is invalid.")
++
++
++class CustomerColliderError(RuntimeError):
++    def __init__(self, code: str, *, status_code: int = 502, uncertain: bool = False):
++        self.code = code
++        self.status_code = status_code
++        self.uncertain = uncertain
++        super().__init__("Private customer service request could not be verified.")
++
++
++def _malformed() -> None:
++    raise CustomerColliderError("UPSTREAM_RESPONSE")
++
++
++def _identifier(value: Any) -> str:
++    if not isinstance(value, str) or not UUID.fullmatch(value.lower()):
++        raise CustomerColliderError("INVALID_REQUEST", status_code=400)
++    return value.lower()
++
++
++def _json(value: Any) -> bytes:
++    return json.dumps(value, ensure_ascii=False, allow_nan=False, separators=(",", ":")).encode("utf-8")
++
++
++def _pairs(pairs):
++    result = {}
++    for key, value in pairs:
++        if key in result:
++            raise ValueError
++        result[key] = value
++    return result
++
++
++def _inspect(value: Any) -> None:
++    nodes = 0
++
++    def visit(item, depth=0):
++        nonlocal nodes
++        nodes += 1
++        if nodes > 150000 or depth > 20:
++            _malformed()
++        if type(item) is dict:
++            for key, child in item.items():
++                if not isinstance(key, str) or key in {"__proto__", "prototype", "constructor"}:
++                    _malformed()
++                key.encode("utf-8")
++                visit(child, depth + 1)
++        elif type(item) is list:
++            if len(item) > 5000:
++                _malformed()
++            for child in item:
++                visit(child, depth + 1)
++        elif type(item) is str:
++            item.encode("utf-8")
++        elif type(item) is float and not math.isfinite(item):
++            _malformed()
++        elif item is not None and type(item) not in (int, float, bool):
++            _malformed()
++
++    visit(value)
++
++
++def validate_customer_configuration(base_url: str, signing_key: str, owner_id: str) -> str:
++    """Validate a fixed operator-only HTTPS origin, never an end-user URL."""
++    try:
++        if not isinstance(base_url, str) or not base_url or re.search(r"[\x00-\x20\x7f\\?#]", base_url):
++            raise ValueError
++        parsed = urlsplit(base_url)
++        if (parsed.scheme != "https" or not parsed.hostname or parsed.username is not None or parsed.password is not None
++                or parsed.path not in {"", "/"} or parsed.query or parsed.fragment
++                or (parsed.port is not None and not 1 <= parsed.port <= 65535)
++                or not isinstance(signing_key, str) or not SECRET.fullmatch(signing_key)
++                or not isinstance(owner_id, str) or not OWNER.fullmatch(owner_id)):
++            raise ValueError
++        normalized = httpx.URL(base_url.rstrip("/") + "/")
++        if normalized.host != parsed.hostname or normalized.username or normalized.password:
++            raise ValueError
++        return str(normalized)
++    except (ValueError, TypeError, httpx.InvalidURL):
++        raise CustomerColliderConfigurationError() from None
++
++
++def validate_customer_input(value: Any) -> dict:
++    """Bound user intent before signing; runtime still checks DNS/source policy.
++
++    Do not normalize payloads here: the persisted runtime owns normalization and
++    execution idempotency. A syntactically public URL is not permission to fetch.
++    """
++    def invalid():
++        raise CustomerColliderError("INVALID_REQUEST", status_code=400)
++    def text(item, maximum):
++        if not isinstance(item, str) or not item.strip() or re.search(r"[\x00-\x1f\x7f-\x9f]", item):
++            invalid()
++        try:
++            if len(item.encode("utf-16-le")) // 2 > maximum:
++                invalid()
++        except UnicodeError:
++            invalid()
++    try:
++        if type(value) is not dict or not value or set(value) - _INPUT_KEYS:
++            invalid()
++        _inspect(value)
++        if len(_json(value)) > 16384:
++            invalid()
++        urls, boards = value.get("urls", []), value.get("boards", [])
++        if type(urls) is not list or len(urls) > 20 or type(boards) is not list or len(boards) > 3:
++            invalid()
++        for item in urls:
++            text(item, 2048)
++            if not _source_url(item):
++                invalid()
++            host = urlsplit(item).hostname
++            if not host or "." not in host or host.endswith(".") or not re.fullmatch(r"[a-z0-9.-]+", host):
++                invalid()
++            if any(not part or len(part) > 63 or part.startswith("-") or part.endswith("-") for part in host.split(".")):
++                invalid()
++            if re.search(r"(^|\.)(localhost|local|internal|intranet|lan|home|test|invalid|example|onion)$", host) or re.search(r"(^|\.)(nip\.io|sslip\.io|localtest\.me)$", host):
++                invalid()
++            # Also reject WHATWG legacy numeric-address forms such as 127.1.
++            if re.fullmatch(r"(?:[0-9]+|0x[a-f0-9]+)", host.rsplit(".", 1)[-1]):
++                invalid()
++            try:
++                ipaddress.ip_address(host)
++            except ValueError:
++                pass
++            else:
++                invalid()
++        seen = set()
++        for board in boards:
++            if type(board) is not dict or set(board) - {"provider", "board", "limit"} or board.get("provider") not in {"greenhouse", "lever", "lever-eu", "ashby"} or not isinstance(board.get("board"), str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,79}", board["board"]):
++                invalid()
++            limit = board.get("limit", 10)
++            identity = (board["provider"], board["board"])
++            if type(limit) is not int or not 1 <= limit <= 20 or identity in seen:
++                invalid()
++            seen.add(identity)
++        if "query" in value:
++            text(value["query"], 400)
++        if not urls and not boards and "query" not in value:
++            invalid()
++        if "pageLimit" in value and (type(value["pageLimit"]) is not int or not 1 <= value["pageLimit"] <= 20):
++            invalid()
++        if "followLinks" in value and type(value["followLinks"]) is not bool:
++            invalid()
++        if "maxDepth" in value and (value.get("followLinks") is not True or type(value["maxDepth"]) is not int or not 0 <= value["maxDepth"] <= 2):
++            invalid()
++        if "crawlMode" in value and value["crawlMode"] not in ("jobs", "web"):
++            invalid()
++        for name, maximum in (("providers", 4), ("querySlices", 3)):
++            if name not in value:
++                continue
++            items = value[name]
++            if "query" not in value or type(items) is not list or len(items) > maximum or (name == "providers" and not items):
++                invalid()
++            for item in items:
++                text(item, 50 if name == "providers" else 400)
++                if name == "providers" and not LABEL.fullmatch(item):
++                    invalid()
++            comparison = [item.strip() for item in items] + ([value["query"].strip()] if name == "querySlices" else [])
++            if len(set(comparison)) != len(comparison):
++                invalid()
++        return value
++    except Exception:
++        invalid()
++
++
++def _run_summary(value: Any) -> dict:
++    expected = {"id", "input", "status", "createdAt", "updatedAt", "startedAt", "finishedAt", "cancelRequestedAt", "allocatedPages", "eventsDropped", "progress", "result"}
++    if not isinstance(value, dict) or set(value) != expected or not isinstance(value["id"], str) or not UUID.fullmatch(value["id"]):
++        _malformed()
++    if value["status"] not in _RUN_STATES or not isinstance(value["input"], dict) or set(value["input"]) - _INPUT_KEYS:
++        _malformed()
++    if not all(_timestamp(value[key]) for key in ("createdAt", "updatedAt")) or not all(_timestamp(value[key], True) for key in ("startedAt", "finishedAt", "cancelRequestedAt")):
++        _malformed()
++    if not _integer(value["allocatedPages"], 20) or not _integer(value["eventsDropped"]):
++        _malformed()
++    progress, result = value["progress"], value["result"]
++    if not isinstance(progress, dict) or set(progress) != _UNIT_STATES | {"total", "done"} or not all(_integer(number, 27) for number in progress.values()):
++        _malformed()
++    if sum(progress[state] for state in _UNIT_STATES) != progress["total"] or sum(progress[state] for state in ("completed", "partial", "failed", "uncertain")) != progress["done"]:
++        _malformed()
++    if not isinstance(result, dict) or set(result) != {"counts", "coverage", "selectionPriority", "incomplete"}:
++        _malformed()
++    if not isinstance(result["counts"], dict) or set(result["counts"]) != _COUNT_KEYS or not all(_integer(number) for number in result["counts"].values()) or not _coverage(result["coverage"]) or not isinstance(result["selectionPriority"], str):
++        _malformed()
++    if type(result["incomplete"]) is not bool or result["incomplete"] != (value["status"] != "completed" or progress["pending"] > 0 or progress["uncertain"] > 0):
++        _malformed()
++    return value
++
++
++def _usage(value: Any) -> dict:
++    if not isinstance(value, dict) or set(value) != {"runs", "evidence", "requests", "queue", "scope"}:
++        _malformed()
++    def exact(item, names):
++        if not isinstance(item, dict) or set(item) != set(names):
++            _malformed()
++    def numbers(item, names):
++        if any(not _integer(item[name], 1_073_741_824) for name in names):
++            _malformed()
++    def limits(item, names):
++        exact(item, names); numbers(item, names)
++    def note(text):
++        if not isinstance(text, str) or len(text) > 1000:
++            _malformed()
++    note(value["scope"])
++    runs, evidence, requests, queue = (value[name] for name in ("runs", "evidence", "requests", "queue"))
++    exact(runs, {"runs", "active", "queued", "paused", "allocatedPages", "storedBytes", "statuses", "limits", "storage"})
++    numbers(runs, ("runs", "active", "queued", "paused", "allocatedPages", "storedBytes"))
++    if not isinstance(runs["statuses"], dict) or set(runs["statuses"]) - _RUN_STATES:
++        _malformed()
++    numbers(runs["statuses"], runs["statuses"])
++    if sum(runs["statuses"].values()) != runs["runs"]:
++        _malformed()
++    limits(runs["limits"], {"maxRuns", "maxPagesPerRun", "maxAllocatedPages", "maxBytesPerRun", "maxActive"}); note(runs["storage"])
++    exact(evidence, {"runs", "snapshots", "storedBytes", "limits", "storage"})
++    numbers(evidence, ("runs", "snapshots", "storedBytes"))
++    limits(evidence["limits"], {"maxRunsPerOwner", "maxSnapshotsPerRun", "maxBytesPerRun", "maxBytesPerOwner"}); note(evidence["storage"])
++    exact(requests, {"day", "reservedRequests", "remainingRequests", "limits"})
++    numbers(requests, ("reservedRequests", "remainingRequests"))
++    limits(requests["limits"], {"maxRequestsPerOwnerPerDay", "maxRequestsPerDay"})
++    if not isinstance(requests["day"], str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", requests["day"]) or not _timestamp(requests["day"] + "T00:00:00.000Z") or requests["remainingRequests"] != max(0, requests["limits"]["maxRequestsPerOwnerPerDay"] - requests["reservedRequests"]):
++        _malformed()
++    exact(queue, {"active", "queued", "closed", "limits"}); numbers(queue, ("active", "queued"))
++    if queue["active"] > 1 or type(queue["closed"]) is not bool:
++        _malformed()
++    limits(queue["limits"], {"maxConcurrent", "maxQueued", "maxQueuedPerOwner"})
++    return value
++
++
++class CustomerColliderClient:
++    def __init__(self, base_url: str, signing_key: str, *, owner_id: str,
++                 timeout_seconds: float = 15.0, max_response_bytes: int = 8_388_608,
++                 transport: httpx.AsyncBaseTransport | None = None,
++                 now=time.time, nonce_factory=uuid.uuid4):
++        origin = validate_customer_configuration(base_url, signing_key, owner_id)
++        if (type(timeout_seconds) not in (int, float) or not math.isfinite(timeout_seconds) or not 0 < timeout_seconds <= 120
++                or type(max_response_bytes) is not int or not 1 <= max_response_bytes <= 8_388_608
++                or not callable(now) or not callable(nonce_factory)):
++            raise CustomerColliderConfigurationError()
++        self._owner = owner_id
++        self._signing_key = signing_key.encode("utf-8")
++        self._timeout = timeout_seconds
++        self._maximum = max_response_bytes
++        self._now = now
++        self._nonce_factory = nonce_factory
++        self._closed = False
++        self._http = httpx.AsyncClient(base_url=origin, timeout=httpx.Timeout(timeout_seconds),
++            follow_redirects=False, trust_env=False, headers={"Accept": "application/json", "Accept-Encoding": "identity"},
++            limits=httpx.Limits(max_connections=4, max_keepalive_connections=2), transport=transport)
++
++    async def __aenter__(self):
++        return self
++
++    async def __aexit__(self, *args):
++        await self.aclose()
++
++    async def aclose(self):
++        if not self._closed:
++            self._closed = True
++            await self._http.aclose()
++
++    def _headers(self, method: str, path: str, body: bytes, key: str | None) -> dict:
++        try:
++            current = self._now()
++            if type(current) not in (int, float) or not math.isfinite(current) or not 0 <= current <= 253402300799:
++                raise ValueError
++            timestamp = str(math.floor(current))
++            nonce = str(self._nonce_factory())
++            if not NONCE.fullmatch(nonce):
++                raise ValueError
++            canonical = "\n".join(("LYNK-CUSTOMER-V1", method, path, self._owner, timestamp, nonce, key or "", hashlib.sha256(body).hexdigest()))
++            signature = hmac.new(self._signing_key, canonical.encode("utf-8"), hashlib.sha256).hexdigest()
++        except Exception:
++            raise CustomerColliderError("INVALID_REQUEST", status_code=400) from None
++        headers = {"x-lynk-owner": self._owner, "x-lynk-timestamp": timestamp,
++                   "x-lynk-nonce": nonce, "x-lynk-signature": signature}
++        if key is not None:
++            headers["Idempotency-Key"] = key
++        if method == "POST":
++            headers["Content-Type"] = "application/json"
++        return headers
++
++    async def _request(self, method: str, path: str, *, body: bytes = b"", key: str | None = None, status: int = 200) -> dict:
++        if self._closed:
++            raise CustomerColliderError("CLIENT_CLOSED", status_code=503)
++        headers = self._headers(method, path, body, key)
++
++        async def exchange():
++            async with self._http.stream(method, path, headers=headers, content=body) as response:
++                if response.status_code != status:
++                    code, code_status = {400: ("INVALID_REQUEST", 400), 401: ("UPSTREAM_AUTH", 503), 403: ("UPSTREAM_AUTH", 503),
++                        404: ("UPSTREAM_NOT_FOUND", 404), 409: ("UPSTREAM_CONFLICT", 409), 413: ("UPSTREAM_LIMIT", 429),
++                        429: ("UPSTREAM_CAPACITY", 429)}.get(response.status_code, ("UPSTREAM_FAILURE", 502))
++                    raise CustomerColliderError(code, status_code=code_status,
++                        uncertain=method == "POST" and (response.status_code < 400 or response.status_code >= 500))
++                if response.headers.get("content-type", "").split(";", 1)[0].strip().lower() != "application/json" or response.headers.get("content-encoding", "identity").lower() != "identity":
++                    _malformed()
++                length = response.headers.get("content-length")
++                if length is not None and (len(length) > 12 or not length.isascii() or not length.isdecimal() or int(length) > self._maximum):
++                    raise CustomerColliderError("RESPONSE_LIMIT")
++                content = bytearray()
++                async for chunk in response.aiter_bytes():
++                    if len(content) + len(chunk) > self._maximum:
++                        raise CustomerColliderError("RESPONSE_LIMIT")
++                    content.extend(chunk)
++                try:
++                    value = json.loads(content.decode("utf-8"), object_pairs_hook=_pairs,
++                        parse_constant=lambda _: (_ for _ in ()).throw(ValueError()))
++                    _inspect(value)
++                    if not isinstance(value, dict):
++                        _malformed()
++                except (ValueError, TypeError, UnicodeError, RecursionError):
++                    _malformed()
++                return value
++        try:
++            return await asyncio.wait_for(exchange(), self._timeout)
++        except CustomerColliderError as failure:
++            if method == "POST" and failure.code in {"UPSTREAM_RESPONSE", "RESPONSE_LIMIT"}:
++                failure.uncertain = True
++            raise
++        except (asyncio.TimeoutError, httpx.TimeoutException):
++            raise CustomerColliderError("UPSTREAM_TIMEOUT", status_code=504, uncertain=method == "POST") from None
++        except (httpx.HTTPError, OSError):
++            raise CustomerColliderError("UPSTREAM_UNAVAILABLE", status_code=503, uncertain=method == "POST") from None
++
++    @staticmethod
++    def _validated(callback, *, mutation=False):
++        try:
++            return callback()
++        except Exception:
++            raise CustomerColliderError("UPSTREAM_RESPONSE", uncertain=mutation) from None
++
++    async def health(self):
++        value = await self._request("GET", "/health")
++        if set(value) != {"ok", "scope"} or value["ok"] is not True or not isinstance(value["scope"], str) or len(value["scope"]) > 1000:
++            _malformed()
++        return value
++
++    async def list_runs(self):
++        value = await self._request("GET", PREFIX + "/runs")
++        def validate():
++            if set(value) != {"runs"} or not isinstance(value["runs"], list) or len(value["runs"]) > 100:
++                _malformed()
++            runs = [_run_summary(run) for run in value["runs"]]
++            if len({run["id"] for run in runs}) != len(runs):
++                _malformed()
++            return runs
++        return self._validated(validate)
++
++    async def submit_run(self, payload: dict, *, idempotency_key: str):
++        if not isinstance(idempotency_key, str) or not OWNER.fullmatch(idempotency_key):
++            raise CustomerColliderError("INVALID_REQUEST", status_code=400)
++        validate_customer_input(payload)
++        try:
++            _inspect(payload)
++            body = _json(payload)
++            if len(body) > 16384:
++                raise ValueError
++        except Exception:
++            raise CustomerColliderError("INVALID_REQUEST", status_code=400) from None
++        value = await self._request("POST", PREFIX + "/runs", body=body, key=idempotency_key, status=202)
++        def validate():
++            if set(value) != {"replay", "run"} or type(value["replay"]) is not bool:
++                _malformed()
++            _validate_run(value["run"])
++            return value
++        return self._validated(validate, mutation=True)
++
++    async def _one_run(self, run_id, action=None):
++        run_id = _identifier(run_id)
++        value = await self._request("POST" if action else "GET", PREFIX + "/runs/" + run_id + ("/" + action if action else ""), body=b"{}" if action else b"")
++        def validate():
++            if set(value) != {"run"}:
++                _malformed()
++            return _validate_run(value["run"], run_id)
++        return self._validated(validate, mutation=bool(action))
++
++    async def get_run(self, run_id):
++        return await self._one_run(run_id)
++
++    async def cancel_run(self, run_id):
++        return await self._one_run(run_id, "cancel")
++
++    async def resume_run(self, run_id):
++        return await self._one_run(run_id, "resume")
++
++    def _snapshot(self, value, run_id, snapshot_id=None, *, body=False):
++        expected = SNAPSHOT_FIELDS | ({"markdown"} if body else set())
++        if not isinstance(value, dict) or set(value) != expected or value["runId"] != run_id or _identifier(value["unitId"]) != value["unitId"] or not _source_url(value["url"]):
++            _malformed()
++        for name in ("id", "contentHash", "snapshotHash"):
++            if not isinstance(value[name], str) or not HASH.fullmatch(value[name]):
++                _malformed()
++        if snapshot_id is not None and value["id"] != snapshot_id:
++            _malformed()
++        if not isinstance(value["title"], str) or len(value["title"]) > 500 or not all(isinstance(value[name], str) and LABEL.fullmatch(value[name]) for name in ("kind", "provider", "evidenceKind")):
++            _malformed()
++        if not _timestamp(value["capturedAt"]) or not _timestamp(value["observedAt"], True):
++            _malformed()
++        binding = ["run-evidence-binding-v1", self._owner, run_id, value["unitId"], value["evidenceKind"], value["url"]]
++        if value["id"] != hashlib.sha256(_json(binding)).hexdigest():
++            _malformed()
++        if body:
++            if not isinstance(value["markdown"], str) or len(value["markdown"]) > 60000:
++                _malformed()
++            if value["contentHash"] != hashlib.sha256(value["markdown"].encode("utf-8")).hexdigest():
++                _malformed()
++            # Match the immutable vault's explicit field order, not arbitrary
++            # JSON response order. All values here are strings or null.
++            ordered = {name: value[name] for name in ("id", "runId", "unitId", "evidenceKind", "url", "title", "markdown", "provider", "kind", "observedAt", "contentHash", "capturedAt")}
++            if value["snapshotHash"] != hashlib.sha256(_json(ordered)).hexdigest():
++                _malformed()
++        return value
++
++    async def list_snapshots(self, run_id):
++        run_id = _identifier(run_id)
++        value = await self._request("GET", PREFIX + "/runs/" + run_id + "/snapshots")
++        def validate():
++            if set(value) != {"snapshots"} or not isinstance(value["snapshots"], list) or len(value["snapshots"]) > 500:
++                _malformed()
++            rows = [self._snapshot(row, run_id) for row in value["snapshots"]]
++            if len({row["id"] for row in rows}) != len(rows):
++                _malformed()
++            return rows
++        return self._validated(validate)
++
++    async def get_snapshot(self, run_id, snapshot_id):
++        run_id = _identifier(run_id)
++        if not isinstance(snapshot_id, str) or not HASH.fullmatch(snapshot_id):
++            raise CustomerColliderError("INVALID_REQUEST", status_code=400)
++        value = await self._request("GET", PREFIX + "/runs/" + run_id + "/snapshots/" + snapshot_id)
++        def validate():
++            if set(value) != {"snapshot"}:
++                _malformed()
++            return self._snapshot(value["snapshot"], run_id, snapshot_id, body=True)
++        return self._validated(validate)
++
++    async def usage(self):
++        value = await self._request("GET", PREFIX + "/usage")
++        def validate():
++            if set(value) != {"usage"}:
++                _malformed()
++            return _usage(value["usage"])
++        return self._validated(validate)
+diff --git a/backend/domains/collider/customer_router.py b/backend/domains/collider/customer_router.py
+new file mode 100644
+--- /dev/null
++++ b/backend/domains/collider/customer_router.py
+@@ -0,0 +1,292 @@
++"""Authenticated, default-off Fynd bridge to the private customer service.
++
++No startup work, provider registration, URL fetches or account-identity claims
++come from this module. The operator-controlled service checks current source
++policy and owns durable execution budgets, run ownership and immutable evidence.
++The legacy idempotency middleware MUST exclude this exact prefix before cache
++lookup: its cache is not this route's authenticated execution idempotency layer.
++"""
++from __future__ import annotations
++
++import asyncio
++import hmac
++import json
++import os
++import time
++from collections import OrderedDict
++from contextlib import contextmanager
++
++from fastapi import APIRouter, Depends, Request
++from fastapi.exceptions import RequestValidationError
++from fastapi.responses import JSONResponse
++from fastapi.routing import APIRoute
++from starlette.exceptions import HTTPException
++
++from core.config import settings
++from core.deps import get_current_user
++
++from .customer_client import (OWNER, CustomerColliderClient, CustomerColliderConfigurationError,
++                              CustomerColliderError, _identifier, validate_customer_configuration,
++                              validate_customer_input)
++from .report import ColliderReportError, assemble_report
++
++
++PREFIX = "/api/v1/collider/scans"
++MAX_BODY_BYTES = 16 * 1024
++MAX_SNAPSHOT_BYTES = 8 * 1024 * 1024
++MAX_SNAPSHOTS = 500
++REQUEST_TIMEOUT_SECONDS = 30.0
++PRIVATE_HEADERS = {"Cache-Control": "no-store", "Pragma": "no-cache"}
++SAFE_MESSAGE = "The account scan request could not be completed."
++SCOPE = "Bounded, account-scoped collection. Availability means configured, not provider readiness or internet coverage."
++
++
++def _failure(code, status, *, uncertain=False):
++    return JSONResponse({"detail": {"code": code, "message": SAFE_MESSAGE, "uncertain": bool(uncertain)}},
++                        status_code=status, headers=PRIVATE_HEADERS)
++
++
++class _PrivateScanRoute(APIRoute):
++    def get_route_handler(self):
++        original = super().get_route_handler()
++
++        async def protected(request: Request):
++            request.state.collider_mutation_sent = False
++            try:
++                response = await asyncio.wait_for(original(request), timeout=REQUEST_TIMEOUT_SECONDS)
++            except asyncio.TimeoutError:
++                return _failure("SCAN_TIMEOUT", 504, uncertain=request.state.collider_mutation_sent)
++            except CustomerColliderError as error:
++                return _failure(error.code, error.status_code, uncertain=error.uncertain)
++            except ColliderReportError as error:
++                return _failure(error.code, error.status_code)
++            except CustomerColliderConfigurationError:
++                return _failure("SCAN_NOT_CONFIGURED", 503)
++            except HTTPException as error:
++                code = {401: "SCAN_UNAUTHORIZED", 403: "SCAN_FORBIDDEN", 404: "SCAN_NOT_FOUND",
++                        413: "SCAN_TOO_LARGE", 429: "SCAN_RATE_LIMITED"}.get(error.status_code, "SCAN_REQUEST_FAILED")
++                return _failure(code, error.status_code)
++            except RequestValidationError:
++                return _failure("INVALID_REQUEST", 400)
++            except Exception:
++                # No raw upstream, source, auth or configuration details escape.
++                return _failure("SCAN_UNAVAILABLE", 503, uncertain=request.state.collider_mutation_sent)
++            response.headers.update(PRIVATE_HEADERS)
++            return response
++
++        return protected
++
++
++class _OwnerRateLimiter:
++    """Process-local abuse guard only; durable request quotas live upstream."""
++    def __init__(self, *, requests=60, window_seconds=60.0, max_owners=1000, clock=time.monotonic):
++        self.requests, self.window_seconds = requests, window_seconds
++        self.max_owners, self.clock = max_owners, clock
++        self.windows = OrderedDict()
++
++    def consume(self, owner):
++        current = self.clock()
++        while self.windows and current - next(iter(self.windows.values()))[0] >= self.window_seconds:
++            self.windows.popitem(last=False)
++        entry = self.windows.get(owner)
++        if entry is None:
++            if len(self.windows) >= self.max_owners:
++                raise CustomerColliderError("SCAN_RATE_LIMITED", status_code=429)
++            self.windows[owner] = (current, 1)
++        elif entry[1] >= self.requests:
++            raise CustomerColliderError("SCAN_RATE_LIMITED", status_code=429)
++        else:
++            self.windows[owner] = (entry[0], entry[1] + 1)
++
++
++class _ReportAdmission:
++    """At most four hydrations per worker and one per authenticated account.
++
++    Claiming is synchronous on this worker's event loop, with no waiting queue or
++    idle-owner registry. This limits concurrent bounded report allocations, not
++    distributed account quotas. The claim spans hydration and report assembly.
++    """
++    def __init__(self):
++        self.owners = set()
++
++    @contextmanager
++    def hold(self, owner):
++        if owner in self.owners or len(self.owners) >= 4:
++            raise CustomerColliderError("SCAN_REPORT_CAPACITY", status_code=429)
++        self.owners.add(owner)
++        try:
++            yield
++        finally:
++            self.owners.remove(owner)
++
++
++_limiter = _OwnerRateLimiter()
++_report_admission = _ReportAdmission()
++router = APIRouter(prefix=PREFIX, tags=["collider-scans"], route_class=_PrivateScanRoute)
++
++
++def _access(request, user, *, mutation=False):
++    if type(user) is not dict or user.get("_auth_mode") not in ("cookie", "bearer_ci") or not isinstance(user.get("id"), str) or not OWNER.fullmatch(user["id"]):
++        raise CustomerColliderError("SCAN_UNAUTHORIZED", status_code=401)
++    if user.get("deletion_pending_at") is not None:
++        raise CustomerColliderError("SCAN_ACCOUNT_UNAVAILABLE", status_code=403)
++    if request.query_params:
++        raise CustomerColliderError("INVALID_REQUEST", status_code=400)
++    if mutation and user["_auth_mode"] == "cookie":
++        cookie, header = request.cookies.get(settings.CSRF_COOKIE_NAME), request.headers.get(settings.CSRF_HEADER_NAME)
++        if not cookie or not header or len(cookie) > 512 or len(header) > 512 or not hmac.compare_digest(cookie.encode("utf-8"), header.encode("utf-8")):
++            raise CustomerColliderError("SCAN_CSRF", status_code=403)
++    _limiter.consume(user["id"])
++    return user["id"]
++
++
++def _configuration(owner):
++    if os.environ.get("FYND_COLLIDER_CUSTOMER_ENABLED") != "true":
++        return None, "disabled"
++    base_url = os.environ.get("FYND_COLLIDER_CUSTOMER_BASE_URL", "")
++    secret = os.environ.get("FYND_COLLIDER_CUSTOMER_SECRET", "")
++    try:
++        validate_customer_configuration(base_url, secret, owner)
++    except CustomerColliderConfigurationError:
++        return None, "configuration_required"
++    return (base_url, secret), None
++
++
++def _client(owner):
++    configured, _ = _configuration(owner)
++    if configured is None:
++        raise CustomerColliderError("SCAN_NOT_CONFIGURED", status_code=503)
++    return CustomerColliderClient(*configured, owner_id=owner, timeout_seconds=10.0)
++
++
++def _pairs(pairs):
++    value = {}
++    for key, item in pairs:
++        if key in value:
++            raise ValueError
++        value[key] = item
++    return value
++
++
++async def _body(request):
++    if request.headers.get("content-type", "").split(";", 1)[0].strip().lower() != "application/json" or request.headers.get("content-encoding", "identity").lower() != "identity":
++        raise CustomerColliderError("SCAN_CONTENT_TYPE", status_code=415)
++    declared = request.headers.get("content-length")
++    if declared is not None:
++        if not declared.isascii() or not declared.isdecimal():
++            raise CustomerColliderError("INVALID_REQUEST", status_code=400)
++        if len(declared) > 10 or int(declared) > MAX_BODY_BYTES:
++            raise CustomerColliderError("SCAN_TOO_LARGE", status_code=413)
++    raw = bytearray()
++    async for chunk in request.stream():
++        if len(raw) + len(chunk) > MAX_BODY_BYTES:
++            raise CustomerColliderError("SCAN_TOO_LARGE", status_code=413)
++        raw.extend(chunk)
++    try:
++        value = json.loads(raw.decode("utf-8"), object_pairs_hook=_pairs,
++                           parse_constant=lambda _: (_ for _ in ()).throw(ValueError()))
++        if type(value) is not dict:
++            raise ValueError
++        return value
++    except (UnicodeError, ValueError, TypeError, RecursionError):
++        raise CustomerColliderError("INVALID_REQUEST", status_code=400) from None
++
++
++def _bytes(value):
++    return len(json.dumps(value, ensure_ascii=False, allow_nan=False, separators=(",", ":")).encode("utf-8"))
++
++
++@router.get("/capabilities")
++async def capabilities(request: Request, user: dict = Depends(get_current_user)):
++    owner = _access(request, user)
++    configured, reason = _configuration(owner)
++    return {"available": configured is not None, "reason": reason,
++            "limits": {"max_pages_per_run": 20, "max_snapshot_bytes": MAX_SNAPSHOT_BYTES, "max_snapshots": MAX_SNAPSHOTS},
++            "scope": SCOPE}
++
++
++@router.get("")
++async def list_scans(request: Request, user: dict = Depends(get_current_user)):
++    owner = _access(request, user)
++    async with _client(owner) as client:
++        return {"runs": await client.list_runs()}
++
++
++@router.post("", status_code=202)
++async def start_scan(request: Request, user: dict = Depends(get_current_user)):
++    owner = _access(request, user, mutation=True)
++    value = await _body(request)
++    if set(value) != {"input", "confirm_storage"} or value["confirm_storage"] is not True:
++        raise CustomerColliderError("INVALID_REQUEST", status_code=400)
++    payload = validate_customer_input(value["input"])
++    keys = request.headers.getlist("idempotency-key")
++    if len(keys) != 1 or not OWNER.fullmatch(keys[0]):
++        raise CustomerColliderError("INVALID_REQUEST", status_code=400)
++    async with _client(owner) as client:
++        request.state.collider_mutation_sent = True
++        return await client.submit_run(payload, idempotency_key=keys[0])
++
++
++@router.get("/{run_id}")
++async def get_scan(run_id: str, request: Request, user: dict = Depends(get_current_user)):
++    owner = _access(request, user)
++    run_id = _identifier(run_id)
++    async with _client(owner) as client:
++        return {"run": await client.get_run(run_id)}
++
++
++async def _action(run_id, request, user, action):
++    owner = _access(request, user, mutation=True)
++    run_id = _identifier(run_id)
++    if await _body(request) != {}:
++        raise CustomerColliderError("INVALID_REQUEST", status_code=400)
++    # Generic Fynd mutation wrappers may add a key to every POST. Validate but
++    # ignore that optional header: this action targets an existing owner/run,
++    # not a new keyed execution. Never forward it to the private service.
++    keys = request.headers.getlist("idempotency-key")
++    if len(keys) > 1 or (keys and not OWNER.fullmatch(keys[0])):
++        raise CustomerColliderError("INVALID_REQUEST", status_code=400)
++    async with _client(owner) as client:
++        request.state.collider_mutation_sent = True
++        return {"run": await getattr(client, action)(run_id)}
++
++
++@router.post("/{run_id}/cancel")
++async def cancel_scan(run_id: str, request: Request, user: dict = Depends(get_current_user)):
++    return await _action(run_id, request, user, "cancel_run")
++
++
++@router.post("/{run_id}/resume")
++async def resume_scan(run_id: str, request: Request, user: dict = Depends(get_current_user)):
++    return await _action(run_id, request, user, "resume_run")
++
++
++@router.get("/{run_id}/report")
++async def scan_report(run_id: str, request: Request, user: dict = Depends(get_current_user)):
++    owner = _access(request, user)
++    run_id = _identifier(run_id)
++    with _report_admission.hold(owner):
++        async with _client(owner) as client:
++            run = await client.get_run(run_id)
++            # Terminal runs cannot resume or append new work in the runtime.
++            # Do not race a changing run summary against later snapshot reads.
++            if run["status"] not in {"completed", "partial", "failed", "cancelled"}:
++                raise CustomerColliderError("SCAN_IN_PROGRESS", status_code=409)
++            metadata = await client.list_snapshots(run_id)
++            if len(metadata) > MAX_SNAPSHOTS:
++                raise ColliderReportError("REPORT_TOO_LARGE", 413)
++            retained_bytes = _bytes(run) + _bytes(metadata)
++            if retained_bytes > MAX_SNAPSHOT_BYTES:
++                raise ColliderReportError("REPORT_TOO_LARGE", 413)
++            snapshots = []
++            # Deliberately sequential: no unbounded fan-out or parallel allocation.
++            for row in metadata:
++                snapshot = await client.get_snapshot(run_id, row["id"])
++                retained_bytes += _bytes(snapshot)
++                if retained_bytes > MAX_SNAPSHOT_BYTES:
++                    raise ColliderReportError("REPORT_TOO_LARGE", 413)
++                snapshots.append(snapshot)
++        bundle = assemble_report(run, metadata, snapshots, expected_run_id=run_id)
++        if _bytes(bundle) > MAX_SNAPSHOT_BYTES:
++            raise ColliderReportError("REPORT_TOO_LARGE", 413)
++        return bundle
+diff --git a/backend/domains/collider/report.py b/backend/domains/collider/report.py
+new file mode 100644
+--- /dev/null
++++ b/backend/domains/collider/report.py
+@@ -0,0 +1,351 @@
++"""Pure, bounded handoff from one owner-scoped Collider run to Fynd Research.
++
++The caller must obtain all three inputs through the same authenticated customer
++handle. This module has no network, storage, latest-index, or owner-selection API.
++Hashes check accidental substitution/corruption, not publisher truth or identity.
++The compact bundle retains exact snapshot bodies. Fynd's existing display/import
++normalizer may trim text and omits unsupported snapshot-provenance fields.
++"""
++from __future__ import annotations
++
++import hashlib
++import ipaddress
++import json
++import math
++import re
++from datetime import datetime
++from urllib.parse import urlsplit
++
++from .client import _validate_run
++
++
++MAX_REPORT_BYTES = 8 * 1024 * 1024
++MAX_INPUT_BYTES = 16 * 1024 * 1024
++MAX_SNAPSHOTS = 500
++MAX_RECORDS = 1000
++MAX_TRACE = 5000
++UUID = re.compile(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}")
++HASH = re.compile(r"[0-9a-f]{64}")
++LABEL = re.compile(r"[a-zA-Z0-9][a-zA-Z0-9._-]{0,79}")
++SNAPSHOT_FIELDS = ("id", "runId", "unitId", "evidenceKind", "url", "title",
++                   "markdown", "provider", "kind", "observedAt", "contentHash", "capturedAt")
++METADATA_FIELDS = set(SNAPSHOT_FIELDS) - {"markdown"} | {"snapshotHash"}
++UNSAFE_KEYS = {"__proto__", "constructor", "prototype", "owner", "ownerId", "owner_id",
++               "userId", "user_id", "tenantId", "tenant_id"}
++
++
++class ColliderReportError(RuntimeError):
++    """Safe failure only; never echo upstream data or exception details."""
++
++    def __init__(self, code="REPORT_INVALID", status_code=502):
++        self.code = code
++        self.status_code = status_code
++        super().__init__("Collider report could not be assembled.")
++
++
++def _invalid():
++    raise ColliderReportError()
++
++
++def _large():
++    raise ColliderReportError("REPORT_TOO_LARGE", 413)
++
++
++def _json(value):
++    try:
++        return json.dumps(value, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
++    except (TypeError, ValueError, RecursionError, UnicodeError):
++        _invalid()
++
++
++def _utf8(value):
++    try:
++        return value.encode("utf-8")
++    except UnicodeError:
++        _invalid()
++
++
++def _bounded(value):
++    nodes = 0
++
++    def visit(item, depth=0):
++        nonlocal nodes
++        nodes += 1
++        if nodes > 150000 or depth > 20:
++            _invalid()
++        if type(item) is dict:
++            for key, child in item.items():
++                if not isinstance(key, str) or key in UNSAFE_KEYS or len(key) > 500:
++                    _invalid()
++                _utf8(key)
++                visit(child, depth + 1)
++        elif type(item) is list:
++            if len(item) > 5000:
++                _invalid()
++            for child in item:
++                visit(child, depth + 1)
++        elif type(item) is str:
++            if len(item) > MAX_INPUT_BYTES:
++                _large()
++            _utf8(item)
++        elif item is not None and type(item) not in (bool, int, float):
++            _invalid()
++        elif type(item) is float and not math.isfinite(item):
++            _invalid()
++
++    visit(value)
++    if len(_utf8(_json(value))) > MAX_INPUT_BYTES:
++        _large()
++
++
++def _text(value, maximum, *, empty=True, multiline=False):
++    controls = r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]" if multiline else r"[\x00-\x1f\x7f-\x9f]"
++    if not isinstance(value, str) or (not empty and not value.strip()) or re.search(controls, value):
++        _invalid()
++    # Match the source vault's JavaScript UTF-16 limits, including emoji.
++    try:
++        if len(value.encode("utf-16-le")) // 2 > maximum:
++            _invalid()
++    except UnicodeError:
++        _invalid()
++    return value
++
++
++def _url(value):
++    _text(value, 2048, empty=False)
++    if re.search(r"[\x00-\x20\\]", value):
++        _invalid()
++    try:
++        parsed = urlsplit(value)
++        host = parsed.hostname or ""
++        if parsed.scheme != "https" or parsed.username is not None or parsed.password is not None or parsed.port not in (None, 443):
++            _invalid()
++        if "." not in host or not re.fullmatch(r"[a-z0-9.-]+", host) or host.endswith("."):
++            _invalid()
++        if any(not part or len(part) > 63 or part.startswith("-") or part.endswith("-") for part in host.split(".")):
++            _invalid()
++        if re.search(r"(^|\.)(localhost|local|internal|intranet|lan|home|test|invalid|example|onion)$", host) or re.search(r"(^|\.)(nip\.io|sslip\.io|localtest\.me)$", host):
++            _invalid()
++        try:
++            ipaddress.ip_address(host)
++        except ValueError:
++            pass
++        else:
++            _invalid()
++    except (ValueError, TypeError):
++        _invalid()
++    return value
++
++
++def _stamp(value, nullable=False):
++    if nullable and value is None:
++        return value
++    if not isinstance(value, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z", value):
++        _invalid()
++    try:
++        datetime.fromisoformat(value.replace("Z", "+00:00"))
++    except ValueError:
++        _invalid()
++    return value
++
++
++def _metadata(value, run_id, unit_ids):
++    if type(value) is not dict or set(value) != METADATA_FIELDS or value.get("runId") != run_id or value.get("unitId") not in unit_ids:
++        _invalid()
++    for key in ("id", "contentHash", "snapshotHash"):
++        if not isinstance(value[key], str) or not HASH.fullmatch(value[key]):
++            _invalid()
++    for key in ("evidenceKind", "provider", "kind"):
++        if not isinstance(value[key], str) or not LABEL.fullmatch(value[key]):
++            _invalid()
++    _url(value["url"])
++    _text(value["title"], 500)
++    _stamp(value["observedAt"], True)
++    _stamp(value["capturedAt"])
++    return value
++
++
++def _summary(run):
++    result = run["result"]
++    supplied = run["input"]
++    if type(supplied.get("urls")) is not list or len(supplied["urls"]) > 20 or type(supplied.get("boards")) is not list or len(supplied["boards"]) > 3 or type(supplied.get("pageLimit")) is not int or not 1 <= supplied["pageLimit"] <= 20 or type(supplied.get("followLinks")) is not bool:
++        _invalid()
++    for url in supplied["urls"]:
++        _url(url)
++    for board in supplied["boards"]:
++        if type(board) is not dict or set(board) - {"provider", "board", "limit"}:
++            _invalid()
++        _text(board.get("provider"), 50, empty=False)
++        _text(board.get("board"), 80, empty=False)
++        if "limit" in board and (type(board["limit"]) is not int or not 0 <= board["limit"] <= 100):
++            _invalid()
++    if "query" in supplied:
++        _text(supplied["query"], 400, empty=False)
++    if not supplied["urls"] and not supplied["boards"] and not supplied.get("query"):
++        _invalid()
++    for name, maximum, length in (("providers", 4, 50), ("querySlices", 3, 400)):
++        if name in supplied:
++            if type(supplied[name]) is not list or len(supplied[name]) > maximum:
++                _invalid()
++            for value in supplied[name]:
++                _text(value, length, empty=False)
++    if "maxDepth" in supplied and (type(supplied["maxDepth"]) is not int or not 0 <= supplied["maxDepth"] <= 2):
++        _invalid()
++    if "crawlMode" in supplied and supplied["crawlMode"] not in ("jobs", "web"):
++        _invalid()
++    _text(result["coverage"].get("scope", ""), 1000)
++    _text(result["selectionPriority"], 1000)
++    for row in result["errors"] + result["warnings"]:
++        _text(row.get("source", ""), 200)
++        if row.get("url"):
++            _url(row["url"])
++    for slice_ in result["searchSlices"]:
++        _text(slice_["query"], 400)
++        for provider in slice_["providers"]:
++            if type(provider) is not dict:
++                _invalid()
++            for key, maximum in (("id", 50), ("status", 80), ("code", 100)):
++                _text(provider.get(key, ""), maximum)
++            if "returned" in provider and (type(provider["returned"]) is not int or not 0 <= provider["returned"] <= 9007199254740991):
++                _invalid()
++    summary = {"format": "lynk-collider-run-v1", "id": run["id"], "status": run["status"],
++               "input": run["input"], "progress": run["progress"], "counts": result["counts"],
++               "incomplete": result["incomplete"], "createdAt": run["createdAt"],
++               "updatedAt": run["updatedAt"], "finishedAt": run["finishedAt"],
++               "coverageScope": result["coverage"].get("scope", ""),
++               "selectionPriority": result["selectionPriority"],
++               "errors": result["errors"], "warnings": result["warnings"],
++               "searchSlices": [{key: value for key, value in row.items() if key != "results"} for row in result["searchSlices"]]}
++    return json.loads(_json(summary))
++
++
++def assemble_report(run, snapshot_metadata, snapshot_details, *, expected_run_id):
++    """Return a compact Research bundle from unwrapped customer endpoint data.
++
++    Supply every item listed by ``{snapshots: metadata[]}`` with its corresponding
++    detail from ``{snapshot: ...}``, after the HTTP client validates the envelopes.
++    Any absent, extra, cross-run/unit, or changed item fails the whole assembly;
++    callers retain the previous report. A source read explicitly not retained by
++    Collider is represented as metadata, never refetched or filled from a cache.
++    """
++    if not isinstance(expected_run_id, str) or not UUID.fullmatch(expected_run_id):
++        _invalid()
++    _bounded([run, snapshot_metadata, snapshot_details])
++    try:
++        _validate_run(run, expected_run_id)
++    except Exception:
++        _invalid()
++    summary = _summary(run)
++    units = {unit["id"]: unit for unit in run["units"]}
++    listed = snapshot_metadata
++    if type(listed) is not list or len(listed) > MAX_SNAPSHOTS or type(snapshot_details) is not list or len(snapshot_details) != len(listed):
++        _invalid()
++    metadata = {}
++    for row in listed:
++        _metadata(row, expected_run_id, units)
++        if row["id"] in metadata:
++            _invalid()
++        metadata[row["id"]] = row
++    snapshots = {}
++    for row in snapshot_details:
++        if type(row) is not dict or set(row) != set(SNAPSHOT_FIELDS) | {"snapshotHash"}:
++            _invalid()
++        meta = {key: value for key, value in row.items() if key != "markdown"}
++        _metadata(meta, expected_run_id, units)
++        if row["id"] not in metadata or meta != metadata[row["id"]] or row["id"] in snapshots:
++            _invalid()
++        body = _text(row["markdown"], 60000, multiline=True)
++        if hashlib.sha256(_utf8(body)).hexdigest() != row["contentHash"]:
++            _invalid()
++        signed = {key: row[key] for key in SNAPSHOT_FIELDS}
++        if hashlib.sha256(_utf8(_json(signed))).hexdigest() != row["snapshotHash"]:
++            _invalid()
++        snapshots[row["id"]] = row
++
++    omissions = ["Only immutable snapshots listed for this customer run supply source bodies; no latest-URL index was read.",
++                 "A retained body is not a full-content, freshness, independent-verification, or internet-coverage claim.",
++                 "No crawl edges or unrecorded discoveries were reconstructed. Missing upstream lineage remains unavailable.",
++                 "The compact bundle retains exact snapshot text and hashes; Research display/import normalization may trim text and omit snapshot-provenance fields.",
++                 "Research display/import normalizes source URLs, including removing fragments; original snapshot URLs remain in this compact bundle.",
++                 "Publisher job data is a publisher claim; it does not prove the destination job page was fetched.",
++                 "Run saved-page/job counts describe runtime metadata, not the number of independently fetched bodies in this report."]
++    records = []
++    for row in sorted(snapshots.values(), key=lambda item: (item["capturedAt"], item["id"])):
++        records.append({"sourceId": row["id"], "url": row["url"], "title": row["title"],
++                        "kind": "web" if row["kind"] == "page" else row["kind"],
++                        "content": row["markdown"], "contentStatus": "unknown" if row["markdown"].strip() else "metadata-only",
++                        "source": row["provider"], "retainedSnapshot": metadata[row["id"]]})
++
++    fallback_count = derived_count = 0
++    for category in ("pages", "jobs"):
++        for position, document in enumerate(run["result"][category]):
++            _url(document["url"])
++            ref = document.get("evidenceSnapshotId")
++            if document.get("evidenceRetention") == "retained":
++                if ref not in snapshots:
++                    _invalid()
++                retained = snapshots[ref]
++                # Current runtime page metadata omits evidenceKind; the page
++                # category and retained snapshot must still agree. Jobs carry
++                # an explicit kind because a job can reference a fetched page.
++                declared_kind = document.get("evidenceKind", "page" if category == "pages" else None)
++                if retained["url"] != document["url"] or retained["evidenceKind"] != declared_kind or ("contentHash" in document and retained["contentHash"] != document["contentHash"]):
++                    _invalid()
++                if category == "pages" or retained["kind"] == "job":
++                    continue
++                derived_count += 1
++            elif ref is not None or document.get("evidenceRetention") != "not-retained":
++                _invalid()
++            else:
++                fallback_count += 1
++            records.append({"sourceId": f"{expected_run_id}:{category}:{position}", "url": document["url"],
++                            "title": document.get("title", ""), "kind": "jobs" if category == "jobs" else "web",
++                            "contentStatus": "metadata-only", "source": document.get("source") or document.get("provider", ""),
++                            "evidenceSnapshotId": ref, "evidenceRetention": document["evidenceRetention"]})
++    for position, row in enumerate(run["result"]["records"]):
++        _url(row["sourceUrl"])
++        if set(row) - {"sourceUrl", "types", "data", "truncated"}:
++            _invalid()
++        def inspect_structured(value):
++            if type(value) is dict:
++                if any(key in value for key in ("rawHtml", "html", "markdown")):
++                    _invalid()
++                for child in value.values():
++                    inspect_structured(child)
++            elif type(value) is list:
++                for child in value:
++                    inspect_structured(child)
++        inspect_structured(row["data"])
++        records.append({"sourceId": f"{expected_run_id}:structured:{position}", **row})
++    if fallback_count:
++        omissions.append(f"{fallback_count} source records have metadata only because the run explicitly reports their bodies were not retained.")
++    if derived_count:
++        omissions.append(f"{derived_count} job metadata records reference a page snapshot; they are not additional independently fetched job bodies.")
++    if any(run["result"]["counts"][key] for key in ("frontierOmitted", "linksSkipped", "omittedRecords", "truncatedRecords")):
++        omissions.append("The runtime reports omitted or truncated data; its recorded counts and diagnostics are preserved without reconstructing missing details.")
++    if run["eventsDropped"]:
++        omissions.append(f"The runtime dropped {run['eventsDropped']} events. Event logs are not included in the Research schema.")
++    else:
++        omissions.append("Runtime event logs are outside the Research schema and are not included.")
++
++    candidates = []
++    for slice_ in run["result"]["searchSlices"]:
++        for row in slice_["results"]:
++            candidates.append({"url": _url(row["url"]), "title": row["title"],
++                               "source": f"discovery-unit:{slice_['unitId']}"})
++    outcomes = [{"url": _url(unit["input"]["url"]), "status": unit["status"],
++                 "sourceId": unit["id"], "reason": unit.get("error", "")}
++                for unit in run["units"] if unit["kind"] == "page"]
++    if len(records) > MAX_RECORDS or len(candidates) + len(outcomes) > MAX_TRACE:
++        _large()
++    title = run["input"].get("query") or f"Collider run {expected_run_id}"
++    _text(title, 500, empty=False)
++    bundle = {"manifest": {"schemaVersion": 1, "title": title, "omissions": omissions,
++                            "warnings": [], "runSummary": summary},
++              "files": {name: "".join(_json(row) + "\n" for row in rows) for name, rows in (
++                  ("evidence.jsonl", records), ("candidates.jsonl", candidates),
++                  ("outcomes.jsonl", outcomes), ("edges.jsonl", []))}}
++    if len(_utf8(_json(bundle))) > MAX_REPORT_BYTES:
++        _large()
++    # Do not return references into the caller's mutable API response objects.
++    return json.loads(_json(bundle))
+diff --git a/backend/tests/test_customer_collider_client.py b/backend/tests/test_customer_collider_client.py
+new file mode 100644
+--- /dev/null
++++ b/backend/tests/test_customer_collider_client.py
+@@ -0,0 +1,329 @@
++"""Private-protocol tests with HTTPX MockTransport; no sockets/live providers."""
++import asyncio
++import hashlib
++import hmac
++import json
++import unittest
++from unittest.mock import patch
++
++import httpx
++
++from domains.collider.customer_client import (
++    CustomerColliderClient, CustomerColliderConfigurationError, CustomerColliderError,
++    validate_customer_configuration,
++)
++
++
++KEY = "SYNTHETIC_CUSTOMER_SIGNING_KEY_NOT_REAL_123456"
++OWNER = "account:synthetic-A"
++RUN = "12345678-1234-4234-8234-123456789abc"
++UNIT = "22345678-1234-4234-8234-123456789abc"
++NONCE = "32345678-1234-4234-8234-123456789abc"
++STAMP = 1789387200
++NOW = "2026-09-14T12:00:00.000Z"
++INPUT = {"urls": ["https://example.org/research"], "pageLimit": 1}
++# Generated independently with the actual customerAssertionMessage export from
++# collider/customer-auth.mjs and Node 24 createHmac, not Python's signer. Inputs
++# are the Unicode payload in test_exact_canonical_signatures... below.
++NODE_SIGNATURE = "7d965162d3e154778505534c3a46aa71ebf0bc53dbbd2f4d57afea5081e027f1"
++NODE_CHANGED_KEY_SIGNATURE = "ee7608d4d5b609de0df0c06558b1b1ff1ccfc9174530d47ce2be40803143a921"
++
++
++def canonical(value):
++    return json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
++
++
++def run_fixture():
++    return {"id": RUN, "input": {**INPUT, "boards": [], "followLinks": False}, "status": "queued",
++        "createdAt": NOW, "updatedAt": NOW, "startedAt": None, "finishedAt": None, "cancelRequestedAt": None,
++        "allocatedPages": 1, "eventsDropped": 0,
++        "units": [{"id": UNIT, "kind": "page", "input": {"url": INPUT["urls"][0]}, "status": "pending", "startedAt": None, "finishedAt": None}],
++        "events": [{"at": NOW, "type": "queued"}],
++        "progress": {"total": 1, "done": 0, "pending": 1, "inflight": 0, "completed": 0, "partial": 0, "failed": 0, "uncertain": 0},
++        "result": {"counts": {"savedPages": 0, "savedJobs": 0, "structuredRecords": 0, "successfulEmptyBoards": 0,
++            "selectedPages": 1, "attemptedPages": 0, "discoveredUrls": 1, "notFetched": 1, "frontierOmitted": 0, "linksSkipped": 0,
++            "omittedRecords": 0, "truncatedRecords": 0},
++            "coverage": {"percent": None, "denominator": None, "scope": "Bounded selected sources."},
++            "selectionPriority": "Explicit seeds first.", "incomplete": True,
++            "pages": [], "jobs": [], "records": [], "errors": [], "warnings": [], "discovery": None, "searchSlices": []}}
++
++
++def summary_fixture():
++    value = run_fixture()
++    del value["units"]; del value["events"]
++    value["result"] = {key: value["result"][key] for key in ("counts", "coverage", "selectionPriority", "incomplete")}
++    return value
++
++
++def snapshot_fixture(owner=OWNER):
++    binding = ["run-evidence-binding-v1", owner, RUN, UNIT, "page", INPUT["urls"][0]]
++    value = {"id": hashlib.sha256(canonical(binding)).hexdigest(), "runId": RUN, "unitId": UNIT, "evidenceKind": "page",
++        "url": INPUT["urls"][0], "title": "Synthetic evidence 🌍", "markdown": "# Synthetic evidence\n\n研究 🌍\u2028retained.",
++        "provider": "firecrawl-local", "kind": "page", "observedAt": None}
++    value["contentHash"] = hashlib.sha256(value["markdown"].encode("utf-8")).hexdigest()
++    value["capturedAt"] = NOW
++    value["snapshotHash"] = hashlib.sha256(canonical(value)).hexdigest()
++    return value
++
++
++def usage_fixture():
++    return {"runs": {"runs": 0, "active": 0, "queued": 0, "paused": 0, "allocatedPages": 0, "storedBytes": 0, "statuses": {},
++        "limits": {"maxRuns": 100, "maxPagesPerRun": 20, "maxAllocatedPages": 500, "maxBytesPerRun": 2097152, "maxActive": 1}, "storage": "Logical bytes."},
++        "evidence": {"runs": 0, "snapshots": 0, "storedBytes": 0, "limits": {"maxRunsPerOwner": 100, "maxSnapshotsPerRun": 500,
++            "maxBytesPerRun": 4194304, "maxBytesPerOwner": 16777216}, "storage": "Logical snapshots."},
++        "requests": {"day": "2026-09-14", "reservedRequests": 0, "remainingRequests": 100,
++            "limits": {"maxRequestsPerOwnerPerDay": 100, "maxRequestsPerDay": 1000}},
++        "queue": {"active": 0, "queued": 0, "closed": False, "limits": {"maxConcurrent": 4, "maxQueued": 100, "maxQueuedPerOwner": 20}},
++        "scope": "Owner-only adapter attempts; not billing."}
++
++
++class Stream(httpx.AsyncByteStream):
++    def __init__(self, chunks, delay=0):
++        self.chunks = chunks; self.delay = delay; self.closed = False
++
++    async def __aiter__(self):
++        for chunk in self.chunks:
++            if self.delay:
++                await asyncio.sleep(self.delay)
++            yield chunk
++
++    async def aclose(self):
++        self.closed = True
++
++
++class CustomerClientTests(unittest.IsolatedAsyncioTestCase):
++    def client(self, handler, **kwargs):
++        value = CustomerColliderClient("https://customer-service.example.org", KEY, owner_id=kwargs.pop("owner_id", OWNER),
++            now=kwargs.pop("now", lambda: STAMP), nonce_factory=kwargs.pop("nonce_factory", lambda: NONCE),
++            transport=httpx.MockTransport(handler), **kwargs)
++        self.addAsyncCleanup(value.aclose)
++        return value
++
++    async def error(self, awaitable, code, *, uncertain=False, status=None):
++        with self.assertRaises(CustomerColliderError) as caught:
++            await awaitable
++        self.assertEqual(caught.exception.code, code)
++        self.assertEqual(caught.exception.uncertain, uncertain)
++        if status is not None:
++            self.assertEqual(caught.exception.status_code, status)
++        self.assertNotIn(KEY, str(caught.exception))
++        self.assertNotIn(OWNER, str(caught.exception))
++        self.assertNotIn("PRIVATE_SOURCE_SECRET", str(caught.exception))
++
++    async def test_exact_canonical_signatures_bind_method_path_owner_nonce_timestamp_body_and_key(self):
++        seen = []
++
++        def handler(request):
++            seen.append(request)
++            return httpx.Response(202, json={"replay": False, "run": run_fixture()})
++
++        client = self.client(handler)
++        payload = {"query": "研究 opportunities 🌍", "pageLimit": 1}
++        await client.submit_run(payload, idempotency_key="persisted-key")
++        outgoing = seen[0]
++        expected = "\n".join(["LYNK-CUSTOMER-V1", "POST", "/v1/customer/runs", OWNER, str(STAMP), NONCE,
++                              "persisted-key", hashlib.sha256(canonical(payload)).hexdigest()])
++        self.assertEqual(outgoing.content, canonical(payload))
++        self.assertEqual(outgoing.headers["x-lynk-signature"], hmac.new(KEY.encode(), expected.encode(), hashlib.sha256).hexdigest())
++        self.assertEqual(outgoing.headers["x-lynk-signature"], NODE_SIGNATURE)
++        self.assertEqual(outgoing.headers["x-lynk-owner"], OWNER)
++        self.assertEqual(outgoing.headers["x-lynk-timestamp"], str(STAMP))
++        self.assertEqual(outgoing.headers["x-lynk-nonce"], NONCE)
++        self.assertEqual(outgoing.headers["idempotency-key"], "persisted-key")
++        self.assertNotIn("authorization", outgoing.headers); self.assertNotIn("cookie", outgoing.headers)
++        self.assertNotIn(KEY, str(outgoing.headers))
++        await client.submit_run(payload, idempotency_key="other-key")
++        self.assertEqual(seen[1].headers["x-lynk-signature"], NODE_CHANGED_KEY_SIGNATURE)
++        self.assertNotEqual(seen[1].headers["x-lynk-signature"], outgoing.headers["x-lynk-signature"],
++                            "A mutation cannot reuse a valid assertion with an altered execution key")
++
++    async def test_get_signs_empty_bytes_and_uses_only_exact_fixed_read_paths(self):
++        seen = []
++        snapshot = snapshot_fixture()
++
++        def handler(request):
++            seen.append(request)
++            if request.url.path == "/health":
++                value = {"ok": True, "scope": "Private customer service."}
++            elif request.url.path.endswith("/snapshots/" + snapshot["id"]):
++                value = {"snapshot": snapshot}
++            elif request.url.path.endswith("/snapshots"):
++                value = {"snapshots": [{key: value for key, value in snapshot.items() if key != "markdown"}]}
++            elif request.url.path == "/v1/customer/runs":
++                value = {"runs": [summary_fixture()]}
++            else:
++                value = {"run": run_fixture()}
++            return httpx.Response(200, json=value)
++
++        client = self.client(handler)
++        self.assertTrue((await client.health())["ok"])
++        self.assertEqual((await client.list_runs())[0]["id"], RUN)
++        self.assertEqual((await client.get_run(RUN))["id"], RUN)
++        self.assertEqual((await client.list_snapshots(RUN))[0]["id"], snapshot["id"])
++        self.assertEqual(await client.get_snapshot(RUN, snapshot["id"]), snapshot)
++        for outgoing in seen:
++            self.assertEqual(outgoing.content, b"")
++            self.assertNotIn("content-length", outgoing.headers)
++            self.assertNotIn("transfer-encoding", outgoing.headers)
++            self.assertEqual(outgoing.url.host, "customer-service.example.org")
++            self.assertNotIn("idempotency-key", outgoing.headers)
++            text = "\n".join(["LYNK-CUSTOMER-V1", "GET", outgoing.url.path, OWNER, str(STAMP), NONCE, "", hashlib.sha256(b"").hexdigest()])
++            self.assertEqual(outgoing.headers["x-lynk-signature"], hmac.new(KEY.encode(), text.encode(), hashlib.sha256).hexdigest())
++
++    async def test_actions_sign_exact_empty_json_body_and_do_not_submit_new_runs(self):
++        seen = []
++        client = self.client(lambda outgoing: seen.append(outgoing) or httpx.Response(200, json={"run": run_fixture()}))
++        await client.cancel_run(RUN); await client.resume_run(RUN)
++        self.assertEqual([request.url.path for request in seen], [f"/v1/customer/runs/{RUN}/cancel", f"/v1/customer/runs/{RUN}/resume"])
++        self.assertTrue(all(request.method == "POST" and request.content == b"{}" for request in seen))
++
++    async def test_explicit_reconciliation_reuses_execution_key_but_gets_fresh_signature_nonce(self):
++        seen = []; nonces = iter([NONCE, "42345678-1234-4234-8234-123456789abc"])
++        client = self.client(lambda request: seen.append(request) or httpx.Response(202, json={"replay": len(seen) > 1, "run": run_fixture()}), nonce_factory=lambda: next(nonces))
++        await client.submit_run(INPUT, idempotency_key="same-persisted-key")
++        self.assertTrue((await client.submit_run(INPUT, idempotency_key="same-persisted-key"))["replay"])
++        self.assertEqual(len(seen), 2)
++        self.assertEqual(seen[0].headers["idempotency-key"], seen[1].headers["idempotency-key"])
++        self.assertNotEqual(seen[0].headers["x-lynk-nonce"], seen[1].headers["x-lynk-nonce"])
++        self.assertNotEqual(seen[0].headers["x-lynk-signature"], seen[1].headers["x-lynk-signature"])
++
++    async def test_different_owners_sign_independently_without_browser_auth_forwarding(self):
++        seen = []
++        for owner in (OWNER, "account:synthetic-B"):
++            client = self.client(lambda request: seen.append(request) or httpx.Response(200, json={"runs": []}), owner_id=owner)
++            await client.list_runs()
++        self.assertNotEqual(seen[0].headers["x-lynk-signature"], seen[1].headers["x-lynk-signature"])
++        self.assertTrue(all("cookie" not in request.headers and "authorization" not in request.headers for request in seen))
++
++    async def test_invalid_run_ids_snapshot_ids_and_client_owner_claims_make_no_request(self):
++        seen = []; client = self.client(lambda request: seen.append(request))
++        for identifier in (None, "", "../", RUN + "/cancel", RUN + "?owner=B", "https://attacker.example"):
++            for method in (client.get_run, client.cancel_run, client.resume_run, client.list_snapshots):
++                await self.error(method(identifier), "INVALID_REQUEST", status=400)
++        for identifier in (None, "", "A" * 64, "../", "x" * 65):
++            await self.error(client.get_snapshot(RUN, identifier), "INVALID_REQUEST", status=400)
++        for payload in ({}, [], {**INPUT, "ownerId": "B"}, {**INPUT, "base_url": "https://attacker.example"}, {"query": "x" * 20000}, {"query": float("nan")}):
++            await self.error(client.submit_run(payload, idempotency_key="valid"), "INVALID_REQUEST", status=400)
++        for key in (None, "", "with spaces", "key\n", "x" * 129):
++            await self.error(client.submit_run(INPUT, idempotency_key=key), "INVALID_REQUEST", status=400)
++        self.assertEqual(seen, [])
++
++        client = self.client(lambda request: seen.append(request))
++        await client.aclose(); await client.aclose()
++        await self.error(client.list_runs(), "CLIENT_CLOSED", status=503)
++        await self.error(client.submit_run(INPUT, idempotency_key="fixed"), "CLIENT_CLOSED", status=503)
++        self.assertEqual(seen, [])
++
++    async def test_redirects_and_upstream_error_bodies_never_leak_signatures_or_details(self):
++        seen = []
++        client = self.client(lambda request: seen.append(request) or httpx.Response(307, headers={"location": "https://attacker.example/capture"}, text=KEY))
++        await self.error(client.submit_run(INPUT, idempotency_key="fixed"), "UPSTREAM_FAILURE", uncertain=True)
++        self.assertEqual(len(seen), 1)
++        for status, code in [(400, "INVALID_REQUEST"), (401, "UPSTREAM_AUTH"), (403, "UPSTREAM_AUTH"), (404, "UPSTREAM_NOT_FOUND"),
++                             (409, "UPSTREAM_CONFLICT"), (413, "UPSTREAM_LIMIT"), (429, "UPSTREAM_CAPACITY"), (500, "UPSTREAM_FAILURE")]:
++            client = self.client(lambda request: httpx.Response(status, text="PRIVATE_SOURCE_SECRET " + KEY))
++            await self.error(client.submit_run(INPUT, idempotency_key="fixed"), code, uncertain=status >= 500)
++
++    async def test_transport_failure_and_slow_stream_are_uncertain_only_for_mutations(self):
++        for exception in (httpx.ConnectError, httpx.ReadTimeout):
++            def failed(request):
++                raise exception("PRIVATE_SOURCE_SECRET", request=request)
++            client = self.client(failed)
++            code = "UPSTREAM_TIMEOUT" if exception is httpx.ReadTimeout else "UPSTREAM_UNAVAILABLE"
++            await self.error(client.submit_run(INPUT, idempotency_key="fixed"), code, uncertain=True)
++            await self.error(client.get_run(RUN), code)
++        stream = Stream([b"{", b"}"], delay=0.05)
++        client = self.client(lambda _: httpx.Response(202, headers={"content-type": "application/json"}, stream=stream), timeout_seconds=0.01)
++        await self.error(client.submit_run(INPUT, idempotency_key="fixed"), "UPSTREAM_TIMEOUT", uncertain=True)
++        self.assertTrue(stream.closed)
++
++    async def test_response_caps_apply_to_headers_and_stream_and_close_the_response(self):
++        for headers in ({"content-length": "99"}, {}):
++            stream = Stream([b"x" * 30, b"y" * 30])
++            client = self.client(lambda _: httpx.Response(200, headers={"content-type": "application/json", **headers}, stream=stream), max_response_bytes=40)
++            await self.error(client.get_run(RUN), "RESPONSE_LIMIT")
++            self.assertTrue(stream.closed)
++
++    async def test_duplicate_json_keys_nonfinite_values_invalid_utf8_and_encoded_content_fail_closed(self):
++        for content, extra in [(b'{"x":1,"x":2}', {}), (b'{"x":NaN}', {}), (b'{"x":1e999}', {}), (b"\xff", {}), (b"[]", {}),
++                               (b'{"x":"\\ud800"}', {}), (b"{}", {"content-encoding": "gzip"}), (b"{}", {"content-type": "text/html"})]:
++            stream = Stream([content])
++            client = self.client(lambda _: httpx.Response(202, headers={"content-type": "application/json", **extra}, stream=stream))
++            await self.error(client.submit_run(INPUT, idempotency_key="fixed"), "UPSTREAM_RESPONSE", uncertain=True)
++            self.assertTrue(stream.closed)
++
++    async def test_malformed_run_contract_is_rejected_after_a_mutation_as_uncertain(self):
++        for mutate in [lambda value: value.update(id="bad"), lambda value: value.update(status=[]), lambda value: value.pop("units"),
++                       lambda value: value["progress"].update(done=9), lambda value: value["result"].update(incomplete=False)]:
++            value = run_fixture(); mutate(value)
++            client = self.client(lambda _: httpx.Response(202, json={"replay": False, "run": value}))
++            await self.error(client.submit_run(INPUT, idempotency_key="fixed"), "UPSTREAM_RESPONSE", uncertain=True)
++
++    async def test_list_summaries_reject_duplicates_detailed_payloads_and_inconsistent_counts(self):
++        bad = summary_fixture(); bad["progress"]["done"] = 2
++        for rows in ([summary_fixture(), summary_fixture()], [run_fixture()], [bad], [summary_fixture()] * 101):
++            client = self.client(lambda _: httpx.Response(200, json={"runs": rows}))
++            await self.error(client.list_runs(), "UPSTREAM_RESPONSE")
++
++    async def test_snapshot_body_hash_binding_owner_and_exact_fields_are_verified(self):
++        for mutate in [lambda value: value.update(markdown="changed"), lambda value: value.update(contentHash="0" * 64),
++                       lambda value: value.update(snapshotHash="0" * 64), lambda value: value.update(runId=UNIT),
++                       lambda value: value.update(extra="PRIVATE_SOURCE_SECRET"), lambda value: value.update(observedAt="now")]:
++            value = snapshot_fixture(); identifier = value["id"]; mutate(value)
++            client = self.client(lambda _: httpx.Response(200, json={"snapshot": value}))
++            await self.error(client.get_snapshot(RUN, identifier), "UPSTREAM_RESPONSE")
++        foreign = snapshot_fixture(owner="account:other-owner")
++        client = self.client(lambda _: httpx.Response(200, json={"snapshot": foreign}))
++        await self.error(client.get_snapshot(RUN, foreign["id"]), "UPSTREAM_RESPONSE")
++
++    async def test_snapshot_metadata_cannot_contain_body_or_duplicate_identifiers(self):
++        full = snapshot_fixture(); meta = {key: value for key, value in full.items() if key != "markdown"}
++        for rows in ([full], [meta, meta], [meta] * 501):
++            client = self.client(lambda _: httpx.Response(200, json={"snapshots": rows}))
++            await self.error(client.list_snapshots(RUN), "UPSTREAM_RESPONSE")
++
++    async def test_usage_preserves_only_the_expected_owner_scoped_metrics_contract(self):
++        client = self.client(lambda _: httpx.Response(200, json={"usage": usage_fixture()}))
++        self.assertEqual(await client.usage(), usage_fixture())
++        for mutate in [lambda value: value.update(other_owner="PRIVATE_SOURCE_SECRET"), lambda value: value["requests"].update(globalUsed=10),
++                       lambda value: value["requests"].update(remainingRequests=-1), lambda value: value["requests"].update(day="not-a-day"),
++                       lambda value: value["queue"].update(active=3), lambda value: value["runs"]["statuses"].update(failed=1)]:
++            value = usage_fixture(); mutate(value)
++            client = self.client(lambda _: httpx.Response(200, json={"usage": value}))
++            await self.error(client.usage(), "UPSTREAM_RESPONSE")
++
++    async def test_invalid_clock_and_nonce_never_expose_raw_details(self):
++        seen = []
++        for kwargs in ({"now": lambda: float("nan")}, {"now": lambda: -1}, {"now": lambda: True},
++                       {"nonce_factory": lambda: "not-uuid"}, {"nonce_factory": lambda: NONCE.upper()},
++                       {"nonce_factory": lambda: "32345678-1234-1234-8234-123456789abc"}):
++            client = self.client(lambda request: seen.append(request), **kwargs)
++            await self.error(client.list_runs(), "INVALID_REQUEST", status=400)
++        self.assertEqual(seen, [])
++
++
++class CustomerConfigurationTests(unittest.TestCase):
++    def test_configuration_is_pure_https_and_never_constructs_a_client(self):
++        with patch("domains.collider.customer_client.httpx.AsyncClient", side_effect=AssertionError("no network construction")):
++            self.assertEqual(validate_customer_configuration("https://private-service.example.org", KEY, OWNER), "https://private-service.example.org/")
++        for url in [None, "", "http://127.0.0.1:9999", "http://example.org", "https://user:password@example.org", "https://example.org/path",
++                    "https://example.org?secret=x", "https://example.org#fragment", "https://example.org?", "https://example.org#", "https://example.org/?", "https://example.org/#",
++                    "https://example.org\n", " https://example.org", "https://example.org:0", "https://example.org:70000", "file:///tmp/private"]:
++            with self.subTest(url=url), self.assertRaises(CustomerColliderConfigurationError):
++                validate_customer_configuration(url, KEY, OWNER)
++
++    def test_invalid_keys_owners_and_resource_limits_fail_before_client_construction(self):
++        for key in [None, "", "short", "x" * 129, KEY + "\n"]:
++            with self.assertRaises(CustomerColliderConfigurationError):
++                validate_customer_configuration("https://service.example.org", key, OWNER)
++        for owner in [None, "", "../owner", "with space", "x" * 129, {"id": "A"}]:
++            with self.assertRaises(CustomerColliderConfigurationError):
++                validate_customer_configuration("https://service.example.org", KEY, owner)
++        for kwargs in [{"timeout_seconds": 0}, {"timeout_seconds": True}, {"timeout_seconds": float("inf")},
++                       {"max_response_bytes": 0}, {"max_response_bytes": 8388609}, {"max_response_bytes": True}, {"now": None}, {"nonce_factory": None}]:
++            with self.assertRaises(CustomerColliderConfigurationError):
++                CustomerColliderClient("https://service.example.org", KEY, owner_id=OWNER, **kwargs)
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/backend/tests/test_customer_collider_router.py b/backend/tests/test_customer_collider_router.py
+new file mode 100644
+--- /dev/null
++++ b/backend/tests/test_customer_collider_router.py
+@@ -0,0 +1,520 @@
++"""Isolated ASGI + real customer-client protocol tests; no sockets or providers."""
++import asyncio
++import copy
++import hashlib
++import hmac
++import importlib.util
++import json
++import os
++import sys
++import types
++import unittest
++from pathlib import Path
++from unittest.mock import patch
++
++import httpx
++from fastapi import FastAPI, HTTPException, Request
++
++from domains.collider.customer_client import CustomerColliderClient
++from test_customer_collider_client import (INPUT, KEY, NONCE, NOW, OWNER, RUN, STAMP, UNIT,
++                                          canonical, run_fixture, snapshot_fixture, summary_fixture)
++
++
++PREFIX = "/api/v1/collider/scans"
++OTHER_RUN = "42345678-1234-4234-8234-123456789abc"
++
++
++class CustomerRouterTests(unittest.IsolatedAsyncioTestCase):
++    async def asyncSetUp(self):
++        self.auth_calls = 0
++        self.auth_delay = 0
++        self.upstream_calls = []
++        self.instances = []
++        self.handler = self.dispatch
++        self.run = run_fixture()
++        self.snapshots = []
++        self.keys = {}
++        self.environment = patch.dict(os.environ, {
++            "FYND_COLLIDER_CUSTOMER_ENABLED": "true",
++            "FYND_COLLIDER_CUSTOMER_BASE_URL": "https://private-customer.example.org",
++            "FYND_COLLIDER_CUSTOMER_SECRET": KEY,
++        })
++        self.environment.start()
++        self.addCleanup(self.environment.stop)
++
++        async def get_current_user(request: Request):
++            self.auth_calls += 1
++            if self.auth_delay:
++                await asyncio.sleep(self.auth_delay)
++            owner = request.headers.get("x-test-owner")
++            if owner is None:
++                raise HTTPException(401, "PRIVATE_AUTH_TRACE")
++            result = {"id": owner, "_auth_mode": request.headers.get("x-test-mode", "cookie")}
++            if request.headers.get("x-test-deleting"):
++                result["deletion_pending_at"] = NOW
++            return result
++
++        core = types.ModuleType("core"); core.__path__ = []
++        config = types.ModuleType("core.config")
++        config.settings = types.SimpleNamespace(CSRF_COOKIE_NAME="test-csrf", CSRF_HEADER_NAME="X-Test-CSRF")
++        deps = types.ModuleType("core.deps"); deps.get_current_user = get_current_user
++        name = "domains.collider._isolated_customer_router_test"
++        source = Path(__file__).resolve().parents[1] / "domains" / "collider" / "customer_router.py"
++        spec = importlib.util.spec_from_file_location(name, source)
++        module = importlib.util.module_from_spec(spec)
++        with patch.dict(sys.modules, {"core": core, "core.config": config, "core.deps": deps, name: module}):
++            spec.loader.exec_module(module)
++        self.module = module
++
++        async def transport(request):
++            self.upstream_calls.append(request)
++            response = self.handler(request)
++            return await response if hasattr(response, "__await__") else response
++
++        def factory(base, key, **kwargs):
++            value = CustomerColliderClient(base, key, **kwargs, transport=httpx.MockTransport(transport),
++                                           now=lambda: STAMP, nonce_factory=lambda: NONCE)
++            self.instances.append(value)
++            return value
++
++        module.CustomerColliderClient = factory
++        app = FastAPI()
++        app.include_router(module.router)
++        self.http = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://asgi.test")
++        self.addAsyncCleanup(self.http.aclose)
++
++    def dispatch(self, request):
++        path = request.url.path
++        owner = request.headers["x-lynk-owner"]
++        if path == "/v1/customer/runs":
++            if request.method == "GET":
++                return httpx.Response(200, json={"runs": [summary_fixture()] if owner == OWNER else []})
++            key = (owner, request.headers["idempotency-key"])
++            prior = self.keys.get(key)
++            if prior is not None and prior != request.content:
++                return httpx.Response(409, json={"private": "PRIVATE_UPSTREAM_TRACE"})
++            self.keys[key] = request.content
++            return httpx.Response(202, json={"replay": prior is not None, "run": self.run})
++        if owner != OWNER or OTHER_RUN in path:
++            return httpx.Response(404, json={"private": "PRIVATE_UPSTREAM_TRACE"})
++        if path.endswith("/snapshots"):
++            return httpx.Response(200, json={"snapshots": [{k: v for k, v in row.items() if k != "markdown"} for row in self.snapshots]})
++        if "/snapshots/" in path:
++            found = next((row for row in self.snapshots if row["id"] == path.rsplit("/", 1)[-1]), None)
++            return httpx.Response(200, json={"snapshot": found})
++        return httpx.Response(200, json={"run": self.run})
++
++    async def request(self, method, suffix="", *, owner=OWNER, mode="cookie", csrf=True, headers=None, **kwargs):
++        supplied = {"x-test-mode": mode}
++        if owner is not None:
++            supplied["x-test-owner"] = owner
++        if csrf:
++            supplied.update({"cookie": "test-csrf=synthetic-csrf", "X-Test-CSRF": "synthetic-csrf"})
++        supplied.update(headers or {})
++        response = await self.http.request(method, PREFIX + suffix, headers=supplied, **kwargs)
++        self.assertEqual(response.headers.get("cache-control"), "no-store")
++        self.assertEqual(response.headers.get("pragma"), "no-cache")
++        self.assertNotIn(KEY, response.text)
++        self.assertNotIn("PRIVATE_AUTH_TRACE", response.text)
++        self.assertNotIn("PRIVATE_UPSTREAM_TRACE", response.text)
++        return response
++
++    async def start(self, *, value=None, key="stable-execution-key", **kwargs):
++        return await self.request("POST", headers={"Idempotency-Key": key},
++                                  json=value if value is not None else {"input": INPUT, "confirm_storage": True}, **kwargs)
++
++    def completed_evidence(self):
++        self.snapshots = [snapshot_fixture()]
++        self.run.update(status="completed", startedAt=NOW, finishedAt=NOW)
++        self.run["units"][0].update(status="completed", startedAt=NOW, finishedAt=NOW)
++        self.run["progress"].update(pending=0, done=1, completed=1)
++        result = self.run["result"]
++        result["incomplete"] = False
++        result["counts"].update(savedPages=1, attemptedPages=1, notFetched=0)
++        snap = self.snapshots[0]
++        result["pages"] = [{"url": snap["url"], "title": snap["title"], "provider": snap["provider"], "kind": "page",
++                            "evidenceRetention": "retained", "evidenceSnapshotId": snap["id"], "contentHash": snap["contentHash"]}]
++
++    async def test_capabilities_is_auth_required_local_configuration_only_and_default_off(self):
++        for enabled in (None, "false", "True", "1", ""):
++            if enabled is None:
++                os.environ.pop("FYND_COLLIDER_CUSTOMER_ENABLED", None)
++            else:
++                os.environ["FYND_COLLIDER_CUSTOMER_ENABLED"] = enabled
++            response = await self.request("GET", "/capabilities")
++            self.assertEqual(response.status_code, 200)
++            self.assertFalse(response.json()["available"])
++            self.assertEqual(response.json()["reason"], "disabled")
++            self.assertEqual((await self.request("GET")).status_code, 503)
++        os.environ["FYND_COLLIDER_CUSTOMER_ENABLED"] = "true"
++        for name, value in (("FYND_COLLIDER_CUSTOMER_SECRET", "bad"), ("FYND_COLLIDER_CUSTOMER_BASE_URL", "http://unsafe.example.org")):
++            with patch.dict(os.environ, {name: value}):
++                response = await self.request("GET", "/capabilities")
++                self.assertEqual(response.json()["reason"], "configuration_required")
++                self.assertFalse(response.json()["available"])
++                self.assertEqual((await self.start()).status_code, 503)
++        available = await self.request("GET", "/capabilities")
++        self.assertTrue(available.json()["available"])
++        self.assertIsNone(available.json()["reason"])
++        self.assertIn("not provider readiness", available.json()["scope"])
++        self.assertEqual(available.json()["limits"]["max_snapshots"], 500)
++        self.assertNotIn("private-customer", available.text)
++        self.assertEqual(self.upstream_calls, [])
++        self.assertEqual(self.instances, [])
++
++    async def test_all_routes_require_trusted_auth_and_reject_deleting_accounts_before_transport(self):
++        routes = [("GET", "/capabilities"), ("GET", ""), ("POST", ""), ("GET", "/" + RUN),
++                  ("POST", f"/{RUN}/cancel"), ("POST", f"/{RUN}/resume"), ("GET", f"/{RUN}/report")]
++        for method, path in routes:
++            self.assertEqual((await self.request(method, path, owner=None)).status_code, 401)
++            self.assertEqual((await self.request(method, path, headers={"x-test-deleting": "yes"})).status_code, 403)
++        for owner, mode in (("has space", "cookie"), ("valid-owner", "bearer"), ("valid-owner", "anonymous"), ("", "cookie")):
++            self.assertEqual((await self.request("GET", owner=owner, mode=mode)).status_code, 401)
++        self.assertEqual(self.upstream_calls, [])
++
++    async def test_real_client_envelopes_owner_signing_fresh_instances_and_close(self):
++        self.assertEqual((await self.request("GET")).json(), {"runs": [summary_fixture()]})
++        started = await self.start()
++        self.assertEqual(started.status_code, 202)
++        self.assertEqual(started.json(), {"run": self.run, "replay": False})
++        self.assertTrue((await self.start()).json()["replay"])
++        self.assertEqual((await self.request("GET", "/" + RUN)).json(), {"run": self.run})
++        for action in ("cancel", "resume"):
++            response = await self.request("POST", f"/{RUN}/{action}", json={})
++            self.assertEqual(response.json(), {"run": self.run})
++        self.assertEqual(len(self.instances), 6)
++        self.assertTrue(all(client._closed for client in self.instances))
++        self.assertTrue(all(request.headers["x-lynk-owner"] == OWNER for request in self.upstream_calls))
++        self.assertTrue(all("authorization" not in request.headers and "cookie" not in request.headers for request in self.upstream_calls))
++        self.assertTrue(all(request.url.host == "private-customer.example.org" for request in self.upstream_calls))
++        self.assertTrue(all("x-test-owner" not in request.headers for request in self.upstream_calls))
++
++    async def test_cookie_csrf_cannot_be_bypassed_by_bearer_headers_but_ci_mode_is_supported(self):
++        for action in ("", f"/{RUN}/cancel", f"/{RUN}/resume"):
++            for headers in ({}, {"Authorization": "Bearer irrelevant"}, {"cookie": "test-csrf=one", "X-Test-CSRF": "two"}):
++                response = await self.request("POST", action, csrf=False, headers=headers, json={})
++                self.assertEqual(response.status_code, 403)
++                self.assertEqual(response.json()["detail"]["code"], "SCAN_CSRF")
++        self.assertEqual(self.upstream_calls, [])
++        self.assertEqual((await self.start(mode="bearer_ci", csrf=False)).status_code, 202)
++        self.assertEqual((await self.request("POST", f"/{RUN}/cancel", mode="bearer_ci", csrf=False, json={})).status_code, 200)
++        self.assertEqual((await self.request("GET", csrf=False)).status_code, 200)
++
++    async def test_query_params_owner_claims_confirmation_and_idempotency_keys_fail_before_transport(self):
++        for method, path in (("GET", ""), ("GET", "/capabilities"), ("POST", ""), ("GET", "/" + RUN), ("POST", f"/{RUN}/cancel"), ("GET", f"/{RUN}/report")):
++            self.assertEqual((await self.request(method, path + "?owner=B", json={})).status_code, 400)
++        values = [{"input": INPUT}, {"input": INPUT, "confirm_storage": False}, {"input": INPUT, "confirm_storage": 1},
++                  {"input": INPUT, "confirm_storage": "true"}, {"input": INPUT, "confirm_storage": True, "owner": "B"},
++                  {"input": {**INPUT, "ownerId": "B"}, "confirm_storage": True}]
++        for value in values:
++            self.assertEqual((await self.start(value=value)).status_code, 400)
++        for key in ("", "space key", "x" * 129, "bad/key"):
++            self.assertEqual((await self.start(key=key)).status_code, 400)
++        self.assertEqual((await self.request("POST", json={"input": INPUT, "confirm_storage": True})).status_code, 400)
++        for body in ({"input": INPUT}, {"owner": "B"}, [], None):
++            self.assertEqual((await self.request("POST", f"/{RUN}/cancel", content=json.dumps(body), headers={"content-type": "application/json"})).status_code, 400)
++        self.assertEqual((await self.request("POST", f"/{RUN}/resume", json={}, headers={"Idempotency-Key": "bad/key"})).status_code, 400)
++        self.assertEqual(self.upstream_calls, [])
++
++    async def test_action_wrapper_keys_are_accepted_but_not_forwarded_or_signed(self):
++        for action in ("cancel", "resume"):
++            for key in ("generic-wrapper-key", "another-wrapper-key"):
++                response = await self.request("POST", f"/{RUN}/{action}", json={}, headers={"Idempotency-Key": key})
++                self.assertEqual(response.status_code, 200)
++                self.assertEqual(response.json(), {"run": self.run})
++                outgoing = self.upstream_calls[-1]
++                self.assertNotIn("idempotency-key", outgoing.headers)
++                self.assertEqual(outgoing.content, b"{}")
++                canonical_message = "\n".join(["LYNK-CUSTOMER-V1", "POST", f"/v1/customer/runs/{RUN}/{action}",
++                    OWNER, str(STAMP), NONCE, "", hashlib.sha256(b"{}").hexdigest()])
++                self.assertEqual(outgoing.headers["x-lynk-signature"],
++                    hmac.new(KEY.encode(), canonical_message.encode(), hashlib.sha256).hexdigest())
++        self.assertEqual(len(self.upstream_calls), 4)
++        self.assertEqual(self.keys, {}, "Existing-run actions must not create keyed executions")
++
++    async def test_duplicate_or_malformed_action_keys_and_duplicate_start_keys_are_rejected(self):
++        for suffix in (f"/{RUN}/cancel", f"/{RUN}/resume"):
++            for key in ("", "contains space", "bad/key", "x" * 129):
++                response = await self.request("POST", suffix, json={}, headers={"Idempotency-Key": key})
++                self.assertEqual(response.status_code, 400)
++        for suffix in ("", f"/{RUN}/cancel", f"/{RUN}/resume"):
++            response = await self.http.post(PREFIX + suffix,
++                headers=[("x-test-owner", OWNER), ("x-test-mode", "bearer_ci"),
++                         ("Idempotency-Key", "same-valid-key"), ("idempotency-key", "same-valid-key")],
++                json={"input": INPUT, "confirm_storage": True} if not suffix else {})
++            self.assertEqual(response.status_code, 400)
++            self.assertEqual(response.headers.get("cache-control"), "no-store")
++            self.assertEqual(response.json()["detail"]["code"], "INVALID_REQUEST")
++        self.assertEqual(self.upstream_calls, [])
++        self.assertEqual(self.instances, [])
++
++    async def test_invalid_identifiers_and_nonpublic_or_malformed_inputs_make_no_signed_requests(self):
++        for identifier in ("not-a-uuid", "_", "012345", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaaX"):
++            self.assertEqual((await self.request("GET", "/" + identifier)).status_code, 400)
++            self.assertEqual((await self.request("POST", f"/{identifier}/cancel", json={})).status_code, 400)
++        urls = ["http://example.org", "https://localhost", "https://10.0.0.1", "https://127.1", "https://0x7f.1",
++                "https://[::1]", "https://example.org:8443", "https://name:password@example.org", "https://example.org\\@evil.com",
++                "https://host.internal", "https://a.nip.io", "https://example.org.", "https://example.org/has space"]
++        for url in urls:
++            self.assertEqual((await self.start(value={"input": {"urls": [url]}, "confirm_storage": True})).status_code, 400)
++        for value in ({"query": ""}, {"query": "x\nsecret"}, {"query": "🌍" * 201}, {"urls": INPUT["urls"], "pageLimit": True},
++                      {"urls": INPUT["urls"], "pageLimit": 21}, {"urls": INPUT["urls"], "maxDepth": 1},
++                      {"urls": INPUT["urls"], "followLinks": 1}, {"query": "x", "querySlices": [" x "]},
++                      {"query": "x", "providers": []}, {"boards": [{"provider": "private", "board": "x"}]},
++                      {"boards": [{"provider": "lever", "board": "x", "limit": 21}]}):
++            self.assertEqual((await self.start(value={"input": value, "confirm_storage": True})).status_code, 400)
++        self.assertEqual(self.upstream_calls, [])
++
++    async def test_duplicate_keys_invalid_utf8_nonfinite_deep_json_and_nonjson_bodies_are_rejected(self):
++        bodies = [b"\xff", b'{"input":{},"input":{},"confirm_storage":true}', b'{"input":{"query":"a","query":"b"},"confirm_storage":true}',
++                  b'{"input":NaN,"confirm_storage":true}', b'{"input":{"query":"\\ud800"},"confirm_storage":true}', b"[0]",
++                  b'{"input":' + b"[" * 1200 + b"0" + b"]" * 1200 + b',"confirm_storage":true}']
++        for body in bodies:
++            response = await self.request("POST", content=body, headers={"content-type": "application/json", "Idempotency-Key": "stable"})
++            self.assertEqual(response.status_code, 400)
++        for headers in ({"content-type": "text/plain"}, {"content-type": "application/json", "content-encoding": "gzip"}):
++            self.assertEqual((await self.request("POST", content=b"{}", headers=headers)).status_code, 415)
++        self.assertEqual(self.upstream_calls, [])
++
++    async def test_declared_and_streamed_body_limits_apply_before_upstream_effects(self):
++        streamed = []
++        async def content():
++            streamed.append(True)
++            yield b"{}"
++        response = await self.request("POST", content=content(), headers={"content-type": "application/json", "content-length": str(self.module.MAX_BODY_BYTES + 1)})
++        self.assertEqual(response.status_code, 413)
++        self.assertEqual(streamed, [])
++        self.module.MAX_BODY_BYTES = 100
++        for declared in (None, "1"):
++            streamed.clear()
++            async def chunks():
++                for number in range(5):
++                    streamed.append(number)
++                    yield b" " * 60
++            headers = {"content-type": "application/json"}
++            if declared:
++                headers["content-length"] = declared
++            self.assertEqual((await self.request("POST", content=chunks(), headers=headers)).status_code, 413)
++            self.assertEqual(streamed, [0, 1])
++        self.assertEqual(self.upstream_calls, [])
++
++    async def test_owner_isolation_missing_foreign_and_persisted_key_conflict(self):
++        self.assertEqual((await self.start()).status_code, 202)
++        conflict = await self.start(value={"input": {"query": "different"}, "confirm_storage": True})
++        self.assertEqual(conflict.status_code, 409)
++        self.assertFalse(conflict.json()["detail"]["uncertain"])
++        self.assertFalse((await self.start(owner="account:B")).json()["replay"])
++        self.assertEqual((await self.request("GET", owner="account:B")).json(), {"runs": []})
++        foreign = await self.request("GET", "/" + RUN, owner="account:B")
++        absent = await self.request("GET", "/" + OTHER_RUN, owner="account:B")
++        self.assertEqual(foreign.status_code, 404)
++        self.assertEqual(foreign.json(), absent.json())
++
++    async def test_report_is_exact_inert_bundle_from_bound_snapshots_and_never_recrawls(self):
++        self.completed_evidence()
++        first = await self.request("GET", f"/{RUN}/report")
++        second = await self.request("GET", f"/{RUN}/report")
++        self.assertEqual(first.status_code, 200)
++        self.assertEqual(first.json(), second.json())
++        self.assertEqual(set(first.json()), {"manifest", "files"})
++        evidence = json.loads(first.json()["files"]["evidence.jsonl"].strip())
++        self.assertEqual(evidence["content"], self.snapshots[0]["markdown"])
++        self.assertEqual(evidence["retainedSnapshot"]["id"], self.snapshots[0]["id"])
++        self.assertEqual(first.json()["manifest"]["runSummary"]["id"], RUN)
++        self.assertEqual([request.url.path for request in self.upstream_calls[:3]], [f"/v1/customer/runs/{RUN}",
++                          f"/v1/customer/runs/{RUN}/snapshots", f"/v1/customer/runs/{RUN}/snapshots/{self.snapshots[0]['id']}"])
++        self.assertTrue(all(request.method == "GET" for request in self.upstream_calls))
++        self.assertTrue(all(client._closed for client in self.instances))
++
++    async def test_report_allows_only_terminal_runs_before_any_snapshot_read(self):
++        for status in ("queued", "running", "paused", "cancel_requested"):
++            self.run["status"] = status
++            before = len(self.upstream_calls)
++            response = await self.request("GET", f"/{RUN}/report")
++            self.assertEqual(response.status_code, 409)
++            self.assertEqual(response.json()["detail"]["code"], "SCAN_IN_PROGRESS")
++            self.assertFalse(response.json()["detail"]["uncertain"])
++            self.assertEqual(len(self.upstream_calls), before + 1)
++            self.assertEqual(self.upstream_calls[-1].url.path, f"/v1/customer/runs/{RUN}")
++            self.assertEqual(self.module._report_admission.owners, set())
++        self.completed_evidence()
++        for status in ("completed", "partial", "failed", "cancelled"):
++            self.run["status"] = status
++            self.run["result"]["incomplete"] = status != "completed"
++            response = await self.request("GET", f"/{RUN}/report")
++            self.assertEqual(response.status_code, 200)
++            self.assertEqual(response.json()["manifest"]["runSummary"]["status"], status)
++        self.assertEqual(self.module._report_admission.owners, set())
++
++    async def test_report_admission_is_one_per_owner_four_per_worker_and_fail_fast(self):
++        reached = asyncio.Event()
++        release = asyncio.Event()
++        async def blocked(request):
++            if len(self.upstream_calls) == 4:
++                reached.set()
++            await release.wait()
++            return httpx.Response(404, json={"private": "PRIVATE_UPSTREAM_TRACE"})
++        self.handler = blocked
++        owners = [OWNER, "account:B", "account:C", "account:D"]
++        tasks = [asyncio.create_task(self.request("GET", f"/{RUN}/report", owner=owner)) for owner in owners]
++        try:
++            await asyncio.wait_for(reached.wait(), 1)
++            self.assertEqual(self.module._report_admission.owners, set(owners))
++            for owner in (OWNER, "account:E"):
++                response = await self.request("GET", f"/{RUN}/report", owner=owner)
++                self.assertEqual(response.status_code, 429)
++                self.assertEqual(response.json()["detail"]["code"], "SCAN_REPORT_CAPACITY")
++            self.assertEqual(len(self.instances), 4)
++            self.assertEqual(len(self.upstream_calls), 4)
++            # A saturated report hydrator does not block local capability reads.
++            self.assertEqual((await self.request("GET", "/capabilities", owner="account:E")).status_code, 200)
++        finally:
++            release.set()
++            responses = await asyncio.gather(*tasks)
++        self.assertTrue(all(response.status_code == 404 for response in responses))
++        self.assertEqual(self.module._report_admission.owners, set())
++        self.assertTrue(all(client._closed for client in self.instances))
++        self.handler = self.dispatch
++        self.completed_evidence()
++        self.assertEqual((await self.request("GET", f"/{RUN}/report")).status_code, 200)
++
++    async def test_report_admission_releases_on_request_cancellation_and_timeout(self):
++        self.completed_evidence()
++        reached = asyncio.Event()
++        async def blocked(request):
++            if "/snapshots/" not in request.url.path:
++                return self.dispatch(request)
++            reached.set()
++            await asyncio.Event().wait()
++        self.handler = blocked
++        pending = asyncio.create_task(self.request("GET", f"/{RUN}/report"))
++        await asyncio.wait_for(reached.wait(), 1)
++        self.assertEqual(self.module._report_admission.owners, {OWNER})
++        pending.cancel()
++        with self.assertRaises(asyncio.CancelledError):
++            await pending
++        self.assertEqual(self.module._report_admission.owners, set())
++        self.assertTrue(self.instances[-1]._closed)
++        self.module.REQUEST_TIMEOUT_SECONDS = 0.01
++        response = await self.request("GET", f"/{RUN}/report")
++        self.assertEqual(response.status_code, 504)
++        self.assertFalse(response.json()["detail"]["uncertain"])
++        self.assertEqual(self.module._report_admission.owners, set())
++        self.assertTrue(self.instances[-1]._closed)
++        self.handler = self.dispatch
++        self.module.REQUEST_TIMEOUT_SECONDS = 30
++        self.assertEqual((await self.request("GET", f"/{RUN}/report")).status_code, 200)
++        self.assertEqual(self.module._report_admission.owners, set())
++
++    async def test_report_owner_admission_applies_below_the_global_limit(self):
++        reached = asyncio.Event()
++        async def blocked(request):
++            reached.set()
++            await asyncio.Event().wait()
++        self.handler = blocked
++        pending = asyncio.create_task(self.request("GET", f"/{RUN}/report"))
++        try:
++            await asyncio.wait_for(reached.wait(), 1)
++            response = await self.request("GET", f"/{RUN}/report")
++            self.assertEqual(response.status_code, 429)
++            self.assertEqual(response.json()["detail"]["code"], "SCAN_REPORT_CAPACITY")
++            self.assertEqual(len(self.instances), 1)
++            self.assertEqual(len(self.upstream_calls), 1)
++            self.assertEqual(self.module._report_admission.owners, {OWNER})
++        finally:
++            pending.cancel()
++            with self.assertRaises(asyncio.CancelledError):
++                await pending
++        self.assertEqual(self.module._report_admission.owners, set())
++
++    async def test_report_admission_releases_if_configuration_or_assembler_fails(self):
++        with patch.dict(os.environ, {"FYND_COLLIDER_CUSTOMER_ENABLED": "false"}):
++            self.assertEqual((await self.request("GET", f"/{RUN}/report")).status_code, 503)
++        self.assertEqual(self.module._report_admission.owners, set())
++        self.assertEqual(self.instances, [])
++        self.completed_evidence()
++        with patch.object(self.module, "assemble_report", side_effect=RuntimeError("PRIVATE_UPSTREAM_TRACE")):
++            self.assertEqual((await self.request("GET", f"/{RUN}/report")).status_code, 503)
++        self.assertEqual(self.module._report_admission.owners, set())
++        self.assertEqual((await self.request("GET", f"/{RUN}/report")).status_code, 200)
++
++    async def test_report_count_and_cumulative_bytes_fail_without_fetching_rest(self):
++        self.completed_evidence()
++        self.module.MAX_SNAPSHOTS = 0
++        self.assertEqual((await self.request("GET", f"/{RUN}/report")).status_code, 413)
++        self.assertEqual(len(self.upstream_calls), 2)
++        self.module.MAX_SNAPSHOTS = 500
++        second = copy.deepcopy(self.snapshots[0])
++        second["unitId"] = "52345678-1234-4234-8234-123456789abc"
++        second["id"] = hashlib.sha256(canonical(["run-evidence-binding-v1", OWNER, RUN, second["unitId"], second["evidenceKind"], second["url"]])).hexdigest()
++        second["snapshotHash"] = hashlib.sha256(canonical({key: value for key, value in second.items() if key != "snapshotHash"})).hexdigest()
++        self.snapshots.append(second)
++        meta = [{key: value for key, value in row.items() if key != "markdown"} for row in self.snapshots]
++        self.module.MAX_SNAPSHOT_BYTES = len(canonical(self.run)) + len(canonical(meta)) + len(canonical(self.snapshots[0])) - 1
++        self.upstream_calls.clear()
++        self.assertEqual((await self.request("GET", f"/{RUN}/report")).status_code, 413)
++        self.assertEqual(len(self.upstream_calls), 3)
++        self.assertNotIn(second["id"], str(self.upstream_calls[-1].url))
++
++    async def test_report_wrong_owner_hash_or_run_never_reaches_assembler(self):
++        self.completed_evidence()
++        self.snapshots = [snapshot_fixture(owner="another-account")]
++        self.assertEqual((await self.request("GET", f"/{RUN}/report")).status_code, 502)
++        self.assertEqual(len(self.upstream_calls), 2)
++        self.completed_evidence()
++        self.snapshots[0]["markdown"] += " changed"
++        self.assertEqual((await self.request("GET", f"/{RUN}/report")).status_code, 502)
++        self.run["id"] = OTHER_RUN
++        before = len(self.upstream_calls)
++        self.assertEqual((await self.request("GET", f"/{RUN}/report")).status_code, 502)
++        self.assertEqual(len(self.upstream_calls), before + 1)
++
++    async def test_deadlines_cover_auth_body_and_upstream_with_honest_mutation_uncertainty(self):
++        self.module.REQUEST_TIMEOUT_SECONDS = 0.01
++        self.auth_delay = 0.1
++        response = await self.request("GET", "/capabilities")
++        self.assertEqual(response.status_code, 504)
++        self.assertFalse(response.json()["detail"]["uncertain"])
++        self.auth_delay = 0
++        async def body():
++            yield b"{"
++            await asyncio.sleep(0.1)
++        response = await self.request("POST", content=body(), headers={"content-type": "application/json"})
++        self.assertEqual(response.status_code, 504)
++        self.assertFalse(response.json()["detail"]["uncertain"])
++        self.assertEqual(self.upstream_calls, [])
++        async def slow_upstream(request):
++            await asyncio.sleep(0.1)
++            return self.dispatch(request)
++        self.handler = slow_upstream
++        response = await self.start()
++        self.assertEqual(response.status_code, 504)
++        self.assertTrue(response.json()["detail"]["uncertain"])
++        self.assertEqual(len(self.upstream_calls), 1)
++        self.assertTrue(self.instances[0]._closed)
++        self.assertFalse((await self.request("GET")).json()["detail"]["uncertain"])
++
++    async def test_upstream_failures_are_sanitized_and_never_retried(self):
++        self.handler = lambda _: httpx.Response(500, json={"secret": "PRIVATE_UPSTREAM_TRACE"})
++        response = await self.start()
++        self.assertEqual(response.status_code, 502)
++        self.assertTrue(response.json()["detail"]["uncertain"])
++        self.assertEqual(len(self.upstream_calls), 1)
++        self.assertTrue(self.instances[0]._closed)
++
++    async def test_rate_limit_is_per_owner_bounded_and_expiring(self):
++        now = [0.0]
++        self.module._limiter = self.module._OwnerRateLimiter(requests=2, max_owners=2, clock=lambda: now[0])
++        for _ in range(2):
++            self.assertEqual((await self.request("GET", "/capabilities")).status_code, 200)
++        self.assertEqual((await self.request("GET", "/capabilities")).status_code, 429)
++        self.assertEqual((await self.request("GET", "/capabilities", owner="B")).status_code, 200)
++        self.assertEqual((await self.request("GET", "/capabilities", owner="C")).status_code, 429)
++        self.assertEqual(len(self.module._limiter.windows), 2)
++        now[0] = 60.0
++        self.assertEqual((await self.request("GET", "/capabilities", owner="C")).status_code, 200)
++        self.assertEqual(len(self.module._limiter.windows), 1)
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/frontend/src/components/ResearchScanPanel.jsx b/frontend/src/components/ResearchScanPanel.jsx
+new file mode 100644
+--- /dev/null
++++ b/frontend/src/components/ResearchScanPanel.jsx
+@@ -0,0 +1,202 @@
++import React, { useCallback, useEffect, useRef, useState } from 'react';
++import { api } from '../lib/api';
++import { ResearchScanError, newScanRequestKey, prepareScanInput, validateScanCapabilities, validateScanList, validateScanResponse, validateScanStart, parseScanReport, describeScanFailure, isScanActive, canCancelScan, canResumeScan, canImportScan, SCAN_POLL_INTERVAL_MS, SCAN_MAX_POLLS } from '../lib/researchScans';
++
++const endpoint = '/api/v1/collider/scans';
++const inputClass = 'w-full rounded-xl border border-line dark:border-line-dark bg-white/60 dark:bg-black/20 px-3 py-2 text-sm';
++const label = value => value.replace(/_/g, ' ');
++
++export default function ResearchScanPanel({ onImportReport, onBusy, resetKey }) {
++  const [capabilities, setCapabilities] = useState(null);
++  const [urls, setUrls] = useState(''), [query, setQuery] = useState('');
++  const [pageLimit, setPageLimit] = useState('5'), [followLinks, setFollowLinks] = useState(false);
++  const [acknowledged, setAcknowledged] = useState(false);
++  const [runs, setRuns] = useState([]), [selected, setSelected] = useState(null);
++  const [busy, setBusy] = useState(null), [error, setError] = useState(''), [notice, setNotice] = useState('');
++  const [uncertainStart, setUncertainStart] = useState(false), [confirmDifferent, setConfirmDifferent] = useState(false);
++  const [pollingStopped, setPollingStopped] = useState(false);
++  const mounted = useRef(true), sequence = useRef(0), request = useRef(null), attempt = useRef(null), pollCount = useRef(0);
++  const latestReset = useRef(resetKey), reportCallback = useRef(onImportReport), busyCallback = useRef(onBusy), pollLoad = useRef(null);
++  latestReset.current = resetKey; reportCallback.current = onImportReport; busyCallback.current = onBusy;
++
++  const cancelLocal = useCallback(() => {
++    ++sequence.current;
++    const active = request.current; request.current = null;
++    active?.controller.abort();
++    if (mounted.current) {
++      setBusy(null);
++      if (active?.kind === 'start' && attempt.current) { attempt.current.uncertain = true; setUncertainStart(true); }
++    }
++    if (active?.kind === 'report') busyCallback.current?.(false);
++  }, []);
++  function begin(kind, id = '') {
++    cancelLocal(); setError(''); setNotice('');
++    const active = { kind, id, controller: new AbortController(), version: ++sequence.current, reset: latestReset.current };
++    request.current = active; setBusy(kind);
++    if (kind === 'report') busyCallback.current?.(true);
++    return active;
++  }
++  function current(active) {
++    return mounted.current && active.version === sequence.current && !active.controller.signal.aborted && (active.kind !== 'report' || active.reset === latestReset.current);
++  }
++  function finish(active) {
++    if (!current(active)) return;
++    request.current = null; setBusy(null);
++    if (active.kind === 'report') busyCallback.current?.(false);
++  }
++  function acceptRun(run) {
++    setSelected(run);
++    setRuns(previous => [run, ...previous.filter(item => item.id !== run.id)].slice(0, 100));
++  }
++  function failure(active, problem) {
++    if (!current(active)) return;
++    const description = describeScanFailure(problem, active.kind);
++    if (description.sessionExpired) {
++      cancelLocal(); attempt.current = null; pollCount.current = 0;
++      setRuns([]); setSelected(null); setCapabilities(null); setUrls(''); setQuery(''); setAcknowledged(false);
++      setUncertainStart(false); setConfirmDifferent(false); setPollingStopped(true); setNotice('');
++    } else {
++      if (active.kind === 'start' && description.uncertain && attempt.current) { attempt.current.uncertain = true; setUncertainStart(true); }
++      if (['status', 'cancel', 'resume'].includes(active.kind)) setPollingStopped(true);
++    }
++    setError(description.message);
++  }
++
++  async function checkCapabilities() {
++    const active = begin('capabilities');
++    try {
++      const response = await api.get(`${endpoint}/capabilities`, { signal: active.controller.signal, timeout: 15000 });
++      if (current(active)) setCapabilities(validateScanCapabilities(response?.data));
++    } catch (problem) { if (current(active)) setCapabilities(null); failure(active, problem); }
++    finally { finish(active); }
++  }
++  const initialCheck = useRef(checkCapabilities);
++  useEffect(() => {
++    mounted.current = true; initialCheck.current();
++    return () => { mounted.current = false; cancelLocal(); };
++  }, [cancelLocal]);
++  useEffect(() => {
++    // Other Research imports invalidate only a pending report transfer, not the
++    // server run or its uncertain start key.
++    if (request.current?.kind === 'report') { cancelLocal(); setError(''); setNotice(''); }
++  }, [resetKey, cancelLocal]);
++
++  async function refreshList() {
++    if (!capabilities?.available) return;
++    const active = begin('list');
++    try {
++      const response = await api.get(endpoint, { signal: active.controller.signal, timeout: 15000 });
++      if (current(active)) { setRuns(validateScanList(response?.data)); setNotice('Saved scan list refreshed. No research report was opened.'); }
++    } catch (problem) { failure(active, problem); }
++    finally { finish(active); }
++  }
++  async function loadRun(id, automatic = false) {
++    if (!capabilities?.available) return;
++    if (!automatic) { pollCount.current = 0; setPollingStopped(false); }
++    const active = begin('status', id);
++    try {
++      const response = await api.get(`${endpoint}/${id}`, { signal: active.controller.signal, timeout: 15000 });
++      if (current(active)) acceptRun(validateScanResponse(response?.data, id));
++    } catch (problem) { failure(active, problem); }
++    finally { finish(active); }
++  }
++  pollLoad.current = loadRun;
++  useEffect(() => {
++    if (!capabilities?.available || !isScanActive(selected) || busy || pollingStopped) return undefined;
++    if (pollCount.current >= SCAN_MAX_POLLS) { setPollingStopped(true); return undefined; }
++    const timer = window.setTimeout(() => { ++pollCount.current; pollLoad.current(selected.id, true); }, SCAN_POLL_INTERVAL_MS);
++    return () => window.clearTimeout(timer);
++  }, [capabilities, selected, busy, pollingStopped]);
++
++  async function start(event) {
++    event.preventDefault();
++    if (!capabilities?.available || !acknowledged || request.current?.kind === 'start') return;
++    let input;
++    try { input = prepareScanInput({ urls, query, pageLimit, followLinks }); }
++    catch (problem) { setError(describeScanFailure(problem).message); return; }
++    const fingerprint = JSON.stringify(input);
++    if (attempt.current?.uncertain && attempt.current.fingerprint !== fingerprint) {
++      setError('Resolve the unconfirmed request before changing its inputs.'); return;
++    }
++    if (!attempt.current || attempt.current.fingerprint !== fingerprint) {
++      let key;
++      try { key = newScanRequestKey(); } catch (problem) { setError(describeScanFailure(problem).message); return; }
++      if (typeof key !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(key)) { setError('A safe scan request key could not be created. Reload before retrying.'); return; }
++      attempt.current = { key, fingerprint, input, uncertain: false };
++    }
++    const active = begin('start');
++    try {
++      const response = await api.post(endpoint, { input: attempt.current.input, confirm_storage: true }, { signal: active.controller.signal, timeout: 20000, headers: { 'Idempotency-Key': attempt.current.key } });
++      if (!current(active)) return;
++      const receipt = validateScanStart(response?.data);
++      attempt.current.uncertain = false; setUncertainStart(false); setConfirmDifferent(false); setAcknowledged(false);
++      pollCount.current = 0; setPollingStopped(false); acceptRun(receipt.run);
++      setNotice(receipt.replay ? 'The existing scan request was recovered. No duplicate start is being claimed.' : 'Scan request accepted. This is not a completed collection or a coverage guarantee.');
++    } catch (problem) { failure(active, problem); }
++    finally { finish(active); }
++  }
++  async function changeRun(action) {
++    if (!capabilities?.available || !selected || (action === 'cancel' ? !canCancelScan(selected) : !canResumeScan(selected))) return;
++    const id = selected.id, active = begin(action, id);
++    try {
++      const response = await api.post(`${endpoint}/${id}/${action}`, {}, { signal: active.controller.signal, timeout: 15000 });
++      if (current(active)) {
++        acceptRun(validateScanResponse(response?.data, id)); pollCount.current = 0; setPollingStopped(false);
++        setNotice(action === 'cancel' ? 'Cancellation requested. Check the returned status; in-flight source work may already have completed.' : 'Resume requested. Failed or uncertain reads are not automatically retried.');
++      }
++    } catch (problem) { failure(active, problem); }
++    finally { finish(active); }
++  }
++  async function importReport() {
++    if (!capabilities?.available || !canImportScan(selected)) return;
++    const id = selected.id, active = begin('report', id);
++    try {
++      const response = await api.get(`${endpoint}/${id}/report`, { signal: active.controller.signal, timeout: 35000 });
++      if (!current(active)) return;
++      const report = parseScanReport(response?.data, id);
++      if (current(active)) {
++        if (typeof reportCallback.current !== 'function') throw new ResearchScanError('SCAN_INVALID_RESPONSE', 'The research workspace is not ready to receive this report.');
++        reportCallback.current(report);
++        setNotice('Retained scan evidence opened in Research. Completeness and claims are not independently verified.');
++      }
++    } catch (problem) { failure(active, problem); }
++    finally { finish(active); }
++  }
++  function edit(setter, value) {
++    if (uncertainStart || busy === 'start') return;
++    setter(value); setAcknowledged(false); setError('');
++  }
++  function useDifferentInputs() {
++    if (request.current?.kind === 'start') return;
++    attempt.current = null; setUncertainStart(false); setConfirmDifferent(false); setAcknowledged(false);
++    setNotice('The previous request may still be running. Check saved scans before starting another.');
++  }
++  const locked = uncertainStart || busy === 'start';
++
++  return <section className="liquid-card p-5 space-y-4" aria-labelledby="research-scan-heading" data-testid="research-scan-panel">
++    <div><h2 id="research-scan-heading" className="text-lg font-semibold">Scan selected sources</h2><p className="text-sm muted mt-2">Discover and collect bounded public-web evidence through LYNK Collider. Source permissions, availability, quotas and page limits still apply. This does not scan the whole internet or apply for jobs.</p></div>
++    <div className="rounded-xl border border-line dark:border-line-dark p-3 text-sm" role="note">
++      {capabilities?.available ? 'Scanning is configured. This does not establish that the engine or any source is healthy.' : capabilities?.reason === 'disabled' ? 'Scanning is disabled for this deployment.' : capabilities?.reason === 'configuration_required' ? 'Scanning needs server configuration before it can start.' : 'Scan availability has not been confirmed.'}
++      <button type="button" className="liquid-capsule liquid-secondary mt-2" disabled={busy === 'capabilities'} onClick={checkCapabilities}>{busy === 'capabilities' ? 'Checking availability…' : 'Check availability'}</button>
++    </div>
++    <form onSubmit={start} className="space-y-3">
++      <label className="block text-xs muted space-y-1"><span>Search query</span><input className={inputClass} maxLength={400} value={query} disabled={locked} onChange={event => edit(setQuery, event.target.value)} placeholder="A focused question or opportunity" /></label>
++      <label className="block text-xs muted space-y-1"><span>Source URLs · one per line, up to 20</span><textarea className={`${inputClass} min-h-24`} maxLength={42000} value={urls} disabled={locked} onChange={event => edit(setUrls, event.target.value)} placeholder="https://example.org/research" /></label>
++      <details><summary className="cursor-pointer text-sm">Scan limits and advanced options</summary><div className="mt-3 space-y-3"><label className="block text-xs muted space-y-1"><span>Maximum pages</span><input type="number" min="1" max="20" step="1" className={inputClass} value={pageLimit} disabled={locked} onChange={event => edit(setPageLimit, event.target.value)} /></label><label className="flex gap-2 text-sm"><input type="checkbox" checked={followLinks} disabled={locked} onChange={event => edit(setFollowLinks, event.target.checked)} /><span>Follow same-origin links one level deep, within the same page limit</span></label></div></details>
++      <label className="flex items-start gap-2 text-sm"><input type="checkbox" className="mt-1" checked={acknowledged} disabled={busy === 'start'} onChange={event => setAcknowledged(event.target.checked)} /><span>I understand source content from this scan will be stored in my Fynd account</span></label>
++      <div className="flex flex-wrap gap-2"><button type="submit" className="liquid-capsule liquid-primary" disabled={!capabilities?.available || !acknowledged || busy === 'start'}>{busy === 'start' ? 'Starting scan…' : uncertainStart ? 'Retry same scan request' : 'Start scan'}</button><button type="button" className="liquid-capsule liquid-secondary" disabled={!capabilities?.available || busy === 'list'} onClick={refreshList}>{busy === 'list' ? 'Refreshing scans…' : 'Refresh saved scans'}</button></div>
++    </form>
++    {uncertainStart && <div className="rounded-xl border border-amber-400 p-3 space-y-2 text-sm"><p>The last start is unconfirmed and may already be running. Retrying keeps the same request key. Inputs stay locked until you explicitly choose to change them.</p>{!confirmDifferent ? <button className="liquid-capsule liquid-secondary" type="button" disabled={busy === 'start'} onClick={() => setConfirmDifferent(true)}>Use different inputs</button> : <><p>A new request can create another scan while the previous one continues.</p><button className="liquid-capsule liquid-secondary" type="button" disabled={busy === 'start'} onClick={useDifferentInputs}>Continue with different inputs</button><button className="liquid-capsule liquid-secondary" type="button" disabled={busy === 'start'} onClick={() => setConfirmDifferent(false)}>Keep original request</button></>}</div>}
++    {error && <p role="alert" className="rounded-xl border border-red-400 p-3 text-sm">{error}</p>}
++    {notice && <p role="status" className="text-sm muted">{notice}</p>}
++    {!!runs.length && <details open><summary className="cursor-pointer text-sm">Saved scans ({runs.length})</summary><ul className="mt-3 space-y-2 max-h-64 overflow-auto">{runs.map(run => <li key={run.id}><button type="button" className="text-left w-full rounded-xl border border-line dark:border-line-dark p-3" onClick={() => loadRun(run.id)} disabled={!capabilities?.available} aria-label={`View scan ${run.id}`}><span className="block text-sm break-words">{run.input.query || run.input.urls[0] || 'Stored source scan'}</span><span className="text-xs muted">{label(run.status)} · {run.createdAt}</span></button></li>)}</ul></details>}
++    {selected && <div className="rounded-xl border border-line dark:border-line-dark p-4 space-y-3" data-testid="selected-scan">
++      <h3 className="font-medium">Scan status: {label(selected.status)}</h3><p className="text-xs muted break-all">Scan {selected.id}</p>
++      <p className="text-sm">{selected.progress.done} of {selected.progress.total} recorded steps settled</p><p className="text-xs muted">Retained pages: {selected.result.counts.savedPages} · jobs: {selected.result.counts.savedJobs} · structured records: {selected.result.counts.structuredRecords}</p>
++      <p className="text-xs muted">These are run counts, not internet coverage or proof that evidence is complete. {selected.result.incomplete ? 'This run is marked incomplete.' : 'Completed steps do not verify source claims.'}</p>
++      <div className="flex flex-wrap gap-2"><button className="liquid-capsule liquid-secondary" type="button" disabled={!capabilities?.available || busy === 'status'} onClick={() => loadRun(selected.id)}>Refresh scan status</button>{canCancelScan(selected) && <button className="liquid-capsule liquid-secondary" type="button" disabled={!capabilities?.available || busy === 'cancel'} onClick={() => changeRun('cancel')}>Cancel scan</button>}{canResumeScan(selected) && <button className="liquid-capsule liquid-secondary" type="button" disabled={!capabilities?.available || busy === 'resume'} onClick={() => changeRun('resume')}>Resume scan</button>}{canImportScan(selected) && <button className="liquid-capsule liquid-primary" type="button" disabled={!capabilities?.available || busy === 'report'} onClick={importReport}>{busy === 'report' ? 'Opening scan report…' : 'Open retained report'}</button>}</div>
++      {isScanActive(selected) && <p className="text-xs muted">{pollingStopped ? 'Automatic status checks are paused. Use Refresh scan status to continue checking.' : 'Status checks run at least 5 seconds apart and stop after 60 checks or any error.'}</p>}
++    </div>}
++    <p className="text-xs muted">Unchanged inputs recover the same scan request. Change inputs to create a different scan. Leaving or refreshing this page does not cancel server work. If a start or cancellation is unconfirmed, check saved scans before retrying. Scanning stores source evidence; opening a report does not submit job applications.</p>
++  </section>;
++}
+diff --git a/frontend/src/components/ResearchScanPanel.test.jsx b/frontend/src/components/ResearchScanPanel.test.jsx
+new file mode 100644
+--- /dev/null
++++ b/frontend/src/components/ResearchScanPanel.test.jsx
+@@ -0,0 +1,258 @@
++import React from 'react';
++import { act, fireEvent, render, screen, within } from '@testing-library/react';
++import { api } from '../lib/api';
++import { newScanRequestKey } from '../lib/researchScans';
++import { parseReport } from '../lib/researchReport';
++import { accountSnapshot } from '../lib/researchAccount';
++import ResearchScanPanel from './ResearchScanPanel';
++
++jest.mock('../lib/api', () => ({ api: { get: jest.fn(), post: jest.fn() } }));
++jest.mock('../lib/researchScans', () => ({ ...jest.requireActual('../lib/researchScans'), newScanRequestKey: jest.fn() }));
++const endpoint = '/api/v1/collider/scans';
++const id = 'a6623e49-2aa3-4311-8acf-127b32289b11', secondId = 'b6623e49-2aa3-4311-8acf-127b32289b22';
++const caps = { available: true, reason: null, limits: { max_pages_per_run: 20, max_snapshot_bytes: 8388608, max_snapshots: 500 }, scope: 'Configured transport only.' };
++function run(status = 'queued', runId = id) {
++  const progress = { total: 1, done: 0, pending: 0, inflight: 0, completed: 0, partial: 0, failed: 0, uncertain: 0 };
++  if (['completed', 'partial', 'failed'].includes(status)) { progress.done = 1; progress[status] = 1; }
++  else if (['running', 'cancel_requested'].includes(status)) progress.inflight = 1;
++  else progress.pending = 1;
++  return { id: runId, status, input: { urls: ['https://example.org/evidence'], boards: [], pageLimit: 5, followLinks: false }, progress,
++    createdAt: '2026-09-14T09:00:00Z', updatedAt: '2026-09-14T09:00:00Z',
++    result: { incomplete: status !== 'completed', counts: { savedPages: ['completed', 'partial'].includes(status) ? 1 : 0, savedJobs: 0, structuredRecords: 0, successfulEmptyBoards: 0, selectedPages: 1, attemptedPages: 1, discoveredUrls: 1, notFetched: 0, frontierOmitted: 0, linksSkipped: 0, omittedRecords: 0, truncatedRecords: 0 } } };
++}
++function reportBundle(status = 'completed') {
++  const value = run(status);
++  value.result = { ...value.result, pages: ['completed', 'partial'].includes(status) ? [{ url: 'https://example.org/evidence', title: 'Collected fixture', content: 'Synthetic collected source body.' }] : [], jobs: [], records: [], errors: status === 'failed' ? [{ code: 'SOURCE_TIMEOUT' }] : [], warnings: [], searchSlices: [] };
++  return accountSnapshot(parseReport(JSON.stringify(value)));
++}
++function deferred() { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; }
++async function mount(props = {}) {
++  const view = render(<ResearchScanPanel {...props} />);
++  await act(async () => {});
++  return view;
++}
++function consent() { fireEvent.click(screen.getByRole('checkbox', { name: 'I understand source content from this scan will be stored in my Fynd account' })); }
++async function startScan(status = 'queued') {
++  api.post.mockResolvedValueOnce({ data: { replay: false, run: run(status) } });
++  fireEvent.change(screen.getByLabelText('Search query'), { target: { value: 'focused research' } });
++  consent();
++  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Start scan', exact: true })); });
++}
++
++describe('Research scan panel', () => {
++  beforeEach(() => {
++    api.get.mockReset(); api.post.mockReset(); newScanRequestKey.mockReset();
++    api.get.mockImplementation(url => url === `${endpoint}/capabilities` ? Promise.resolve({ data: caps }) : Promise.reject(new Error('Unexpected test request')));
++    newScanRequestKey.mockReturnValue('request-key-1');
++  });
++
++  test('checks configuration only on mount and never auto-starts or invents evidence', async () => {
++    await mount();
++    expect(api.get).toHaveBeenCalledTimes(1);
++    expect(api.get).toHaveBeenCalledWith(`${endpoint}/capabilities`, expect.objectContaining({ timeout: 15000, signal: expect.anything() }));
++    expect(api.post).not.toHaveBeenCalled();
++    expect(screen.getByText(/does not establish that the engine or any source is healthy/)).toBeTruthy();
++    expect(screen.queryByTestId('selected-scan')).toBeNull();
++    expect(screen.getByRole('button', { name: 'Start scan', exact: true }).disabled).toBe(true);
++  });
++
++  test.each(['disabled', 'configuration_required'])('disables starting when availability is %s', async reason => {
++    api.get.mockResolvedValue({ data: { ...caps, available: false, reason } });
++    await mount();
++    fireEvent.change(screen.getByLabelText('Search query'), { target: { value: 'query' } });
++    consent();
++    expect(screen.getByRole('button', { name: 'Start scan', exact: true }).disabled).toBe(true);
++    expect(screen.getByRole('button', { name: 'Refresh saved scans' }).disabled).toBe(true);
++    expect(api.post).not.toHaveBeenCalled();
++  });
++
++  test('requires explicit storage consent and validates input before starting', async () => {
++    await mount();
++    fireEvent.change(screen.getByLabelText('Search query'), { target: { value: 'query' } });
++    fireEvent.click(screen.getByRole('button', { name: 'Start scan', exact: true }));
++    expect(api.post).not.toHaveBeenCalled();
++    fireEvent.change(screen.getByLabelText('Search query'), { target: { value: '' } });
++    consent();
++    fireEvent.click(screen.getByRole('button', { name: 'Start scan', exact: true }));
++    expect(screen.getByRole('alert').textContent).toContain('query or at least one');
++    expect(api.post).not.toHaveBeenCalled();
++  });
++
++  test('sends bounded inputs with an idempotency key and does not call report-import hooks', async () => {
++    const onBusy = jest.fn(), onImportReport = jest.fn();
++    await mount({ onBusy, onImportReport });
++    await startScan();
++    expect(api.post).toHaveBeenCalledWith(endpoint, { input: { urls: [], query: 'focused research', pageLimit: 5, followLinks: false }, confirm_storage: true }, expect.objectContaining({ timeout: 20000, headers: { 'Idempotency-Key': 'request-key-1' }, signal: expect.anything() }));
++    expect(screen.getByRole('heading', { name: 'Scan status: queued' })).toBeTruthy();
++    expect(screen.getByText('0 of 1 recorded steps settled')).toBeTruthy();
++    expect(screen.getByText(/not internet coverage/)).toBeTruthy();
++    expect(onBusy).not.toHaveBeenCalled();
++    expect(onImportReport).not.toHaveBeenCalled();
++  });
++
++  test('retains the same key after an uncertain start, even across a parent reset', async () => {
++    const view = await mount({ resetKey: 0 });
++    api.post.mockRejectedValueOnce({ code: 'ECONNABORTED' });
++    fireEvent.change(screen.getByLabelText('Search query'), { target: { value: 'research' } });
++    consent();
++    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Start scan', exact: true })); });
++    expect(screen.getByLabelText('Search query').disabled).toBe(true);
++    expect(screen.getByText(/Retried|Retrying keeps the same request key/)).toBeTruthy();
++    view.rerender(<ResearchScanPanel resetKey={1} />);
++    api.post.mockResolvedValueOnce({ data: { replay: true, run: run() } });
++    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Retry same scan request' })); });
++
++    expect(newScanRequestKey).toHaveBeenCalledTimes(1);
++    expect(api.post.mock.calls[0][2].headers).toEqual(api.post.mock.calls[1][2].headers);
++    expect(api.post.mock.calls[0][1]).toEqual(api.post.mock.calls[1][1]);
++    expect(screen.getByText(/existing scan request was recovered/)).toBeTruthy();
++  });
++
++  test('requires an explicit choice before replacing uncertain inputs or minting a new key', async () => {
++    await mount();
++    api.post.mockRejectedValueOnce(new Error('Request timeout'));
++    fireEvent.change(screen.getByLabelText('Search query'), { target: { value: 'original' } }); consent();
++    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Start scan', exact: true })); });
++    fireEvent.click(screen.getByRole('button', { name: 'Use different inputs' }));
++    expect(screen.getByLabelText('Search query').disabled).toBe(true);
++    fireEvent.click(screen.getByRole('button', { name: 'Continue with different inputs' }));
++    expect(screen.getByLabelText('Search query').disabled).toBe(false);
++    newScanRequestKey.mockReturnValueOnce('request-key-2');
++    api.post.mockResolvedValueOnce({ data: { replay: false, run: run() } });
++    fireEvent.change(screen.getByLabelText('Search query'), { target: { value: 'changed research' } }); consent();
++    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Start scan', exact: true })); });
++    expect(api.post.mock.calls[1][2].headers['Idempotency-Key']).toBe('request-key-2');
++  });
++
++  test('polls no faster than five seconds and stops on a terminal state', async () => {
++    jest.useFakeTimers();
++    let view;
++    try {
++      view = await mount(); await startScan();
++      api.get.mockResolvedValue({ data: { run: run('completed') } });
++      await act(async () => { jest.advanceTimersByTime(4999); });
++      expect(api.get.mock.calls.filter(([url]) => url === `${endpoint}/${id}`)).toHaveLength(0);
++      await act(async () => { jest.advanceTimersByTime(1); });
++      expect(screen.getByRole('heading', { name: 'Scan status: completed' })).toBeTruthy();
++      await act(async () => { jest.advanceTimersByTime(60000); });
++      expect(api.get.mock.calls.filter(([url]) => url === `${endpoint}/${id}`)).toHaveLength(1);
++    } finally { view?.unmount(); jest.useRealTimers(); }
++  });
++
++  test('stops automatic status checks after sixty polls', async () => {
++    jest.useFakeTimers();
++    let view;
++    try {
++      view = await mount(); await startScan();
++      api.get.mockResolvedValue({ data: { run: run() } });
++      for (let index = 0; index < 60; index++) await act(async () => { jest.advanceTimersByTime(5000); });
++      expect(api.get.mock.calls.filter(([url]) => url === `${endpoint}/${id}`)).toHaveLength(60);
++      expect(screen.getByText(/Automatic status checks are paused/)).toBeTruthy();
++      await act(async () => { jest.advanceTimersByTime(60000); });
++      expect(api.get.mock.calls.filter(([url]) => url === `${endpoint}/${id}`)).toHaveLength(60);
++    } finally { view?.unmount(); jest.useRealTimers(); }
++  });
++
++  test('cancel and resume are explicit and use the actual supported lifecycle', async () => {
++    await mount(); await startScan('running');
++    expect(api.post).toHaveBeenCalledTimes(1);
++    api.post.mockResolvedValueOnce({ data: { run: run('cancel_requested') } });
++    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Cancel scan', exact: true })); });
++    expect(api.post).toHaveBeenLastCalledWith(`${endpoint}/${id}/cancel`, {}, expect.objectContaining({ timeout: 15000 }));
++    expect(screen.getByRole('heading', { name: 'Scan status: cancel requested' })).toBeTruthy();
++    expect(screen.queryByRole('button', { name: 'Resume scan' })).toBeNull();
++
++    api.get.mockResolvedValueOnce({ data: { run: run('paused') } });
++    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Refresh scan status' })); });
++    api.post.mockResolvedValueOnce({ data: { run: run() } });
++    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Resume scan' })); });
++    expect(api.post).toHaveBeenLastCalledWith(`${endpoint}/${id}/resume`, {}, expect.objectContaining({ timeout: 15000 }));
++    expect(screen.getByText(/Failed or uncertain reads are not automatically retried/)).toBeTruthy();
++  });
++
++  test('imports a completed report through the real parser only after an explicit click', async () => {
++    const onImportReport = jest.fn(), onBusy = jest.fn();
++    await mount({ onImportReport, onBusy }); await startScan('completed');
++    expect(onImportReport).not.toHaveBeenCalled();
++    api.get.mockResolvedValueOnce({ data: reportBundle() });
++    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Open retained report' })); });
++    expect(api.get).toHaveBeenLastCalledWith(`${endpoint}/${id}/report`, expect.objectContaining({ timeout: 35000, signal: expect.anything() }));
++    expect(onImportReport).toHaveBeenCalledTimes(1);
++    expect(onImportReport.mock.calls[0][0].records[0].content).toBe('Synthetic collected source body.');
++    expect(onImportReport.mock.calls[0][0].runSummary.id).toBe(id);
++    expect(onBusy.mock.calls).toEqual([[true], [false]]);
++  });
++
++  test('rejects a report for a different scan without changing the research workspace', async () => {
++    const onImportReport = jest.fn();
++    await mount({ onImportReport }); await startScan('completed');
++    const bundle = reportBundle(); bundle.manifest.runSummary.id = secondId;
++    api.get.mockResolvedValueOnce({ data: bundle });
++    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Open retained report' })); });
++    expect(onImportReport).not.toHaveBeenCalled();
++    expect(screen.getByRole('alert')).toBeTruthy();
++  });
++
++  test.each(['partial', 'failed', 'cancelled'])('opens retained evidence or diagnostics for %s without claiming collection success', async status => {
++    const onImportReport = jest.fn();
++    await mount({ onImportReport }); await startScan(status);
++    api.get.mockResolvedValueOnce({ data: reportBundle(status) });
++    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Open retained report' })); });
++    expect(onImportReport.mock.calls[0][0].runSummary.status).toBe(status);
++    expect(screen.getByRole('heading', { name: `Scan status: ${status}` })).toBeTruthy();
++    expect(screen.queryByText(/Scan completed successfully/)).toBeNull();
++  });
++
++  test('parent reset aborts only a pending report import and preserves the server run', async () => {
++    const onImportReport = jest.fn(), onBusy = jest.fn(), pending = deferred();
++    const view = await mount({ onImportReport, onBusy, resetKey: 0 }); await startScan('completed');
++    api.get.mockReturnValueOnce(pending.promise);
++    fireEvent.click(screen.getByRole('button', { name: 'Open retained report' }));
++    const signal = api.get.mock.calls.find(([url]) => url.endsWith('/report'))[1].signal;
++    view.rerender(<ResearchScanPanel onImportReport={onImportReport} onBusy={onBusy} resetKey={1} />);
++    expect(signal.aborted).toBe(true);
++    await act(async () => { pending.resolve({ data: reportBundle() }); });
++    expect(onImportReport).not.toHaveBeenCalled();
++    expect(screen.getByRole('heading', { name: 'Scan status: completed' })).toBeTruthy();
++    expect(onBusy.mock.calls).toEqual([[true], [false]]);
++  });
++
++  test('a session failure clears scan state and stops further automatic checks', async () => {
++    await mount(); await startScan('completed');
++    api.get.mockRejectedValueOnce({ response: { status: 401, data: { detail: { message: 'PRIVATE_SERVER_MESSAGE' } } } });
++    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Refresh saved scans' })); });
++    expect(screen.queryByTestId('selected-scan')).toBeNull();
++    expect(screen.getByLabelText('Search query').value).toBe('');
++    expect(screen.getByRole('alert').textContent).toContain('session has expired');
++    expect(screen.queryByText(/PRIVATE_SERVER_MESSAGE/)).toBeNull();
++    expect(screen.getByRole('button', { name: 'Start scan', exact: true }).disabled).toBe(true);
++  });
++
++  test('a newer selected run suppresses an older status response', async () => {
++    await mount();
++    api.get.mockResolvedValueOnce({ data: { runs: [run('completed'), run('completed', secondId)] } });
++    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Refresh saved scans' })); });
++    const older = deferred(), newer = deferred();
++    api.get.mockReturnValueOnce(older.promise).mockReturnValueOnce(newer.promise);
++    fireEvent.click(screen.getByRole('button', { name: `View scan ${id}` }));
++    const signal = api.get.mock.calls.find(([url]) => url === `${endpoint}/${id}`)[1].signal;
++    fireEvent.click(screen.getByRole('button', { name: `View scan ${secondId}` }));
++    expect(signal.aborted).toBe(true);
++    await act(async () => { newer.resolve({ data: { run: run('completed', secondId) } }); });
++    await act(async () => { older.resolve({ data: { run: run('completed') } }); });
++    expect(within(screen.getByTestId('selected-scan')).getByText(`Scan ${secondId}`)).toBeTruthy();
++    expect(within(screen.getByTestId('selected-scan')).queryByText(`Scan ${id}`)).toBeNull();
++  });
++
++  test('unmount aborts report requests and suppresses late parent callbacks', async () => {
++    const onImportReport = jest.fn(), pending = deferred();
++    const view = await mount({ onImportReport }); await startScan('completed');
++    api.get.mockReturnValueOnce(pending.promise);
++    fireEvent.click(screen.getByRole('button', { name: 'Open retained report' }));
++    const signal = api.get.mock.calls.find(([url]) => url.endsWith('/report'))[1].signal;
++    view.unmount();
++    expect(signal.aborted).toBe(true);
++    await act(async () => { pending.resolve({ data: reportBundle() }); });
++    expect(onImportReport).not.toHaveBeenCalled();
++  });
++});
+diff --git a/frontend/src/lib/researchScans.js b/frontend/src/lib/researchScans.js
+new file mode 100644
+--- /dev/null
++++ b/frontend/src/lib/researchScans.js
+@@ -0,0 +1,145 @@
++import { parseReport } from './researchReport';
++
++export const SCAN_STATUSES = Object.freeze(['queued', 'running', 'paused', 'cancel_requested', 'completed', 'partial', 'failed', 'cancelled']);
++export const SCAN_POLL_INTERVAL_MS = 5000;
++export const SCAN_MAX_POLLS = 60;
++const UUID = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
++const plain = value => value !== null && typeof value === 'object' && !Array.isArray(value) && [Object.prototype, null].includes(Object.getPrototypeOf(value));
++const integer = (value, max = 1000000) => Number.isSafeInteger(value) && value >= 0 && value <= max;
++const controls = value => Array.from(value).some(character => { const code = character.charCodeAt(0); return code < 32 || (code >= 127 && code <= 159); });
++export class ResearchScanError extends Error {
++  constructor(code, message) { super(message); this.name = 'ResearchScanError'; this.code = code; }
++}
++const invalid = () => { throw new ResearchScanError('SCAN_INVALID_RESPONSE', 'Fynd returned an invalid scan response. No research report was imported.'); };
++const badInput = message => { throw new ResearchScanError('SCAN_INVALID_INPUT', message); };
++
++export function scanId(value) {
++  if (typeof value !== 'string' || !UUID.test(value)) invalid();
++  return value.toLowerCase();
++}
++export function newScanRequestKey() {
++  try {
++    const secure = globalThis.crypto;
++    if (typeof secure?.randomUUID === 'function') {
++      const key = secure.randomUUID();
++      if (typeof key === 'string' && UUID.test(key)) return key.toLowerCase();
++      throw new Error('Invalid secure UUID');
++    }
++    if (typeof secure?.getRandomValues !== 'function') throw new Error('Secure randomness unavailable');
++    const bytes = new Uint8Array(16);
++    secure.getRandomValues(bytes);
++    bytes[6] = (bytes[6] & 15) | 64; bytes[8] = (bytes[8] & 63) | 128;
++    const hex = Array.from(bytes, value => value.toString(16).padStart(2, '0')).join('');
++    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
++  } catch { throw new ResearchScanError('SCAN_KEY_UNAVAILABLE', 'Secure request keys are unavailable. Open Fynd in a supported secure browser before starting a scan.'); }
++}
++function publicUrl(value) {
++  if (typeof value !== 'string' || !value || value.length > 2048 || controls(value) || /[\s\\]/.test(value)) badInput('Use absolute public website URLs, one per line.');
++  let url;
++  try { url = new URL(value); } catch { badInput('Use absolute public website URLs, one per line.'); }
++  const host = url.hostname.toLowerCase();
++  if (url.protocol !== 'https:' || url.username || url.password || url.port || !host.includes('.') || host.endsWith('.') || !/^[a-z0-9.-]+$/.test(host) || host.split('.').some(part => !part || part.length > 63 || part.startsWith('-') || part.endsWith('-')) || /^(?:[0-9]+|0x[a-f0-9]+)$/.test(host.split('.').pop()) || /(^|\.)(localhost|local|internal|intranet|lan|home|test|invalid|example|onion)$/.test(host) || /(^|\.)(nip\.io|sslip\.io|localtest\.me)$/.test(host)) badInput('Use public HTTPS URLs. Private addresses, credentials, custom ports and unsupported URL schemes are not accepted.');
++  // Fragments can identify distinct routes in client-rendered sites. Preserve
++  // them in collection intent; only the engine owns source normalization.
++  return url.href;
++}
++
++export function prepareScanInput({ urls = '', query = '', pageLimit = 5, followLinks = false } = {}) {
++  if ((typeof urls !== 'string' && !Array.isArray(urls)) || typeof query !== 'string' || typeof followLinks !== 'boolean') badInput('The scan input is invalid.');
++  const lines = typeof urls === 'string' ? urls.split(/\r?\n/).map(value => value.trim()).filter(Boolean) : urls;
++  if (lines.length > 20) badInput('Choose at most 20 source URLs per scan.');
++  if (query.length > 400 || controls(query)) badInput('Use a query of at most 400 characters without control characters.');
++  const pages = typeof pageLimit === 'string' && /^\d+$/.test(pageLimit) ? Number(pageLimit) : pageLimit;
++  if (!Number.isInteger(pages) || pages < 1 || pages > 20) badInput('Choose a page limit from 1 to 20.');
++  const normalized = [...new Set(lines.map(publicUrl))], text = query.trim();
++  if (!normalized.length && !text) badInput('Add a search query or at least one public source URL.');
++  return { urls: normalized, ...(text ? { query: text } : {}), pageLimit: pages, followLinks, ...(followLinks ? { maxDepth: 1 } : {}) };
++}
++
++export function validateScanCapabilities(value) {
++  if (!plain(value) || typeof value.available !== 'boolean' || ![null, 'disabled', 'configuration_required'].includes(value.reason) ||
++      !plain(value.limits) || value.limits.max_pages_per_run !== 20 || value.limits.max_snapshot_bytes !== 8388608 || value.limits.max_snapshots !== 500 ||
++      typeof value.scope !== 'string' || value.scope.length > 1000 || controls(value.scope) || (value.available && value.reason !== null) || (!value.available && value.reason === null)) invalid();
++  return { available: value.available, reason: value.reason, limits: { ...value.limits }, scope: value.scope };
++}
++
++export function validateScanRun(value, expectedId) {
++  if (!plain(value)) invalid();
++  const id = scanId(value.id);
++  if ((expectedId && id !== scanId(expectedId)) || !SCAN_STATUSES.includes(value.status) || !plain(value.input) || !plain(value.progress) || !plain(value.result) || !plain(value.result.counts) || typeof value.result.incomplete !== 'boolean') invalid();
++  const progress = {};
++  for (const name of ['total', 'done', 'pending', 'inflight', 'completed', 'partial', 'failed', 'uncertain']) {
++    if (!integer(value.progress[name], 27)) invalid();
++    progress[name] = value.progress[name];
++  }
++  if (progress.done !== progress.completed + progress.partial + progress.failed + progress.uncertain || progress.total !== progress.done + progress.pending + progress.inflight) invalid();
++  if (!Array.isArray(value.input.urls) || value.input.urls.length > 20 || !integer(value.input.pageLimit, 20) || value.input.pageLimit < 1 || typeof value.input.followLinks !== 'boolean') invalid();
++  const input = { urls: [], pageLimit: value.input.pageLimit, followLinks: value.input.followLinks };
++  try { input.urls = value.input.urls.map(publicUrl); } catch { invalid(); }
++  if (value.input.query !== undefined) {
++    if (typeof value.input.query !== 'string' || !value.input.query.trim() || value.input.query.length > 400 || controls(value.input.query)) invalid();
++    input.query = value.input.query;
++  }
++  const counts = {};
++  for (const name of ['savedPages', 'savedJobs', 'structuredRecords']) {
++    if (!integer(value.result.counts[name])) invalid();
++    counts[name] = value.result.counts[name];
++  }
++  const timestamps = {};
++  for (const name of ['createdAt', 'updatedAt']) {
++    if (typeof value[name] !== 'string' || value[name].length > 40 || !/^\d{4}-\d\d-\d\dT/.test(value[name]) || !Number.isFinite(Date.parse(value[name]))) invalid();
++    timestamps[name] = value[name];
++  }
++  // Deliberately omit raw source bodies, event logs, owner fields and unknown keys.
++  return { id, status: value.status, input, progress, result: { counts, incomplete: value.result.incomplete }, ...timestamps };
++}
++
++export function validateScanList(value) {
++  if (!plain(value) || !Array.isArray(value.runs) || value.runs.length > 100) invalid();
++  const runs = value.runs.map(run => validateScanRun(run));
++  if (new Set(runs.map(run => run.id)).size !== runs.length) invalid();
++  return runs;
++}
++export function validateScanResponse(value, expectedId) {
++  if (!plain(value)) invalid();
++  return validateScanRun(value.run, expectedId);
++}
++export function validateScanStart(value) {
++  if (!plain(value) || typeof value.replay !== 'boolean') invalid();
++  return { replay: value.replay, run: validateScanRun(value.run) };
++}
++export const isScanActive = run => ['queued', 'running', 'cancel_requested'].includes(run?.status);
++export const canCancelScan = run => ['queued', 'running', 'paused'].includes(run?.status);
++export const canResumeScan = run => run?.status === 'paused';
++export const canImportScan = run => ['completed', 'partial', 'failed', 'cancelled'].includes(run?.status);
++
++export function parseScanReport(bundle, expectedId) {
++  const id = scanId(expectedId);
++  if (!plain(bundle) || !plain(bundle.manifest) || !plain(bundle.files)) invalid();
++  let text;
++  try { text = JSON.stringify(bundle); } catch { invalid(); }
++  if (new Blob([text]).size > 8 * 1024 * 1024 || bundle.manifest.runSummary?.id !== id) invalid();
++  let report;
++  try { report = parseReport(text, 'collider-scan.json'); } catch { invalid(); }
++  if (report.runSummary?.id !== id || !canImportScan(report.runSummary)) invalid();
++  return report;
++}
++
++export function describeScanFailure(error, operation = 'read') {
++  const status = error?.response?.status;
++  const mutation = ['start', 'cancel', 'resume'].includes(operation);
++  const uncertain = mutation && (error?.response?.data?.detail?.uncertain === true || error instanceof ResearchScanError && error.code === 'SCAN_INVALID_RESPONSE' || !Number.isInteger(status) || status >= 500 || status === 409);
++  if (status === 401) return { sessionExpired: true, uncertain: false, message: 'Your Fynd session has expired. Scan details were cleared. Sign in again, then check availability.' };
++  if (error instanceof ResearchScanError) return { sessionExpired: false, uncertain, message: uncertain ? 'The scan request could not be confirmed. It may have started; refresh saved scans or retry the same request.' : error.message };
++  const messages = {
++    400: 'Check the source URLs, query and page limit before retrying.',
++    403: 'Fynd did not authorize this action. Check your account permissions and required consent.',
++    404: 'This scan is unavailable. Refresh the saved scan list.',
++    409: 'The scan request could not be reconciled. Check saved scans before changing the request.',
++    413: 'The scan request or retained report exceeds a storage limit. Use a smaller scan.',
++    422: 'Check the source URLs, query and page limit before retrying.',
++    429: 'A scan quota or request limit was reached. Wait, then check the scan status.',
++    503: 'Scanning is unavailable or not configured. No successful scan is being claimed.',
++  };
++  return { sessionExpired: false, uncertain, message: uncertain ? 'The scan request could not be confirmed. It may have completed on the server; check saved scans before retrying.' : messages[status] || 'The scan service could not be reached. Your open research report is unchanged.' };
++}
+diff --git a/frontend/src/lib/researchScans.test.js b/frontend/src/lib/researchScans.test.js
+new file mode 100644
+--- /dev/null
++++ b/frontend/src/lib/researchScans.test.js
+@@ -0,0 +1,117 @@
++import { parseReport } from './researchReport';
++import { accountSnapshot } from './researchAccount';
++import { newScanRequestKey, prepareScanInput, validateScanCapabilities, validateScanRun, validateScanList, validateScanResponse, validateScanStart, parseScanReport, describeScanFailure, ResearchScanError, SCAN_STATUSES, isScanActive, canCancelScan, canResumeScan, canImportScan } from './researchScans';
++
++const id = 'a6623e49-2aa3-4311-8acf-127b32289b11';
++const otherId = 'b6623e49-2aa3-4311-8acf-127b32289b22';
++const capabilities = { available: true, reason: null, limits: { max_pages_per_run: 20, max_snapshot_bytes: 8388608, max_snapshots: 500 }, scope: 'Configured transport only; source health is not established.' };
++function run(status = 'queued') {
++  const progress = { total: 1, done: 0, pending: 0, inflight: 0, completed: 0, partial: 0, failed: 0, uncertain: 0 };
++  if (['completed', 'partial', 'failed'].includes(status)) { progress.done = 1; progress[status] = 1; }
++  else if (['running', 'cancel_requested'].includes(status)) progress.inflight = 1;
++  else progress.pending = 1;
++  return { id, status, input: { urls: ['https://example.org/evidence'], boards: [], pageLimit: 5, followLinks: false }, progress,
++    createdAt: '2026-09-14T09:00:00Z', updatedAt: '2026-09-14T09:00:00Z',
++    result: { incomplete: status !== 'completed', counts: { savedPages: ['completed', 'partial'].includes(status) ? 1 : 0, savedJobs: 0, structuredRecords: 0, successfulEmptyBoards: 0, selectedPages: 1, attemptedPages: 1, discoveredUrls: 1, notFetched: 0, frontierOmitted: 0, linksSkipped: 0, omittedRecords: 0, truncatedRecords: 0 } } };
++}
++function bundle(status = 'completed') {
++  const completed = run(status);
++  completed.result = { ...completed.result, pages: ['completed', 'partial'].includes(status) ? [{ url: 'https://example.org/evidence', title: 'Retained evidence', content: 'Synthetic source body.' }] : [], jobs: [], records: [], errors: status === 'failed' ? [{ code: 'SOURCE_TIMEOUT' }] : [], warnings: [], searchSlices: [] };
++  return accountSnapshot(parseReport(JSON.stringify(completed)));
++}
++
++describe('Research scan boundary', () => {
++  test('creates cryptographic request keys and fails closed without Web Crypto', () => {
++    const original = Object.getOwnPropertyDescriptor(globalThis, 'crypto');
++    try {
++      Object.defineProperty(globalThis, 'crypto', { configurable: true, value: { randomUUID: () => id } });
++      expect(newScanRequestKey()).toBe(id);
++      Object.defineProperty(globalThis, 'crypto', { configurable: true, value: { getRandomValues: bytes => { bytes.fill(1); return bytes; } } });
++      expect(newScanRequestKey()).toBe('01010101-0101-4101-8101-010101010101');
++      Object.defineProperty(globalThis, 'crypto', { configurable: true, value: undefined });
++      expect(() => newScanRequestKey()).toThrow(/Secure request keys are unavailable/);
++    } finally { if (original) Object.defineProperty(globalThis, 'crypto', original); else delete globalThis.crypto; }
++  });
++  test('normalizes explicit sources without enabling link traversal by default', () => {
++    expect(prepareScanInput({ urls: 'https://example.org/evidence\nhttps://example.org/evidence', query: '  focused research  ', pageLimit: '5' })).toEqual({ urls: ['https://example.org/evidence'], query: 'focused research', pageLimit: 5, followLinks: false });
++    expect(prepareScanInput({ query: 'research', pageLimit: 20, followLinks: true })).toEqual({ urls: [], query: 'research', pageLimit: 20, followLinks: true, maxDepth: 1 });
++  });
++  test('preserves distinct hash-routed pages and query strings in scan intent and run metadata', () => {
++    const urls = ['https://example.org/?lang=en#/jobs/a', 'https://example.org/?lang=en#/jobs/b'];
++    expect(prepareScanInput({ urls: [...urls, urls[0]] }).urls).toEqual(urls);
++    expect(validateScanRun({ ...run(), input: { ...run().input, urls } }).input.urls).toEqual(urls);
++  });
++  test.each(['http://example.org/path', 'http://127.0.0.1', 'http://2130706433', 'https://localhost', 'https://host.internal/', 'https://host.lan', 'https://host.home', 'https://host.example', 'https://127.0.0.1.nip.io', 'https://localtest.me', 'https://host..org', 'https://-host.org', 'https://host.123', 'https://user:password@example.org', 'file:///etc/passwd', 'https://example.org:444/path', 'javascript:alert(1)'])('rejects unsupported source %s', url => {
++    expect(() => prepareScanInput({ urls: url })).toThrow(ResearchScanError);
++  });
++  test('bounds URLs, queries and page limits before any request', () => {
++    expect(() => prepareScanInput({ urls: Array.from({ length: 21 }, (_, i) => `https://example.org/${i}`) })).toThrow(/at most 20/);
++    expect(() => prepareScanInput({ query: 'x'.repeat(401) })).toThrow(/400/);
++    expect(() => prepareScanInput({ query: 'control\ncharacter' })).toThrow(/control/);
++    for (const pageLimit of [0, 21, 1.5, true, '1e1', '']) expect(() => prepareScanInput({ query: 'research', pageLimit })).toThrow(/1 to 20/);
++    expect(() => prepareScanInput({})).toThrow(/query or at least one/);
++  });
++  test('capabilities describe configuration and reject inconsistent availability', () => {
++    expect(validateScanCapabilities(capabilities)).toEqual(capabilities);
++    expect(validateScanCapabilities({ ...capabilities, available: false, reason: 'disabled' }).available).toBe(false);
++    expect(() => validateScanCapabilities({ ...capabilities, reason: 'configuration_required' })).toThrow();
++    expect(() => validateScanCapabilities({ ...capabilities, limits: { ...capabilities.limits, max_pages_per_run: 1000 } })).toThrow();
++  });
++  test.each(SCAN_STATUSES)('validates actual engine status %s and ignores raw evidence/owner fields', status => {
++    const raw = { ...run(status), owner: 'private-owner', units: [{ content: 'not retained in UI metadata' }] };
++    const result = validateScanRun(raw, id);
++    expect(result.status).toBe(status);
++    expect(result.owner).toBeUndefined();
++    expect(result.units).toBeUndefined();
++  });
++  test('binds responses to the requested run and checks coherent progress', () => {
++    expect(() => validateScanResponse({ run: run() }, otherId)).toThrow();
++    expect(() => validateScanRun({ ...run(), status: 'interrupted' })).toThrow();
++    expect(() => validateScanRun({ ...run(), progress: { ...run().progress, done: 1 } })).toThrow();
++    expect(() => validateScanRun({ ...run(), progress: { ...run().progress, total: 100000 } })).toThrow();
++    expect(() => validateScanRun({ ...run(), input: { ...run().input, query: 'secret\ncontrol' } })).toThrow();
++    expect(() => validateScanRun({ ...run(), createdAt: 'not a date' })).toThrow();
++  });
++  test('bounds and de-duplicates the run list and validates replay receipts', () => {
++    expect(validateScanList({ runs: [run()] })).toHaveLength(1);
++    expect(() => validateScanList({ runs: [run(), run()] })).toThrow();
++    expect(() => validateScanList({ runs: Array.from({ length: 101 }, () => run()) })).toThrow();
++    expect(validateScanStart({ run: run(), replay: false }).replay).toBe(false);
++    expect(() => validateScanStart({ run: run(), replay: 'yes' })).toThrow();
++  });
++  test('exposes only supported lifecycle actions', () => {
++    expect(isScanActive(run('cancel_requested'))).toBe(true);
++    expect(isScanActive(run('paused'))).toBe(false);
++    expect(canCancelScan(run('running'))).toBe(true);
++    expect(canCancelScan(run('cancel_requested'))).toBe(false);
++    expect(canResumeScan(run('paused'))).toBe(true);
++    expect(canResumeScan(run('failed'))).toBe(false);
++    expect(canImportScan(run('partial'))).toBe(true);
++    expect(canImportScan(run('failed'))).toBe(true);
++    expect(canImportScan(run('cancelled'))).toBe(true);
++  });
++  test('reopens an inert report through the real parser and binds its run identity', () => {
++    const value = bundle(), report = parseScanReport(value, id);
++    expect(report.runSummary.id).toBe(id);
++    expect(report.records[0].content).toBe('Synthetic source body.');
++    expect(() => parseScanReport(value, otherId)).toThrow();
++    expect(() => parseScanReport({ ...value, manifest: { ...value.manifest, runSummary: { ...value.manifest.runSummary, status: 'running' } } }, id)).toThrow();
++    expect(() => parseScanReport({ manifest: {}, files: {} }, id)).toThrow();
++  });
++  test.each(['completed', 'partial', 'failed', 'cancelled'])('retains report diagnostics for stable terminal status %s', status => {
++    const report = parseScanReport(bundle(status), id);
++    expect(report.runSummary.status).toBe(status);
++    if (status === 'failed') expect(report.runSummary.errors[0].code).toBe('SOURCE_TIMEOUT');
++    if (['failed', 'cancelled'].includes(status)) expect(report.records).toHaveLength(0);
++  });
++  test('never exposes backend errors and distinguishes uncertain writes from reads', () => {
++    const timeout = { message: 'SECRET', code: 'ECONNABORTED' };
++    expect(describeScanFailure(timeout, 'start').uncertain).toBe(true);
++    expect(describeScanFailure(timeout, 'status').uncertain).toBe(false);
++    const denied = describeScanFailure({ response: { status: 401, data: { detail: { message: 'SECRET' } } } }, 'start');
++    expect(denied.sessionExpired).toBe(true);
++    expect(JSON.stringify(denied)).not.toContain('SECRET');
++    expect(describeScanFailure({ response: { status: 429, data: { detail: { uncertain: true } } } }, 'start').uncertain).toBe(true);
++    expect(describeScanFailure(new ResearchScanError('SCAN_INVALID_INPUT', 'Bad input.'), 'read').message).toBe('Bad input.');
++  });
++});
+diff --git a/docs/COLLIDER-CUSTOMER-INSTALL.md b/docs/COLLIDER-CUSTOMER-INSTALL.md
+new file mode 100644
+--- /dev/null
++++ b/docs/COLLIDER-CUSTOMER-INSTALL.md
+@@ -0,0 +1,70 @@
++# Fynd customer scans — installation gate
++
++This package adds a default-off customer scan bridge and Research controls to
++the existing Fynd/Emergent application. It is not a standalone app or crawler
++deployment. It assumes the previously installed Collider domain and Research
++account library. Do not apply it to a different baseline by force.
++
++## Install without enabling collection
++
++1. Preserve the current Emergent changes and record the current release/source
++   state. Do not reset, overwrite unrelated work, push, or republish implicitly.
++2. Upload `collider-customer-integration.patch` and verify its SHA-256 against the
++   accompanying release receipt. In `/app`, run
++   `git apply --check collider-customer-integration.patch`. Stop on any mismatch;
++   review the actual source and rebuild the patch instead of forcing it.
++3. Apply with `git apply collider-customer-integration.patch`. Compare installed
++   source hashes against `customer-package-manifest.json`. The manifest's new
++   and Research-page hashes must match; its three wiring edits are contextual
++   changes, not complete-file hashes.
++4. Confirm `backend/server.py` mounts the customer router and the idempotency
++   middleware bypasses exactly `/api/v1/collider/scans` and its descendants
++   before the old cached-response path. This is a security requirement.
++5. Leave `FYND_COLLIDER_CUSTOMER_ENABLED` unset or `false`. Restart only the
++   development backend/frontend using the existing Emergent workflow. Do not
++   expose the legacy operator gateway to customers.
++6. Run the new isolated client/router tests with `unittest` from `backend/`:
++   `python -m unittest discover -s tests -p 'test_customer_collider_*.py' -q`.
++   These use synthetic auth and HTTPX transport, not real accounts/providers.
++   Run the actual frontend's existing Research and new scan Jest suites and
++   production build. Avoid the broad backend pytest suite: its existing
++   autouse fixtures may change authentication state.
++7. Confirm the real signed-in Research page retains manual import/account
++   library behavior, shows scanning disabled, and starts no source reads.
++
++## Configure a private pilot only after production prerequisites
++
++Deploy the separate customer service from the engine repository, not the old
++global evidence gateway. `compose.customers.yaml` is opt-in and has no published
++host port. Its policy example is disabled. Supply persistent private storage,
++private TLS ingress, a reviewed source policy and server-only signing secrets.
++
++Fynd settings (not frontend variables):
++
++- `FYND_COLLIDER_CUSTOMER_BASE_URL`: fixed private HTTPS origin, no path/query.
++- `FYND_COLLIDER_CUSTOMER_SECRET`: same signing key as the customer service.
++- `FYND_COLLIDER_CUSTOMER_ENABLED=true`: only after the remaining gates pass.
++
++Engine settings: `COLLIDER_CUSTOMER_SECRET`, `COLLIDER_CUSTOMER_DATA`,
++`COLLIDER_CUSTOMER_POLICY_FILE`, and exact ingress `COLLIDER_CUSTOMER_ALLOWED_HOSTS`
++as documented in `customer-service.mjs`. Keep secrets out of logs, patches,
++frontend bundles, screenshots and chat. Keep engine/Fynd clocks synchronized.
++
++Before any public activation: enforce every-hop outbound access controls,
++cross-customer origin pacing, evidence retention/deletion and backup/restore;
++approve hosting/provider costs and applicable source/licensing requirements;
++verify two real staging accounts through scan, cancellation/recovery, report,
++save/reopen, account isolation and quota failures. Measure cost/latency/load.
++Configured availability alone does not prove provider readiness.
++
++## Release and rollback
++
++Publish only after these gates and review of the complete existing unpublished
++Fynd changes. Verify the public build separately. No public release is included
++in this package. Disable the feature flag to stop new bridge requests; the
++engine policy kill switch separately denies new source admissions. Neither
++removes previously retained data or necessarily cancels in-flight reads. Do not
++delete customer storage as a rollback step.
++
++This remains a bounded pilot implementation, not unlimited crawling, guaranteed
++accuracy, access to restricted platforms, or a measured internet-coverage claim.

@@ -165,7 +165,9 @@ async def _build_bundle(user_id: str) -> dict:
     async def _fetch(coll: str, filt: dict) -> list[dict]:
         return [x async for x in db[coll].find(filt, {"_id": 0})]
 
+    from domains.research_reports.privacy import report_export_index
     bundle: dict = {
+        "research_reports": await report_export_index(db, user_id),
         "profile": user,
         "claims":               await _fetch("claims",             {"user_id": user_id}),
         "documents":            await _fetch("documents",          {"user_id": user_id}),
@@ -241,6 +243,8 @@ async def sweep_expired_deletions() -> int:
                      "ai_generations", "export_jobs", "payment_transactions",
                      "manual_queue_items"]:
             await db[coll].delete_many({"user_id": uid})
+        from domains.research_reports.privacy import erase_account_reports
+        await erase_account_reports(db, uid)
         await db.users.delete_one({"id": uid})
         await audit.write("system:deletion_sweep", "privacy.account_hard_deleted",
                           f"user:{uid}", {})

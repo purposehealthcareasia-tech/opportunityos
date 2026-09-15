@@ -27,6 +27,8 @@ from middleware.csrf import CSRFMiddleware
 from domains.auth.router import router as auth_router
 from domains.consent.router import router as consent_router
 from domains.users.router import router as users_router
+from domains.research_reports.router import router as research_reports_router
+from domains.collider.customer_router import router as customer_collider_router
 from domains.passport.router import router as passport_router
 from domains.documents.router import router as documents_router
 from domains.claims.router import router as claims_router
@@ -394,6 +396,8 @@ async def version_meta():
 app.include_router(auth_router)
 app.include_router(consent_router)
 app.include_router(users_router)
+app.include_router(research_reports_router)
+app.include_router(customer_collider_router)
 app.include_router(passport_router)
 app.include_router(documents_router)
 app.include_router(claims_router)

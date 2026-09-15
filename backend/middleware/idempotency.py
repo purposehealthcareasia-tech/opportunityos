@@ -49,6 +49,20 @@ class IdempotencyMiddleware(BaseHTTPMiddleware):
         return f"anon:{ip}"
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        # Reports use owner-scoped, payload-hash deduplication after auth.
+        # Never let the legacy response cache bypass current authorization,
+        # storage consent, request validation, or a previously deleted report.
+        path = request.url.path
+        # Auth must always execute its current checks and preserve Set-Cookie.
+        # Never cache/replay authentication, logout, or account-deletion responses.
+        if path == "/api/v1/auth" or path.startswith("/api/v1/auth/"):
+            return await call_next(request)
+        if path == "/api/v1/research/reports" or path.startswith("/api/v1/research/reports/"):
+            return await call_next(request)
+        # Customer scans authenticate before using their owner-scoped run key.
+        # Never replay a legacy cached response across auth/consent boundaries.
+        if path == "/api/v1/collider/scans" or path.startswith("/api/v1/collider/scans/"):
+            return await call_next(request)
         if request.method not in STATE_METHODS or not request.url.path.startswith("/api/v1/"):
             return await call_next(request)
 

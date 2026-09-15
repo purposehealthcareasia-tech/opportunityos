@@ -1,0 +1,76 @@
+{
+  "version": 1,
+  "built_on": "2026-09-15",
+  "state": "local-only; not installed or deployed",
+  "patch": "collider-customer-integration.patch",
+  "patch_sha256": "f25c730d096aa6bd73ef17439f4b0ac7384f582290bd696602a09a0211333cc9",
+  "context_only_edits": [
+    "backend/server.py",
+    "backend/middleware/idempotency.py",
+    "backend/tests/test_hostile_content_defense.py"
+  ],
+  "files": [
+    {
+      "path": "frontend/src/pages/Research.jsx",
+      "operation": "modify",
+      "baseline_sha256": "359c0d0d0c676244230231de0aa2eb30b15b0d98c8a42ff26526c311ef2fda20",
+      "sha256": "a643bf39f5eaae66549a4f1e84a4b3fd4d794643a38b2f93716ddedd63aed0f5"
+    },
+    {
+      "path": "frontend/src/pages/Research.test.jsx",
+      "operation": "modify",
+      "baseline_sha256": "952a6291a05e8b969e054e1b389a074787f746e6fb39d8b53b12f8f9d9b7c3bc",
+      "sha256": "d976b71e56a939cb3c5a04305dff7307c32d8e3e8c0459a6ca4f0f22e8a48877"
+    },
+    {
+      "path": "backend/domains/collider/customer_client.py",
+      "operation": "add",
+      "sha256": "850bef44c282dae69cba4993f9ee1d91fd94fed4622bff5109fea50cd95fc6af"
+    },
+    {
+      "path": "backend/domains/collider/customer_router.py",
+      "operation": "add",
+      "sha256": "656942d988d8637391fd344bb43fabb56ad1acfac4d157613b310cf371f1e631"
+    },
+    {
+      "path": "backend/domains/collider/report.py",
+      "operation": "add",
+      "sha256": "e3d7b6090620776741c5628837a6f5d22f061fd4f306170b9c306370fa5d6f4e"
+    },
+    {
+      "path": "backend/tests/test_customer_collider_client.py",
+      "operation": "add",
+      "sha256": "35403bca8e29c08685c3af933ba2e44077cde02330431592659081a6fb4a05ea"
+    },
+    {
+      "path": "backend/tests/test_customer_collider_router.py",
+      "operation": "add",
+      "sha256": "f6cbb25b04d57cfef22f691f1ce691def16a4c0b0046e5bddda90a78ce5515ae"
+    },
+    {
+      "path": "frontend/src/components/ResearchScanPanel.jsx",
+      "operation": "add",
+      "sha256": "3fb4ff883093885fe61447800f01ed9432b58ae47f945f52783b91336000703a"
+    },
+    {
+      "path": "frontend/src/components/ResearchScanPanel.test.jsx",
+      "operation": "add",
+      "sha256": "d3ef7b652d7daa14877bb4d5c35cac92aba88d3b4e2299810fae09a4b0e58f65"
+    },
+    {
+      "path": "frontend/src/lib/researchScans.js",
+      "operation": "add",
+      "sha256": "249c888955f60e243bbda8cf6db223236407e5acce3bd1849811800c4c6e685b"
+    },
+    {
+      "path": "frontend/src/lib/researchScans.test.js",
+      "operation": "add",
+      "sha256": "c6a3957c81086c1ea6d68031cb785399dd40cd1cfc9aee2464fc4001ee38bede"
+    },
+    {
+      "path": "docs/COLLIDER-CUSTOMER-INSTALL.md",
+      "operation": "add",
+      "sha256": "4bb728ca7beb71be497e14910f5ef16fddbefcc60c9699cf4c25604e669c94ef"
+    }
+  ]
+}

@@ -1,0 +1,2375 @@
+diff --git a/frontend/src/pages/Research.jsx b/frontend/src/pages/Research.jsx
+index 9627d6f..d2b7bef 100644
+--- a/frontend/src/pages/Research.jsx
++++ b/frontend/src/pages/Research.jsx
+@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
+ import { Upload, Download, Search, BookOpen, Link2, Building2, ListTree, ExternalLink, X } from 'lucide-react';
+ import { parseReport, filterRecords, buildDossier, exportReport, REPORT_KINDS, CONTENT_STATUSES } from '../lib/researchReport';
+ import FyndJobResearchImport from '../components/FyndJobResearchImport';
++import ResearchAccountLibrary from '../components/ResearchAccountLibrary';
+ 
+ const label = value => String(value).replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[_-]/g, ' ');
+ const tabs = [['evidence', 'Evidence', BookOpen], ['links', 'Research links', Link2], ['company', 'Company dossier', Building2], ['trace', 'Discovery trail', ListTree]];
+@@ -33,6 +34,7 @@ export default function Research() {
+   const [exportNotice, setExportNotice] = useState('');
+   const [copyStatus, setCopyStatus] = useState('');
+   const [jobImportReset, setJobImportReset] = useState(0);
++  const [accountReset, setAccountReset] = useState(0);
+   const sequence = useRef(0);
+   const exportSequence = useRef(0);
+   const fileInput = useRef(null);
+@@ -49,15 +51,23 @@ export default function Research() {
+   }
+   function accept(text, name) { acceptReport(parseReport(text, name)); }
+   function acceptFyndReport(next) {
++    setAccountReset(value => value + 1);
+     ++sequence.current; setBusy(false); acceptReport(next);
+   }
+   function onFyndBusy(active) {
+-    if (active) { ++sequence.current; setBusy(false); }
++    if (active) { ++sequence.current; setBusy(false); setAccountReset(value => value + 1); }
++  }
++  function acceptAccountReport(next) {
++    ++sequence.current; setBusy(false); setJobImportReset(value => value + 1); acceptReport(next);
++  }
++  function onAccountBusy(active) {
++    if (active) { ++sequence.current; setBusy(false); setJobImportReset(value => value + 1); }
+   }
+   async function importFile(event) {
+     const file = event.target.files?.[0];
+     event.target.value = '';
+     if (!file) return;
++    setAccountReset(value => value + 1);
+     setJobImportReset(value => value + 1);
+     const version = ++sequence.current;
+     setBusy(true); setError('');
+@@ -69,11 +79,13 @@ export default function Research() {
+     finally { if (version === sequence.current) setBusy(false); }
+   }
+   function importPaste() {
++    setAccountReset(value => value + 1);
+     setJobImportReset(value => value + 1);
+     ++sequence.current; setBusy(false);
+     try { accept(paste, 'pasted.json'); setPaste(''); } catch (e) { setError(e.message || 'Invalid report.'); }
+   }
+   function clear() {
++    setAccountReset(value => value + 1);
+     setJobImportReset(value => value + 1);
+     ++sequence.current; setBusy(false); setReport(null); setDossier(null); setPaste(''); setError('');
+     resetExport();
+@@ -122,8 +134,9 @@ export default function Research() {
+ 
+     <div className="liquid-card p-4 text-sm flex flex-col sm:flex-row gap-3 justify-between" role="note">
+       <div><strong>Imported evidence only.</strong> Live crawling is not connected here. Imported claims are not independently verified.</div>
+-      <div className="muted sm:max-w-xs">Processed in this tab; no report is uploaded or saved to your account. Download before leaving.</div>
++      <div className="muted sm:max-w-xs">Processed in this tab unless you explicitly save to your account below. Clearing this tab does not delete saved account copies.</div>
+     </div>
++    <ResearchAccountLibrary report={report} onReport={acceptAccountReport} onBusy={onAccountBusy} resetKey={accountReset} />
+     {error && <div role="alert" className="rounded-xl border border-red-400 p-4 text-sm">{error} {report && 'Your previously loaded report is unchanged.'}</div>}
+ 
+     {!report ? <section className="liquid-sheet p-6 sm:p-10 space-y-6" data-testid="research-empty">
+diff --git a/frontend/src/pages/Research.test.jsx b/frontend/src/pages/Research.test.jsx
+index ff12f9b..cc5b3d3 100644
+--- a/frontend/src/pages/Research.test.jsx
++++ b/frontend/src/pages/Research.test.jsx
+@@ -3,9 +3,10 @@ import { act, fireEvent, render as rtlRender, screen, within } from '@testing-li
+ import { MemoryRouter } from 'react-router-dom';
+ import Research from './Research';
+ import { parseReport, exportReport } from '../lib/researchReport';
++import { accountSnapshot, ACCOUNT_LIMITS } from '../lib/researchAccount';
+ import { api } from '../lib/api';
+ 
+-jest.mock('../lib/api', () => ({ api: { get: jest.fn() } }));
++jest.mock('../lib/api', () => ({ api: { get: jest.fn(), post: jest.fn(), delete: jest.fn() } }));
+ const render = element => rtlRender(<MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>{element}</MemoryRouter>);
+ 
+ describe('Research stored-job connection', () => {
+@@ -133,13 +134,130 @@ function uploadFile(file) {
+   });
+ }
+ 
++describe('Research account, file and stored-job import coordination', () => {
++  const accountEndpoint = '/api/v1/research/reports';
++  const savedId = 'e2a269bb-3055-41d1-8704-3af29bce1f35';
++  const jobId = '1393c281-2d9f-4ed8-a38f-16b7c4b02f6d';
++  const jobEndpoint = `/api/v1/jobs/${jobId}`;
++  const savedTitle = 'Saved account research fixture';
++  const savedReport = parseReport(JSON.stringify({ ...reportFixture, title: savedTitle }));
++  const bundle = accountSnapshot(savedReport);
++  const metadata = { id: savedId, title: savedTitle, saved_at: '2026-09-13T09:00:00Z', byte_size: new Blob([JSON.stringify(bundle)]).size };
++  const detail = { report: { ...metadata, bundle } };
++  const savedEndpoint = `${accountEndpoint}/${savedId}`;
++  const storedJob = { id: jobId, title: 'Account-race job fixture', company_name: 'Example', origin_url: 'https://example.org/careers/research', jd_text: 'Stored job body, not live collection.', is_sample: false };
++  const jobTitle = 'Example — Account-race job fixture';
++
++  function pending() {
++    let resolve;
++    const promise = new Promise(done => { resolve = done; });
++    return { promise, resolve };
++  }
++  async function prepareSavedList() {
++    api.get.mockResolvedValueOnce({ data: { reports: [metadata], used_bytes: metadata.byte_size, limits: ACCOUNT_LIMITS } });
++    fireEvent.click(screen.getByRole('button', { name: 'Saved reports', exact: true }));
++    await screen.findByRole('heading', { name: savedTitle, level: 3 });
++  }
++  function openSaved() { fireEvent.click(screen.getByRole('button', { name: `Open saved report: ${savedTitle}` })); }
++  function startJob() {
++    fireEvent.change(screen.getByLabelText('Fynd job ID or internal path'), { target: { value: jobId } });
++    fireEvent.click(screen.getByRole('button', { name: 'Load Fynd job', exact: true }));
++  }
++  function requestSignal(url) { return api.get.mock.calls.find(([target]) => target === url)[1].signal; }
++  beforeEach(() => { api.get.mockReset(); api.post.mockReset(); api.delete.mockReset(); });
++
++  test('starting an account load immediately invalidates an older pending file read', async () => {
++    render(<Research />);
++    await prepareSavedList();
++    const file = pending(), account = pending();
++    uploadFile({ name: 'older-file.json', size: 200, text: () => file.promise });
++    api.get.mockReturnValueOnce(account.promise);
++    openSaved();
++
++    await act(async () => { file.resolve(JSON.stringify(reportFixture)); });
++    expect(screen.queryAllByTestId('evidence-record')).toHaveLength(0);
++    expect(screen.queryByRole('heading', { name: reportFixture.title, level: 2 })).toBeNull();
++    expect(screen.getByRole('button', { name: 'Import report', exact: true }).disabled).toBe(false);
++    await act(async () => { account.resolve({ data: detail }); });
++
++    expect(screen.getByRole('heading', { name: savedTitle, level: 2 })).toBeTruthy();
++    expect(screen.getAllByTestId('evidence-record')).toHaveLength(3);
++    expect(screen.queryByRole('alert')).toBeNull();
++    expect(api.post).not.toHaveBeenCalled();
++  });
++
++  test('starting a file read aborts an older account load before the file finishes', async () => {
++    render(<Research />);
++    await prepareSavedList();
++    const account = pending(), file = pending();
++    api.get.mockReturnValueOnce(account.promise);
++    openSaved();
++    const signal = requestSignal(savedEndpoint);
++    uploadFile({ name: 'newer-file.json', size: 200, text: () => file.promise });
++    expect(signal.aborted).toBe(true);
++
++    await act(async () => { account.resolve({ data: detail }); });
++    expect(screen.queryAllByTestId('evidence-record')).toHaveLength(0);
++    expect(screen.queryByRole('heading', { name: savedTitle, level: 2 })).toBeNull();
++    await act(async () => { file.resolve(JSON.stringify(reportFixture)); });
++
++    expect(screen.getByRole('heading', { name: reportFixture.title, level: 2 })).toBeTruthy();
++    expect(screen.getAllByTestId('evidence-record')).toHaveLength(3);
++    expect(screen.queryByRole('alert')).toBeNull();
++    expect(api.post).not.toHaveBeenCalled();
++  });
++
++  test('starting an account load aborts an older stored-job request', async () => {
++    render(<Research />);
++    await prepareSavedList();
++    const job = pending(), account = pending();
++    api.get.mockReturnValueOnce(job.promise);
++    startJob();
++    const signal = requestSignal(jobEndpoint);
++    api.get.mockReturnValueOnce(account.promise);
++    openSaved();
++    expect(signal.aborted).toBe(true);
++
++    await act(async () => { job.resolve({ data: storedJob }); });
++    expect(screen.queryAllByTestId('evidence-record')).toHaveLength(0);
++    expect(screen.queryByRole('heading', { name: jobTitle, level: 2 })).toBeNull();
++    await act(async () => { account.resolve({ data: detail }); });
++
++    expect(screen.getByRole('heading', { name: savedTitle, level: 2 })).toBeTruthy();
++    expect(screen.getAllByTestId('evidence-record')).toHaveLength(3);
++    expect(screen.queryByRole('alert')).toBeNull();
++  });
++
++  test('starting a stored-job request aborts an older account load', async () => {
++    render(<Research />);
++    await prepareSavedList();
++    const account = pending(), job = pending();
++    api.get.mockReturnValueOnce(account.promise);
++    openSaved();
++    const signal = requestSignal(savedEndpoint);
++    api.get.mockReturnValueOnce(job.promise);
++    startJob();
++    expect(signal.aborted).toBe(true);
++
++    await act(async () => { account.resolve({ data: detail }); });
++    expect(screen.queryAllByTestId('evidence-record')).toHaveLength(0);
++    expect(screen.queryByRole('heading', { name: savedTitle, level: 2 })).toBeNull();
++    await act(async () => { job.resolve({ data: storedJob }); });
++
++    expect(screen.getByRole('heading', { name: jobTitle, level: 2 })).toBeTruthy();
++    expect(screen.getAllByTestId('evidence-record')).toHaveLength(1);
++    expect(screen.queryByRole('alert')).toBeNull();
++  });
++});
++
+ describe('Research workspace', () => {
+   test('makes its imported-only and unsaved state explicit before any data is loaded', () => {
+     render(<Research />);
+ 
+     expect(screen.getByTestId('research-empty')).toBeTruthy();
+     expect(screen.getByRole('note').textContent).toContain('Live crawling is not connected here');
+-    expect(screen.getByRole('note').textContent).toContain('no report is uploaded or saved to your account');
++    expect(screen.getByRole('note').textContent).toContain('unless you explicitly save to your account');
++    expect(screen.getByRole('note').textContent).toContain('Clearing this tab does not delete saved account copies');
+     expect(screen.queryAllByTestId('evidence-record')).toHaveLength(0);
+     expect(screen.queryByRole('button', { name: 'Download bundle' })).toBeNull();
+     expect(screen.getByLabelText('Report JSON').maxLength).toBe(20 * 1024 * 1024);
+diff --git a/frontend/src/lib/researchReport.js b/frontend/src/lib/researchReport.js
+index 18c3782..b5da8d4 100644
+--- a/frontend/src/lib/researchReport.js
++++ b/frontend/src/lib/researchReport.js
+@@ -3,8 +3,15 @@ export const REPORT_KINDS = ['studies', 'trials', 'datasets', 'news', 'code', 'v
+ export const CONTENT_STATUSES = ['full', 'partial', 'metadata-only', 'unknown'];
+ const MAX_BYTES = 5 * 1024 * 1024, MAX_NORMALIZED_BYTES = 10 * 1024 * 1024, MAX_BUNDLE_BYTES = 20 * 1024 * 1024, MAX_RECORDS = 1000, MAX_TRACE = 5000;
+ const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
++function truncateText(value, maximum) {
++  let end = Math.min(value.length, maximum);
++  // Never manufacture a lone surrogate by cutting a valid supplementary
++  // character in half. Pre-existing invalid surrogates are not repaired here.
++  if (end > 0 && end < value.length && value.charCodeAt(end - 1) >= 0xd800 && value.charCodeAt(end - 1) <= 0xdbff && value.charCodeAt(end) >= 0xdc00 && value.charCodeAt(end) <= 0xdfff) end--;
++  return value.slice(0, end);
++}
+ // eslint-disable-next-line no-control-regex -- Intentionally remove non-printing ASCII controls from imported text.
+-const clean = (value, max = 500) => typeof value === 'string' ? value.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '').trim().slice(0, max) : '';
++const clean = (value, max = 500) => typeof value === 'string' ? truncateText(value.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '').trim(), max) : '';
+ const list = value => value == null ? [] : Array.isArray(value) ? value : [value];
+ const fail = message => { throw new Error(message); };
+ const byteLength = value => new Blob([value]).size;
+@@ -219,8 +226,12 @@ function normalizeReport(input, maxBytes = MAX_BYTES, portable = false) {
+   if (!rows.length && ['savedPages', 'savedJobs', 'structuredRecords'].some(key => runSummary.counts[key] !== 0)) fail('The Collider summary reports saved evidence, but this export contains none. Import the detailed evidence export.');
+   if (rows.length > MAX_RECORDS) fail('Report exceeds the 1,000 evidence-record limit.');
+   const warnings = [], omissions = ['This package contains only retained imported data, not all upstream discoveries.', 'Source bodies, selection reasons, history and lineage absent from the input remain unavailable.', 'Dedicated raw-HTML and contact-specific fields are omitted; retained text is not automatically redacted.', 'Other unsupported fields and identifiers are omitted.'];
+-  arrayField(root.warnings, 'warnings').slice(0, 100).forEach(value => { if (typeof value === 'string') warnings.push(clean(value, 1000)); });
+-  arrayField(root.omissions, 'omissions').slice(0, 100).forEach(value => { if (typeof value === 'string') omissions.push(clean(value, 1000)); });
++  for (const [name, target] of [['warnings', warnings], ['omissions', omissions]]) {
++    const notes = arrayField(root[name], name);
++    if (notes.length > 1000) fail(`Imported ${name} exceed the 1,000-note limit.`);
++    if (notes.some(value => typeof value !== 'string' || value.length > 1000)) fail(`Imported ${name} must be strings of at most 1,000 characters each.`);
++    notes.forEach(value => target.push(clean(value, 1000)));
++  }
+   if (root.truncated === true || payload.truncated === true) omissions.push('The source export explicitly reports truncation.');
+   const records = rows.map((row, index) => normalizeRecord(row, index, new Set(), warnings));
+   // Assign duplicates without collapsing their separate source records.
+diff --git a/frontend/src/lib/researchReport.test.js b/frontend/src/lib/researchReport.test.js
+index c6c05ef..d6f4048 100644
+--- a/frontend/src/lib/researchReport.test.js
++++ b/frontend/src/lib/researchReport.test.js
+@@ -28,6 +28,14 @@ describe('local research report tools', () => {
+       expect(() => buildReport([row({ url })])).toThrow(/unsafe URL/);
+     });
+   });
++  test('does not split valid Unicode pairs at text limits or repair invalid source surrogates', () => {
++    const body = 'a'.repeat(59999), title = 't'.repeat(499);
++    const report = buildReport([row({ content: `${body}😀`, title: `${title}😀` })]);
++    expect(report.records[0].content).toBe(body);
++    expect(report.records[0].title).toBe(title);
++    expect(report.records[0].contentStatus).toBe('partial');
++    expect(buildReport([row({ content: '\ud83d' })]).records[0].content.charCodeAt(0)).toBe(0xd83d);
++  });
+   test('imports bounded JSON and JSONL without fetching', () => {
+     expect(parseReport(JSON.stringify([row()])).records).toHaveLength(1);
+     expect(parseReport(`${JSON.stringify(row())}\n${JSON.stringify(row({ url: 'https://example.org/study' }))}`, 'evidence.jsonl').records).toHaveLength(2);
+@@ -236,4 +244,19 @@ describe('local research report tools', () => {
+     expect(report.warnings).toContain('Stale source export.');
+     expect(parseReport(JSON.stringify(exportReport(report))).omissions).toContain('Provider dropped 30 candidates.');
+   });
++  test('preserves all imported notes up to 1000 and rejects overflow rather than truncating', () => {
++    const warnings = Array.from({ length: 1000 }, (_, index) => `Warning ${index}`);
++    const omissions = Array.from({ length: 1000 }, (_, index) => `Omission ${index}`);
++    const report = buildReport({ records: [row()], warnings, omissions });
++    expect(report.warnings).toEqual(warnings);
++    expect(omissions.every(note => report.omissions.includes(note))).toBe(true);
++    expect(() => buildReport({ records: [row()], warnings: [...warnings, 'Overflow'] })).toThrow(/1,000-note/);
++    expect(() => buildReport({ records: [row()], omissions: [...omissions, 'Overflow'] })).toThrow(/1,000-note/);
++    expect(() => buildReport({ records: [row()], warnings: ['x'.repeat(1001)] })).toThrow(/1,000 characters/);
++    expect(() => buildReport({ records: [row()], omissions: [null] })).toThrow(/must be strings/);
++  });
++  test('portable note imports preserve entries beyond the old 100-note boundary', () => {
++    const report = buildReport({ records: [row()], warnings: Array.from({ length: 150 }, (_, index) => `Retained warning ${index}`), omissions: Array.from({ length: 150 }, (_, index) => `Retained omission ${index}`) });
++    expect(parseReport(JSON.stringify(exportReport(report)), 'saved-report.json')).toEqual(report);
++  });
+ });
+diff --git a/backend/domains/research_reports/service.py b/backend/domains/research_reports/service.py
+new file mode 100644
+--- /dev/null
++++ b/backend/domains/research_reports/service.py
+@@ -0,0 +1,324 @@
++"""Private account storage for inert, compact research bundles.
++
++The owner argument must come from authenticated backend state, never from a
++request body. One Mongo document is one owner bucket. Conditional updates reserve
++quota and append/remove a report atomically; no count-then-insert quota decisions.
++Canonical payloads total at most 10 MiB, leaving ample space under Mongo's 16 MiB
++document limit for at most 20 bounded metadata records. No fetch, disk I/O, HTML
++rendering, parser interpretation, logging, or job/application action occurs here.
++"""
++from __future__ import annotations
++
++import hashlib
++import json
++import math
++import re
++import uuid
++from datetime import datetime, timezone
++from typing import Any
++
++
++MIB = 1024 * 1024
++MAX_REPORT_BYTES = 8 * MIB
++MAX_TOTAL_BYTES = 10 * MIB
++MAX_REPORTS = 20
++FILES = ("evidence.jsonl", "candidates.jsonl", "outcomes.jsonl", "edges.jsonl")
++UUID_PATTERN = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.I)
++OWNER_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:@-]{0,127}")
++HASH_PATTERN = re.compile(r"[0-9a-f]{64}")
++UNSAFE_KEYS = {"__proto__", "constructor", "prototype", "owner", "ownerId", "owner_id", "userId", "user_id", "tenantId", "tenant_id"}
++
++
++class ResearchReportError(RuntimeError):
++    """Safe code/status only; never an upstream message or report content."""
++
++    def __init__(self, code: str, status: int = 400):
++        self.code = code
++        self.status = status
++        super().__init__("Research report storage request could not be completed.")
++
++
++def _invalid() -> None:
++    raise ResearchReportError("RESEARCH_REPORT_INVALID", 400)
++
++
++def _not_found() -> None:
++    raise ResearchReportError("RESEARCH_REPORT_NOT_FOUND", 404)
++
++
++def _owner(value: Any) -> str:
++    if not isinstance(value, str) or not OWNER_PATTERN.fullmatch(value):
++        _invalid()
++    return value
++
++
++def _report_id(value: Any) -> str:
++    if not isinstance(value, str) or not UUID_PATTERN.fullmatch(value):
++        _invalid()
++    return value.lower()
++
++
++def _utf8(value: str) -> bytes:
++    try:
++        return value.encode("utf-8")
++    except UnicodeError:
++        _invalid()
++
++
++def _canonical(value: Any) -> str:
++    try:
++        return json.dumps(value, ensure_ascii=False, allow_nan=False, sort_keys=True, separators=(",", ":"))
++    except (TypeError, ValueError, RecursionError, UnicodeError):
++        _invalid()
++
++
++def _json_pairs(pairs: list[tuple[str, Any]]) -> dict:
++    result = {}
++    for key, value in pairs:
++        if key in result:
++            _invalid()
++        result[key] = value
++    return result
++
++
++def _decode(value: str) -> Any:
++    try:
++        return json.loads(value, object_pairs_hook=_json_pairs,
++                          parse_constant=lambda _: (_ for _ in ()).throw(ValueError()))
++    except (TypeError, ValueError, RecursionError):
++        _invalid()
++
++
++def _bundle(value: Any, maximum: int) -> tuple[str, int, str]:
++    if type(value) is not dict or set(value) != {"manifest", "files"}:
++        _invalid()
++    manifest, files = value["manifest"], value["files"]
++    if type(manifest) is not dict or set(manifest) - {"schemaVersion", "title", "omissions", "warnings", "runSummary"}:
++        _invalid()
++    if type(manifest.get("schemaVersion")) is not int or manifest["schemaVersion"] != 1:
++        _invalid()
++    title = manifest.get("title")
++    if not isinstance(title, str) or not title.strip() or len(title) > 500 or re.search(r"[\x00-\x1f\x7f]", title):
++        _invalid()
++    for key in ("omissions", "warnings"):
++        rows = manifest.get(key)
++        if type(rows) is not list or len(rows) > 1000 or any(not isinstance(row, str) or len(row) > 1000 for row in rows):
++            _invalid()
++    if "runSummary" in manifest and type(manifest["runSummary"]) is not dict:
++        _invalid()
++    if type(files) is not dict or set(files) != set(FILES):
++        _invalid()
++    if any(not isinstance(body, str) for body in files.values()):
++        _invalid()
++    # Bound raw strings before parsing their JSONL contents or canonicalizing.
++    if sum(len(body) for body in files.values()) > maximum:
++        raise ResearchReportError("RESEARCH_REPORT_TOO_LARGE", 413)
++    nodes = 0
++
++    def inspect(item: Any, depth: int = 0) -> None:
++        nonlocal nodes
++        nodes += 1
++        if nodes > 150000 or depth > 20:
++            _invalid()
++        if type(item) is dict:
++            for key, child in item.items():
++                if not isinstance(key, str) or key in UNSAFE_KEYS or len(key) > 500:
++                    _invalid()
++                _utf8(key)
++                inspect(child, depth + 1)
++        elif type(item) is list:
++            if len(item) > 5000:
++                _invalid()
++            for child in item:
++                inspect(child, depth + 1)
++        elif item is not None and type(item) not in (str, int, float, bool):
++            _invalid()
++        elif type(item) is float and not math.isfinite(item):
++            _invalid()
++        elif type(item) is str:
++            # JSON escape sequences can decode to invalid lone surrogates even
++            # when the enclosing JSONL text itself is valid UTF-8.
++            _utf8(item)
++
++    inspect(value)
++    serialized = _canonical(value)
++    size = len(_utf8(serialized))
++    if size > maximum:
++        raise ResearchReportError("RESEARCH_REPORT_TOO_LARGE", 413)
++    counts = {}
++    for name in FILES:
++        # One blank trailing line is normal JSONL. Blank lines never count as
++        # records, but the serialized-byte limit still charges for all of them.
++        # Only LF separates JSONL records. Unicode line separators may legally
++        # occur inside JSON strings and must not be mistaken for record breaks.
++        lines = [line for line in files[name].split("\n") if line.strip()]
++        limit = 1000 if name == "evidence.jsonl" else 5000
++        if len(lines) > limit:
++            _invalid()
++        counts[name] = len(lines)
++        for line in lines:
++            row = _decode(line)
++            if type(row) is not dict:
++                _invalid()
++            inspect(row)
++    if sum(counts[name] for name in FILES[1:]) > 5000:
++        _invalid()
++    if not counts[FILES[0]] and "runSummary" not in manifest:
++        _invalid()
++    return serialized, size, title
++
++
++def _metadata(record: dict) -> dict:
++    return {key: record[key] for key in ("id", "title", "saved_at", "byte_size")}
++
++
++class ResearchReportService:
++    def __init__(self, collection, *, max_snapshot_bytes: int = MAX_REPORT_BYTES,
++                 max_owner_bytes: int = MAX_TOTAL_BYTES, max_reports: int = MAX_REPORTS,
++                 now=None, id_factory=None):
++        for value, maximum in ((max_snapshot_bytes, MAX_REPORT_BYTES), (max_owner_bytes, MAX_TOTAL_BYTES), (max_reports, MAX_REPORTS)):
++            if type(value) is not int or not 1 <= value <= maximum:
++                raise ResearchReportError("RESEARCH_REPORT_CONFIGURATION", 500)
++        if collection is None or (now is not None and not callable(now)) or (id_factory is not None and not callable(id_factory)):
++            raise ResearchReportError("RESEARCH_REPORT_CONFIGURATION", 500)
++        self.collection = collection
++        self.max_snapshot_bytes = max_snapshot_bytes
++        self.max_owner_bytes = max_owner_bytes
++        self.max_reports = max_reports
++        self.now = now or (lambda: datetime.now(timezone.utc))
++        self.id_factory = id_factory or uuid.uuid4
++
++    @property
++    def limits(self) -> dict:
++        return {"max_reports": self.max_reports, "max_report_bytes": self.max_snapshot_bytes, "max_total_bytes": self.max_owner_bytes}
++
++    async def _call(self, method: str, *args, **kwargs):
++        try:
++            return await getattr(self.collection, method)(*args, **kwargs)
++        except ResearchReportError:
++            raise
++        except Exception:
++            raise ResearchReportError("RESEARCH_REPORT_STORAGE_UNAVAILABLE", 503) from None
++
++    async def _ensure(self, owner: str) -> None:
++        try:
++            await self.collection.update_one({"_id": owner}, {"$setOnInsert": {
++                "schema_version": 1, "used_bytes": 0, "reports": []}}, upsert=True)
++        except Exception as failure:
++            # Concurrent first upserts can race on Mongo's unique _id index.
++            # Only that known collision is benign; later reads verify the bucket.
++            if getattr(failure, "code", None) != 11000:
++                raise ResearchReportError("RESEARCH_REPORT_STORAGE_UNAVAILABLE", 503) from None
++
++    async def _read(self, owner: str) -> dict | None:
++        bucket = await self._call("find_one", {"_id": owner})
++        if bucket is None:
++            return None
++        try:
++            if type(bucket) is not dict or set(bucket) != {"_id", "schema_version", "used_bytes", "reports"} or bucket["_id"] != owner or type(bucket["schema_version"]) is not int or bucket["schema_version"] != 1:
++                _invalid()
++            reports, used = bucket["reports"], bucket["used_bytes"]
++            if type(reports) is not list or len(reports) > MAX_REPORTS or type(used) is not int or not 0 <= used <= MAX_TOTAL_BYTES:
++                _invalid()
++            total, ids, hashes = 0, set(), set()
++            for record in reports:
++                if type(record) is not dict or set(record) != {"id", "title", "saved_at", "byte_size", "content_hash", "payload"}:
++                    _invalid()
++                report_id = _report_id(record["id"])
++                if report_id != record["id"] or report_id in ids or not isinstance(record["content_hash"], str) or not HASH_PATTERN.fullmatch(record["content_hash"]) or record["content_hash"] in hashes:
++                    _invalid()
++                ids.add(report_id); hashes.add(record["content_hash"])
++                if not isinstance(record["payload"], str) or len(record["payload"]) > MAX_REPORT_BYTES or type(record["byte_size"]) is not int or not 0 < record["byte_size"] <= MAX_REPORT_BYTES:
++                    _invalid()
++                raw = _utf8(record["payload"])
++                total += len(raw)
++                if total > MAX_TOTAL_BYTES or len(raw) != record["byte_size"] or hashlib.sha256(raw).hexdigest() != record["content_hash"]:
++                    _invalid()
++                payload, size, title = _bundle(_decode(record["payload"]), MAX_REPORT_BYTES)
++                if payload != record["payload"] or size != record["byte_size"] or title != record["title"]:
++                    _invalid()
++                saved_at = record["saved_at"]
++                if not isinstance(saved_at, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z", saved_at):
++                    _invalid()
++                datetime.fromisoformat(saved_at.replace("Z", "+00:00"))
++            if total != used:
++                _invalid()
++            return bucket
++        except (ResearchReportError, TypeError, ValueError, KeyError, RecursionError, UnicodeError):
++            raise ResearchReportError("RESEARCH_REPORT_STORAGE_INVALID", 503) from None
++
++    async def save(self, owner, bundle) -> dict:
++        owner = _owner(owner)
++        payload, byte_size, title = _bundle(bundle, self.max_snapshot_bytes)
++        digest = hashlib.sha256(_utf8(payload)).hexdigest()
++        await self._ensure(owner)
++        # Retry only atomic-filter contention, never network requests. A failed
++        # response can safely be retried by payload hash without allocating again.
++        for _ in range(3):
++            bucket = await self._read(owner)
++            if bucket is None:
++                raise ResearchReportError("RESEARCH_REPORT_STORAGE_UNAVAILABLE", 503)
++            duplicate = next((row for row in bucket["reports"] if row["content_hash"] == digest), None)
++            if duplicate:
++                if duplicate["payload"] != payload:
++                    raise ResearchReportError("RESEARCH_REPORT_STORAGE_INVALID", 503)
++                return {"report": _metadata(duplicate), "replay": True}
++            try:
++                current = self.now()
++                if not isinstance(current, datetime) or current.tzinfo is None:
++                    raise ValueError
++                report_id = _report_id(str(self.id_factory()))
++                saved_at = current.astimezone(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
++            except (ValueError, TypeError, ResearchReportError):
++                raise ResearchReportError("RESEARCH_REPORT_CONFIGURATION", 500) from None
++            record = {"id": report_id, "title": title, "saved_at": saved_at, "byte_size": byte_size, "content_hash": digest, "payload": payload}
++            result = await self._call("update_one", {
++                "_id": owner, "schema_version": 1,
++                "reports.content_hash": {"$ne": digest}, "reports.id": {"$ne": report_id},
++                "$expr": {"$and": [
++                    {"$lt": [{"$size": "$reports"}, self.max_reports]},
++                    {"$lte": [{"$add": ["$used_bytes", byte_size]}, self.max_owner_bytes]},
++                ]},
++            }, {"$push": {"reports": record}, "$inc": {"used_bytes": byte_size}})
++            if result.modified_count == 1:
++                return {"report": _metadata(record), "replay": False}
++            # A duplicate save may have won; always check it before reporting a
++            # quota error so exact replay remains available at full capacity.
++            bucket = await self._read(owner)
++            if bucket is None:
++                raise ResearchReportError("RESEARCH_REPORT_STORAGE_UNAVAILABLE", 503)
++            duplicate = next((row for row in bucket["reports"] if row["content_hash"] == digest), None)
++            if duplicate:
++                if duplicate["payload"] != payload:
++                    raise ResearchReportError("RESEARCH_REPORT_STORAGE_INVALID", 503)
++                return {"report": _metadata(duplicate), "replay": True}
++            if len(bucket["reports"]) >= self.max_reports or bucket["used_bytes"] + byte_size > self.max_owner_bytes:
++                raise ResearchReportError("RESEARCH_REPORT_QUOTA", 413)
++        raise ResearchReportError("RESEARCH_REPORT_CONFLICT", 409)
++
++    async def list(self, owner) -> dict:
++        bucket = await self._read(_owner(owner))
++        return {"reports": [_metadata(row) for row in reversed(bucket["reports"])] if bucket else [],
++                "used_bytes": bucket["used_bytes"] if bucket else 0, "limits": self.limits}
++
++    async def get(self, owner, report_id) -> dict:
++        owner, report_id = _owner(owner), _report_id(report_id)
++        bucket = await self._read(owner)
++        record = next((row for row in bucket["reports"] if row["id"] == report_id), None) if bucket else None
++        if record is None:
++            _not_found()
++        return {"report": {**_metadata(record), "bundle": _decode(record["payload"])}}
++
++    async def delete(self, owner, report_id) -> dict:
++        owner, report_id = _owner(owner), _report_id(report_id)
++        bucket = await self._read(owner)
++        record = next((row for row in bucket["reports"] if row["id"] == report_id), None) if bucket else None
++        if record is None:
++            _not_found()
++        result = await self._call("update_one", {
++            "_id": owner, "schema_version": 1, "used_bytes": {"$gte": record["byte_size"]},
++            "reports": {"$elemMatch": {"id": report_id, "content_hash": record["content_hash"], "byte_size": record["byte_size"]}},
++        }, {"$pull": {"reports": {"id": report_id}}, "$inc": {"used_bytes": -record["byte_size"]}})
++        if result.modified_count != 1:
++            _not_found()
++        return {"deleted": True}
+diff --git a/backend/domains/research_reports/router.py b/backend/domains/research_reports/router.py
+new file mode 100644
+--- /dev/null
++++ b/backend/domains/research_reports/router.py
+@@ -0,0 +1,187 @@
++"""Authenticated storage of explicitly confirmed, inert research snapshots.
++
++This router never collects URLs, submits applications, interprets source text,
++or uses a client-supplied account identifier. The legacy idempotency middleware
++must exclude this exact route prefix: this service deduplicates by owner/content.
++"""
++from __future__ import annotations
++
++import asyncio
++import hmac
++import json
++import time
++from collections import OrderedDict
++
++from fastapi import APIRouter, Depends, Request
++from fastapi.exceptions import RequestValidationError
++from fastapi.responses import JSONResponse
++from fastapi.routing import APIRoute
++from starlette.exceptions import HTTPException
++
++from core.config import settings
++from core.db import get_db
++from core.deps import get_current_user
++
++from .service import OWNER_PATTERN, ResearchReportError, ResearchReportService
++
++
++MAX_BODY_BYTES = 8 * 1024 * 1024 + 64 * 1024
++REQUEST_TIMEOUT_SECONDS = 10.0
++SAFE_MESSAGE = "Research report storage request could not be completed."
++PRIVATE_HEADERS = {"Cache-Control": "no-store", "Pragma": "no-cache"}
++
++
++def _failure(code: str, status: int) -> JSONResponse:
++    return JSONResponse({"detail": {"code": code, "message": SAFE_MESSAGE}},
++                        status_code=status, headers=PRIVATE_HEADERS)
++
++
++class _PrivateReportRoute(APIRoute):
++    """Apply the deadline and private error policy to dependencies as well."""
++
++    def get_route_handler(self):
++        original = super().get_route_handler()
++
++        async def protected(request: Request):
++            try:
++                response = await asyncio.wait_for(original(request), timeout=REQUEST_TIMEOUT_SECONDS)
++            except asyncio.TimeoutError:
++                return _failure("RESEARCH_REPORT_TIMEOUT", 504)
++            except ResearchReportError as failure:
++                return _failure(failure.code, failure.status)
++            except HTTPException as failure:
++                code = {401: "RESEARCH_REPORT_UNAUTHORIZED", 403: "RESEARCH_REPORT_FORBIDDEN",
++                        404: "RESEARCH_REPORT_NOT_FOUND", 413: "RESEARCH_REPORT_TOO_LARGE",
++                        429: "RESEARCH_REPORT_RATE_LIMITED"}.get(failure.status_code, "RESEARCH_REPORT_REQUEST_FAILED")
++                return _failure(code, failure.status_code)
++            except RequestValidationError:
++                return _failure("RESEARCH_REPORT_INVALID", 400)
++            except Exception:
++                # No upstream details, report content, or account data returned
++                # or logged. Cancellation from shutdown/client work propagates.
++                return _failure("RESEARCH_REPORT_STORAGE_UNAVAILABLE", 503)
++            response.headers.update(PRIVATE_HEADERS)
++            return response
++
++        return protected
++
++
++class _OwnerRateLimiter:
++    """Modest process-local abuse guard, not a distributed billing/quota system.
++
++    A fixed monotonic window and at most 1000 entries bound memory. Full active
++    capacity fails closed, rather than evicting active owners to reset counters.
++    Database byte/count quotas remain the cross-process source of truth.
++    """
++
++    def __init__(self, *, requests=60, window_seconds=60.0, max_owners=1000, clock=None):
++        self.requests = requests
++        self.window_seconds = window_seconds
++        self.max_owners = max_owners
++        self.clock = clock or time.monotonic
++        self.windows = OrderedDict()
++
++    def consume(self, owner: str) -> None:
++        current = self.clock()
++        while self.windows and current - next(iter(self.windows.values()))[0] >= self.window_seconds:
++            self.windows.popitem(last=False)
++        entry = self.windows.get(owner)
++        if entry is None:
++            if len(self.windows) >= self.max_owners:
++                raise ResearchReportError("RESEARCH_REPORT_RATE_LIMITED", 429)
++            self.windows[owner] = (current, 1)
++        elif entry[1] >= self.requests:
++            raise ResearchReportError("RESEARCH_REPORT_RATE_LIMITED", 429)
++        else:
++            self.windows[owner] = (entry[0], entry[1] + 1)
++
++
++_limiter = _OwnerRateLimiter()
++router = APIRouter(prefix="/api/v1/research/reports", tags=["research-reports"], route_class=_PrivateReportRoute)
++
++
++def _access(request: Request, user: dict, *, mutation: bool = False) -> str:
++    if not isinstance(user, dict) or user.get("_auth_mode") not in ("cookie", "bearer_ci"):
++        raise ResearchReportError("RESEARCH_REPORT_UNAUTHORIZED", 401)
++    owner = user.get("id")
++    if not isinstance(owner, str) or not OWNER_PATTERN.fullmatch(owner):
++        raise ResearchReportError("RESEARCH_REPORT_UNAUTHORIZED", 401)
++    if user.get("deletion_pending_at") is not None:
++        raise ResearchReportError("RESEARCH_REPORT_ACCOUNT_UNAVAILABLE", 403)
++    if request.query_params:
++        raise ResearchReportError("RESEARCH_REPORT_INVALID", 400)
++    if mutation and user["_auth_mode"] == "cookie":
++        # Do not trust an Authorization header to bypass cookie CSRF checks.
++        # Auth mode comes only from the existing authenticated dependency.
++        cookie = request.cookies.get(settings.CSRF_COOKIE_NAME)
++        header = request.headers.get(settings.CSRF_HEADER_NAME)
++        if not cookie or not header or len(cookie) > 512 or len(header) > 512 or not hmac.compare_digest(cookie.encode("utf-8"), header.encode("utf-8")):
++            raise ResearchReportError("RESEARCH_REPORT_CSRF", 403)
++    _limiter.consume(owner)
++    return owner
++
++
++def _service() -> ResearchReportService:
++    return ResearchReportService(get_db()["research_report_buckets"])
++
++
++def _pairs(pairs):
++    result = {}
++    for key, value in pairs:
++        if key in result:
++            raise ValueError
++        result[key] = value
++    return result
++
++
++def _nonfinite(_):
++    raise ValueError
++
++
++async def _confirmed_bundle(request: Request) -> dict:
++    if request.headers.get("content-type", "").split(";", 1)[0].strip().lower() != "application/json":
++        raise ResearchReportError("RESEARCH_REPORT_CONTENT_TYPE", 415)
++    declared = request.headers.get("content-length")
++    if declared is not None:
++        if not declared.isascii() or not declared.isdecimal():
++            raise ResearchReportError("RESEARCH_REPORT_INVALID", 400)
++        # Compare length before converting to avoid pathological huge integers.
++        if len(declared) > 10 or int(declared) > MAX_BODY_BYTES:
++            raise ResearchReportError("RESEARCH_REPORT_TOO_LARGE", 413)
++    body = bytearray()
++    async for chunk in request.stream():
++        if len(body) + len(chunk) > MAX_BODY_BYTES:
++            raise ResearchReportError("RESEARCH_REPORT_TOO_LARGE", 413)
++        body.extend(chunk)
++    try:
++        value = json.loads(body.decode("utf-8"), object_pairs_hook=_pairs, parse_constant=_nonfinite)
++    except (UnicodeError, ValueError, TypeError, RecursionError):
++        raise ResearchReportError("RESEARCH_REPORT_INVALID", 400) from None
++    if type(value) is not dict or set(value) != {"bundle", "confirm_storage"} or value["confirm_storage"] is not True:
++        raise ResearchReportError("RESEARCH_REPORT_INVALID", 400)
++    return value["bundle"]
++
++
++@router.get("")
++async def list_reports(request: Request, user: dict = Depends(get_current_user)):
++    owner = _access(request, user)
++    return await _service().list(owner)
++
++
++@router.post("")
++async def save_report(request: Request, user: dict = Depends(get_current_user)):
++    owner = _access(request, user, mutation=True)
++    bundle = await _confirmed_bundle(request)
++    return await _service().save(owner, bundle)
++
++
++@router.get("/{report_id}")
++async def get_report(report_id: str, request: Request, user: dict = Depends(get_current_user)):
++    owner = _access(request, user)
++    return await _service().get(owner, report_id)
++
++
++@router.delete("/{report_id}")
++async def delete_report(report_id: str, request: Request, user: dict = Depends(get_current_user)):
++    owner = _access(request, user, mutation=True)
++    return await _service().delete(owner, report_id)
+diff --git a/backend/domains/research_reports/privacy.py b/backend/domains/research_reports/privacy.py
+new file mode 100644
+--- /dev/null
++++ b/backend/domains/research_reports/privacy.py
+@@ -0,0 +1,30 @@
++"""Account export inventory and erasure for private saved research.
++
++Keep report bodies out of the legacy export_jobs Mongo document: the combined
++career export and research payload could exceed Mongo's document-size limit.
++Each immutable report is available through its normal authenticated detail API.
++"""
++from domains.research_reports.service import ResearchReportService
++
++
++async def report_export_index(db, user_id: str) -> dict:
++    listing = await ResearchReportService(db.research_report_buckets).list(user_id)
++    return {
++        **listing,
++        "content_included": False,
++        "download_instructions": (
++            "Report bodies are separate from this account export. In Research, "
++            "choose Saved reports, open each report, then Download report. "
++            "Each entry also includes its authenticated download API path."
++        ),
++        "reports": [
++            {**report, "download_path": f"/api/v1/research/reports/{report['id']}"}
++            for report in listing["reports"]
++        ],
++    }
++
++
++async def erase_account_reports(db, user_id: str) -> None:
++    # This collection uses a trusted principal as _id, not a user_id field.
++    # Invoke only from the existing expired-account deletion workflow.
++    await db.research_report_buckets.delete_one({"_id": user_id})
+diff --git a/backend/tests/test_research_reports_service.py b/backend/tests/test_research_reports_service.py
+new file mode 100644
+--- /dev/null
++++ b/backend/tests/test_research_reports_service.py
+@@ -0,0 +1,356 @@
++"""Synthetic Motor-style collection tests. No Mongo, sockets, disk or fixtures."""
++import asyncio
++import copy
++import json
++import unittest
++from datetime import datetime, timezone
++from types import SimpleNamespace
++from uuid import uuid4
++
++from domains.research_reports.service import ResearchReportError, ResearchReportService
++
++
++NOW = datetime(2026, 9, 13, 12, 0, tzinfo=timezone.utc)
++OWNER_A = "user:A"
++OWNER_B = "user:B"
++
++
++def bundle(title="Saved research", content="Retained synthetic evidence."):
++    return {"manifest": {"schemaVersion": 1, "title": title, "omissions": ["Imported evidence only."], "warnings": []},
++            "files": {"evidence.jsonl": json.dumps({"url": "https://example.org/evidence", "content": content}, ensure_ascii=False) + "\n",
++                      "candidates.jsonl": "", "outcomes.jsonl": "", "edges.jsonl": ""}}
++
++
++class DuplicateKey(Exception):
++    code = 11000
++
++
++class FakeCollection:
++    """Minimal atomic implementation of precisely the Mongo operators in use.
++
++    Every database call yields first, so parallel service coroutines share stale
++    reads. The lock is acquired only for the individual database operation, not
++    across the service's read/update sequence. Thus tests catch count-then-write
++    races instead of accidentally serializing the whole service workflow.
++    """
++    def __init__(self):
++        self.documents = {}
++        self.lock = asyncio.Lock()
++        self.calls = []
++        self.duplicate_initialization = False
++        self.fail_after_append = False
++        self.failure = None
++
++    def expression(self, item, document):
++        if isinstance(item, str) and item.startswith("$"):
++            return document[item[1:]]
++        if not isinstance(item, dict):
++            return item
++        if set(item) == {"$size"}:
++            return len(self.expression(item["$size"], document))
++        if set(item) == {"$add"}:
++            return sum(self.expression(value, document) for value in item["$add"])
++        if set(item) == {"$and"}:
++            return all(self.expression(value, document) for value in item["$and"])
++        for key, comparison in (("$lt", lambda a, b: a < b), ("$lte", lambda a, b: a <= b)):
++            if set(item) == {key}:
++                a, b = item[key]
++                return comparison(self.expression(a, document), self.expression(b, document))
++        raise AssertionError("Unexpected expression operator")
++
++    def matches(self, query, document):
++        if document is None:
++            return False
++        for key, value in query.items():
++            if key == "$expr":
++                if not self.expression(value, document):
++                    return False
++            elif key.startswith("reports."):
++                assert set(value) == {"$ne"}
++                field = key.split(".", 1)[1]
++                if any(row.get(field) == value["$ne"] for row in document["reports"]):
++                    return False
++            elif key == "reports":
++                assert set(value) == {"$elemMatch"}
++                if not any(all(row.get(field) == expected for field, expected in value["$elemMatch"].items()) for row in document["reports"]):
++                    return False
++            elif isinstance(value, dict):
++                assert set(value) == {"$gte"}
++                if document[key] < value["$gte"]:
++                    return False
++            elif document.get(key) != value:
++                return False
++        return True
++
++    async def find_one(self, query):
++        await asyncio.sleep(0)
++        async with self.lock:
++            self.calls.append(("find_one", copy.deepcopy(query)))
++            if self.failure:
++                raise self.failure
++            document = self.documents.get(query["_id"])
++            return copy.deepcopy(document) if self.matches(query, document) else None
++
++    async def update_one(self, query, update, upsert=False):
++        await asyncio.sleep(0)
++        async with self.lock:
++            self.calls.append(("update_one", copy.deepcopy(query), copy.deepcopy(update), upsert))
++            if self.failure:
++                raise self.failure
++            document = self.documents.get(query["_id"])
++            if document is None and upsert:
++                assert set(update) == {"$setOnInsert"}
++                self.documents[query["_id"]] = {"_id": query["_id"], **copy.deepcopy(update["$setOnInsert"])}
++                if self.duplicate_initialization:
++                    self.duplicate_initialization = False
++                    raise DuplicateKey("synthetic competing initializer")
++                return SimpleNamespace(modified_count=0, matched_count=0, upserted_id=query["_id"])
++            if not self.matches(query, document):
++                return SimpleNamespace(modified_count=0, matched_count=0, upserted_id=None)
++            if "$setOnInsert" in update:
++                return SimpleNamespace(modified_count=0, matched_count=1, upserted_id=None)
++            changed = copy.deepcopy(document)
++            if "$push" in update:
++                assert set(update["$push"]) == {"reports"}
++                changed["reports"].append(copy.deepcopy(update["$push"]["reports"]))
++            if "$pull" in update:
++                condition = update["$pull"]["reports"]
++                changed["reports"] = [row for row in changed["reports"] if not all(row.get(field) == expected for field, expected in condition.items())]
++            for field, increment in update.get("$inc", {}).items():
++                changed[field] += increment
++            self.documents[query["_id"]] = changed
++            if "$push" in update and self.fail_after_append:
++                self.fail_after_append = False
++                raise TimeoutError("SYNTHETIC_INTERNAL_DATABASE_TRACE")
++            return SimpleNamespace(modified_count=int(changed != document), matched_count=1, upserted_id=None)
++
++
++class ResearchReportServiceTests(unittest.IsolatedAsyncioTestCase):
++    def setUp(self):
++        self.collection = FakeCollection()
++        self.service = ResearchReportService(self.collection, now=lambda: NOW)
++
++    async def assert_code(self, awaitable, code, status):
++        with self.assertRaises(ResearchReportError) as caught:
++            await awaitable
++        self.assertEqual(caught.exception.code, code)
++        self.assertEqual(caught.exception.status, status)
++        return str(caught.exception)
++
++    async def test_exact_public_envelopes_and_immutable_roundtrip(self):
++        original = bundle()
++        saved = await self.service.save(OWNER_A, original)
++        self.assertEqual(set(saved), {"report", "replay"})
++        metadata = saved["report"]
++        self.assertEqual(set(metadata), {"id", "title", "saved_at", "byte_size"})
++        self.assertFalse(saved["replay"])
++        self.assertEqual(metadata["saved_at"], "2026-09-13T12:00:00.000Z")
++        listing = await self.service.list(OWNER_A)
++        self.assertEqual(listing, {"reports": [metadata], "used_bytes": metadata["byte_size"],
++            "limits": {"max_reports": 20, "max_report_bytes": 8388608, "max_total_bytes": 10485760}})
++        loaded = await self.service.get(OWNER_A, metadata["id"].upper())
++        self.assertEqual(loaded, {"report": {**metadata, "bundle": original}})
++        self.assertNotIn("content_hash", json.dumps(loaded))
++        self.assertNotIn("user:A", json.dumps(loaded))
++        loaded["report"]["bundle"]["manifest"]["title"] = "caller mutation"
++        original["manifest"]["title"] = "input mutation"
++        self.assertEqual((await self.service.get(OWNER_A, metadata["id"]))["report"]["bundle"]["manifest"]["title"], "Saved research")
++
++    async def test_canonical_envelope_order_deduplicates_without_rewriting_metadata(self):
++        original = bundle()
++        saved = await self.service.save(OWNER_A, original)
++        reordered = {"files": dict(reversed(list(original["files"].items()))), "manifest": dict(reversed(list(original["manifest"].items())))}
++        other_service = ResearchReportService(self.collection, now=lambda: datetime(2026, 10, 1, tzinfo=timezone.utc))
++        replay = await other_service.save(OWNER_A, reordered)
++        self.assertEqual(replay, {**saved, "replay": True})
++        self.assertEqual(len(self.collection.documents[OWNER_A]["reports"]), 1)
++
++    async def test_same_content_is_independent_per_owner_and_foreign_ids_are_generic_missing(self):
++        saved_a = await self.service.save(OWNER_A, bundle())
++        saved_b = await self.service.save(OWNER_B, bundle())
++        a_id, b_id = saved_a["report"]["id"], saved_b["report"]["id"]
++        self.assertNotEqual(a_id, b_id)
++        errors = []
++        for owner, identifier in [(OWNER_B, a_id), (OWNER_A, b_id), ("user:C", a_id), (OWNER_A, str(uuid4()))]:
++            errors.append(await self.assert_code(self.service.get(owner, identifier), "RESEARCH_REPORT_NOT_FOUND", 404))
++            errors.append(await self.assert_code(self.service.delete(owner, identifier), "RESEARCH_REPORT_NOT_FOUND", 404))
++        self.assertEqual(len(set(errors)), 1)
++        self.assertEqual(len((await self.service.list(OWNER_A))["reports"]), 1)
++        self.assertEqual(len((await self.service.list(OWNER_B))["reports"]), 1)
++        self.assertEqual((await self.service.list("user:C"))["reports"], [])
++
++    async def test_concurrent_duplicate_saves_allocate_exactly_once_even_with_initialization_collision(self):
++        self.collection.duplicate_initialization = True
++        results = await asyncio.gather(*(self.service.save(OWNER_A, bundle()) for _ in range(15)))
++        self.assertEqual(sum(not result["replay"] for result in results), 1)
++        self.assertEqual(len({result["report"]["id"] for result in results}), 1)
++        bucket = self.collection.documents[OWNER_A]
++        self.assertEqual(len(bucket["reports"]), 1)
++        self.assertEqual(bucket["used_bytes"], results[0]["report"]["byte_size"])
++
++    async def test_concurrent_distinct_saves_use_atomic_count_conditions(self):
++        service = ResearchReportService(self.collection, max_reports=3, now=lambda: NOW)
++        results = await asyncio.gather(*(service.save(OWNER_A, bundle(title=f"Report {number}")) for number in range(12)), return_exceptions=True)
++        successes = [result for result in results if isinstance(result, dict)]
++        failures = [result for result in results if isinstance(result, ResearchReportError)]
++        self.assertEqual(len(successes), 3)
++        self.assertEqual(len(failures), 9)
++        self.assertTrue(all(failure.code == "RESEARCH_REPORT_QUOTA" for failure in failures))
++        bucket = self.collection.documents[OWNER_A]
++        self.assertEqual(len(bucket["reports"]), 3)
++        self.assertEqual(bucket["used_bytes"], sum(report["byte_size"] for report in bucket["reports"]))
++        pushes = [call for call in self.collection.calls if call[0] == "update_one" and "$push" in call[2]]
++        self.assertTrue(pushes)
++        self.assertTrue(all("$expr" in call[1] and "reports.content_hash" in call[1] and call[1]["_id"] == OWNER_A for call in pushes))
++
++    async def test_concurrent_byte_quota_cannot_be_exceeded(self):
++        measured = await self.service.save("measure", bundle(title="Report 0"))
++        size = measured["report"]["byte_size"]
++        service = ResearchReportService(self.collection, max_owner_bytes=size * 2, now=lambda: NOW)
++        results = await asyncio.gather(*(service.save(OWNER_A, bundle(title=f"Report {number}")) for number in range(9)), return_exceptions=True)
++        self.assertEqual(sum(isinstance(result, dict) for result in results), 2)
++        self.assertEqual(self.collection.documents[OWNER_A]["used_bytes"], size * 2)
++        self.assertTrue(all(isinstance(result, dict) or (isinstance(result, ResearchReportError) and result.code == "RESEARCH_REPORT_QUOTA") for result in results))
++
++    async def test_replay_succeeds_at_quota_and_delete_frees_quota_once(self):
++        service = ResearchReportService(self.collection, max_reports=1, now=lambda: NOW)
++        saved = await service.save(OWNER_A, bundle())
++        self.assertTrue((await service.save(OWNER_A, bundle()))["replay"])
++        await self.assert_code(service.save(OWNER_A, bundle(title="Different")), "RESEARCH_REPORT_QUOTA", 413)
++        results = await asyncio.gather(*(service.delete(OWNER_A, saved["report"]["id"]) for _ in range(10)), return_exceptions=True)
++        self.assertEqual(sum(result == {"deleted": True} for result in results), 1)
++        self.assertTrue(all(result == {"deleted": True} or (isinstance(result, ResearchReportError) and result.status == 404) for result in results))
++        self.assertEqual((await service.list(OWNER_A))["used_bytes"], 0)
++        self.assertFalse((await service.save(OWNER_A, bundle(title="Different")))["replay"])
++
++    async def test_uncertain_database_response_is_sanitized_and_exact_retry_replays(self):
++        self.collection.fail_after_append = True
++        message = await self.assert_code(self.service.save(OWNER_A, bundle()), "RESEARCH_REPORT_STORAGE_UNAVAILABLE", 503)
++        self.assertNotIn("SYNTHETIC_INTERNAL", message)
++        replay = await self.service.save(OWNER_A, bundle())
++        self.assertTrue(replay["replay"])
++        self.assertEqual(len(self.collection.documents[OWNER_A]["reports"]), 1)
++
++    async def test_owner_and_report_identifiers_are_validated_before_database_access(self):
++        for invalid in [None, {}, {"$ne": ""}, "", "../owner", "has space", "x" * 129, "owner\n"]:
++            for method, args in [(self.service.save, (bundle(),)), (self.service.list, ()), (self.service.get, (str(uuid4()),)), (self.service.delete, (str(uuid4()),))]:
++                await self.assert_code(method(invalid, *args), "RESEARCH_REPORT_INVALID", 400)
++        for invalid in [None, "", "../report", "/reports/" + str(uuid4()), str(uuid4()) + "?owner=B"]:
++            await self.assert_code(self.service.get(OWNER_A, invalid), "RESEARCH_REPORT_INVALID", 400)
++            await self.assert_code(self.service.delete(OWNER_A, invalid), "RESEARCH_REPORT_INVALID", 400)
++        self.assertEqual(self.collection.calls, [])
++
++    async def test_strict_compact_envelope_rejects_unknown_fields_and_client_ownership_claims(self):
++        variants = []
++        for field in ["owner", "ownerId", "user_id", "tenant_id"]:
++            value = bundle(); value[field] = OWNER_B; variants.append(value)
++            value = bundle(); value["files"]["evidence.jsonl"] = json.dumps({field: OWNER_B}); variants.append(value)
++        value = bundle(); value["files"]["evidence.csv"] = "a,b"; variants.append(value)
++        value = bundle(); del value["files"]["edges.jsonl"]; variants.append(value)
++        value = bundle(); value["manifest"]["internetCoveragePercent"] = 100; variants.append(value)
++        value = bundle(); value["manifest"]["schemaVersion"] = True; variants.append(value)
++        value = bundle(); value["manifest"]["title"] = "x" * 501; variants.append(value)
++        value = bundle(); value["manifest"]["warnings"] = ["x"] * 1001; variants.append(value)
++        value = bundle(); value["manifest"]["omissions"] = ["x"] * 1001; variants.append(value)
++        value = bundle(); value["manifest"]["omissions"] = ["x" * 1001]; variants.append(value)
++        value = bundle(); value["manifest"]["runSummary"] = []; variants.append(value)
++        value = bundle(); value["files"]["evidence.jsonl"] = []; variants.append(value)
++        for value in variants:
++            await self.assert_code(self.service.save(OWNER_A, value), "RESEARCH_REPORT_INVALID", 400)
++        self.assertEqual(self.collection.calls, [])
++
++    async def test_diagnostic_arrays_preserve_up_to_one_thousand_entries_without_truncation(self):
++        value = bundle()
++        value["manifest"]["warnings"] = [f"Warning {number}" for number in range(1000)]
++        value["manifest"]["omissions"] = [f"Omission {number}" for number in range(1000)]
++        saved = await self.service.save(OWNER_A, value)
++        loaded = await self.service.get(OWNER_A, saved["report"]["id"])
++        self.assertEqual(loaded["report"]["bundle"], value)
++        self.assertEqual(len(loaded["report"]["bundle"]["manifest"]["warnings"]), 1000)
++        self.assertEqual(len(loaded["report"]["bundle"]["manifest"]["omissions"]), 1000)
++
++    async def test_all_c0_and_del_title_controls_are_rejected_before_database_access(self):
++        for codepoint in [*range(32), 127]:
++            with self.subTest(codepoint=codepoint):
++                await self.assert_code(self.service.save(OWNER_A, bundle(title=f"Report{chr(codepoint)}title")), "RESEARCH_REPORT_INVALID", 400)
++        self.assertEqual(self.collection.calls, [])
++
++    async def test_jsonl_rejects_malformed_duplicate_nonfinite_and_nonobject_values(self):
++        for text in ["{bad}", "[]", "null", "42", '{"same":1,"same":2}', '{"value":NaN}', '{"value":Infinity}', '{"value":1e999}', '{"__proto__":{}}', '{"value":"\\ud800"}']:
++            value = bundle(); value["files"]["evidence.jsonl"] = text
++            await self.assert_code(self.service.save(OWNER_A, value), "RESEARCH_REPORT_INVALID", 400)
++        self.assertEqual(self.collection.calls, [])
++
++    async def test_json_depth_nodes_and_record_limits_are_bounded(self):
++        deep = {}
++        for _ in range(22):
++            deep = {"nested": deep}
++        variants = [json.dumps(deep), json.dumps({"rows": [0] * 5001}), "\n".join('{"rows":' + json.dumps([0] * 200) + '}' for _ in range(1000)), "\n".join("{}" for _ in range(1001))]
++        for text in variants:
++            value = bundle(); value["files"]["evidence.jsonl"] = text
++            await self.assert_code(self.service.save(OWNER_A, value), "RESEARCH_REPORT_INVALID", 400)
++        value = bundle(); value["files"]["candidates.jsonl"] = "{}\n" * 3000; value["files"]["edges.jsonl"] = "{}\n" * 2001
++        await self.assert_code(self.service.save(OWNER_A, value), "RESEARCH_REPORT_INVALID", 400)
++        self.assertEqual(self.collection.calls, [])
++
++    async def test_maximum_line_counts_and_empty_run_summary_are_storage_only(self):
++        value = bundle(); value["files"]["evidence.jsonl"] = "{}\n" * 1000
++        value["files"]["candidates.jsonl"] = "{}\n" * 2500; value["files"]["outcomes.jsonl"] = "{}\n" * 2500
++        saved = await self.service.save(OWNER_A, value)
++        self.assertEqual((await self.service.get(OWNER_A, saved["report"]["id"]))["report"]["bundle"], value)
++        empty = bundle(title="Zero results"); empty["files"]["evidence.jsonl"] = ""
++        await self.assert_code(self.service.save(OWNER_A, empty), "RESEARCH_REPORT_INVALID", 400)
++        empty["manifest"]["runSummary"] = {"format": "lynk-collider-run-v1", "status": "failed"}
++        stored = await self.service.save(OWNER_A, empty)
++        self.assertEqual((await self.service.get(OWNER_A, stored["report"]["id"]))["report"]["bundle"], empty)
++
++    async def test_utf8_bytes_unicode_separators_and_inert_source_text_are_preserved(self):
++        content = '研究 🌍\u2028second paragraph <script>doNotExecute()</script> https://127.0.0.1/private'
++        value = bundle(content=content)
++        saved = await self.service.save(OWNER_A, value)
++        canonical = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
++        self.assertEqual(saved["report"]["byte_size"], len(canonical.encode("utf-8")))
++        self.assertEqual((await self.service.get(OWNER_A, saved["report"]["id"]))["report"]["bundle"], value)
++        self.assertGreater(saved["report"]["byte_size"], len(canonical))
++
++    async def test_snapshot_size_rejection_does_not_create_owner_bucket(self):
++        service = ResearchReportService(self.collection, max_snapshot_bytes=500)
++        await self.assert_code(service.save(OWNER_A, bundle(content="界" * 300)), "RESEARCH_REPORT_TOO_LARGE", 413)
++        self.assertEqual(self.collection.calls, [])
++
++    async def test_malformed_configuration_cannot_raise_hard_mongo_storage_limits(self):
++        for values in [{"max_reports": 21}, {"max_reports": True}, {"max_reports": 0}, {"max_snapshot_bytes": 8388609},
++                       {"max_owner_bytes": 10485761}, {"max_owner_bytes": float("inf")}, {"now": "not callable"}]:
++            with self.subTest(values=values), self.assertRaises(ResearchReportError) as caught:
++                ResearchReportService(self.collection, **values)
++            self.assertEqual(caught.exception.code, "RESEARCH_REPORT_CONFIGURATION")
++        self.assertEqual(self.collection.calls, [])
++
++    async def test_corrupt_stored_hash_payload_and_counters_fail_closed(self):
++        saved = await self.service.save(OWNER_A, bundle())
++        pristine = copy.deepcopy(self.collection.documents[OWNER_A])
++        mutations = [lambda row: row.update(used_bytes=0), lambda row: row["reports"][0].update(payload="{}"),
++                     lambda row: row["reports"][0].update(content_hash="0" * 64), lambda row: row["reports"][0].update(title="changed")]
++        for mutate in mutations:
++            self.collection.documents[OWNER_A] = copy.deepcopy(pristine); mutate(self.collection.documents[OWNER_A])
++            await self.assert_code(self.service.get(OWNER_A, saved["report"]["id"]), "RESEARCH_REPORT_STORAGE_INVALID", 503)
++            await self.assert_code(self.service.list(OWNER_A), "RESEARCH_REPORT_STORAGE_INVALID", 503)
++            await self.assert_code(self.service.delete(OWNER_A, saved["report"]["id"]), "RESEARCH_REPORT_STORAGE_INVALID", 503)
++
++    async def test_database_errors_never_return_raw_details(self):
++        self.collection.failure = RuntimeError("SYNTHETIC_DATABASE_SECRET owner=A payload=private")
++        for awaitable in [self.service.save(OWNER_A, bundle()), self.service.list(OWNER_A), self.service.get(OWNER_A, str(uuid4())), self.service.delete(OWNER_A, str(uuid4()))]:
++            message = await self.assert_code(awaitable, "RESEARCH_REPORT_STORAGE_UNAVAILABLE", 503)
++            self.assertNotIn("SYNTHETIC_DATABASE_SECRET", message)
++
++    async def test_server_uuid_collision_cannot_overwrite_an_existing_report(self):
++        identifier = uuid4()
++        service = ResearchReportService(self.collection, now=lambda: NOW, id_factory=lambda: identifier)
++        saved = await service.save(OWNER_A, bundle())
++        await self.assert_code(service.save(OWNER_A, bundle(title="Different payload")), "RESEARCH_REPORT_CONFLICT", 409)
++        self.assertEqual((await service.get(OWNER_A, saved["report"]["id"]))["report"]["title"], "Saved research")
++        self.assertEqual(len(self.collection.documents[OWNER_A]["reports"]), 1)
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/backend/tests/test_research_reports_router.py b/backend/tests/test_research_reports_router.py
+new file mode 100644
+--- /dev/null
++++ b/backend/tests/test_research_reports_router.py
+@@ -0,0 +1,273 @@
++"""Isolated ASGI tests: stub authentication/database, no sockets or live Mongo.
++
++Run with unittest discovery, not the application's pytest autouse fixtures.
++FastAPI and httpx are the existing backend runtime test dependencies.
++"""
++import asyncio
++import importlib.util
++import json
++import sys
++import types
++import unittest
++from pathlib import Path
++from unittest.mock import patch
++from uuid import uuid4
++
++import httpx
++from fastapi import FastAPI, HTTPException, Request
++
++from test_research_reports_service import FakeCollection, bundle
++
++
++PREFIX = "/api/v1/research/reports"
++
++
++class ResearchReportRouterTests(unittest.IsolatedAsyncioTestCase):
++    async def asyncSetUp(self):
++        self.collection = FakeCollection()
++        self.auth_calls = 0
++        self.auth_delay = 0
++        self.database_lookups = 0
++
++        async def get_current_user(request: Request):
++            self.auth_calls += 1
++            if self.auth_delay:
++                await asyncio.sleep(self.auth_delay)
++            owner = request.headers.get("x-test-owner")
++            if not owner:
++                raise HTTPException(401, detail="PRIVATE_AUTHENTICATION_TRACE")
++            user = {"id": owner, "_auth_mode": request.headers.get("x-test-mode", "cookie")}
++            if request.headers.get("x-test-deleting"):
++                user["deletion_pending_at"] = "2026-09-13T00:00:00Z"
++            return user
++
++        def get_db():
++            self.database_lookups += 1
++            return {"research_report_buckets": self.collection}
++
++        core = types.ModuleType("core"); core.__path__ = []
++        config = types.ModuleType("core.config")
++        config.settings = types.SimpleNamespace(CSRF_COOKIE_NAME="test-csrf", CSRF_HEADER_NAME="X-Test-CSRF")
++        database = types.ModuleType("core.db"); database.get_db = get_db
++        deps = types.ModuleType("core.deps"); deps.get_current_user = get_current_user
++        name = "domains.research_reports._isolated_router_test"
++        source = Path(__file__).resolve().parents[1] / "domains" / "research_reports" / "router.py"
++        spec = importlib.util.spec_from_file_location(name, source)
++        module = importlib.util.module_from_spec(spec)
++        # Temporary module substitution affects this isolated router only. It
++        # neither imports nor mutates the production app's configuration/auth.
++        with patch.dict(sys.modules, {"core": core, "core.config": config, "core.db": database,
++                                     "core.deps": deps, name: module}):
++            spec.loader.exec_module(module)
++        self.router_module = module
++        app = FastAPI()
++        app.include_router(module.router)
++        self.client = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://asgi.test")
++
++    async def asyncTearDown(self):
++        await self.client.aclose()
++
++    async def request(self, method, path=PREFIX, *, owner="user:A", mode="cookie", csrf=True, headers=None, **kwargs):
++        request_headers = {"x-test-mode": mode}
++        if owner is not None:
++            request_headers["x-test-owner"] = owner
++        if csrf:
++            request_headers.update({"cookie": "test-csrf=synthetic-csrf", "X-Test-CSRF": "synthetic-csrf"})
++        request_headers.update(headers or {})
++        response = await self.client.request(method, path, headers=request_headers, **kwargs)
++        self.assertEqual(response.headers.get("cache-control"), "no-store")
++        self.assertEqual(response.headers.get("pragma"), "no-cache")
++        return response
++
++    async def save(self, *, owner="user:A", value=None, **kwargs):
++        return await self.request("POST", owner=owner, json={"bundle": value or bundle(), "confirm_storage": True}, **kwargs)
++
++    async def test_exact_save_list_get_delete_envelopes_and_private_headers(self):
++        saved = await self.save()
++        self.assertEqual(saved.status_code, 200)
++        self.assertEqual(set(saved.json()), {"report", "replay"})
++        metadata = saved.json()["report"]
++        self.assertEqual(set(metadata), {"id", "title", "saved_at", "byte_size"})
++        listing = await self.request("GET")
++        self.assertEqual(listing.json(), {"reports": [metadata], "used_bytes": metadata["byte_size"],
++            "limits": {"max_reports": 20, "max_report_bytes": 8388608, "max_total_bytes": 10485760}})
++        loaded = await self.request("GET", f"{PREFIX}/{metadata['id']}")
++        self.assertEqual(loaded.json(), {"report": {**metadata, "bundle": bundle()}})
++        deleted = await self.request("DELETE", f"{PREFIX}/{metadata['id']}")
++        self.assertEqual(deleted.json(), {"deleted": True})
++        self.assertEqual((await self.request("GET")).json()["used_bytes"], 0)
++        self.assertEqual(self.auth_calls, 5)
++
++    async def test_authentication_required_on_every_route_without_exposing_dependency_details(self):
++        for method, path in [("GET", PREFIX), ("POST", PREFIX), ("GET", f"{PREFIX}/{uuid4()}"), ("DELETE", f"{PREFIX}/{uuid4()}")]:
++            response = await self.request(method, path, owner=None)
++            self.assertEqual(response.status_code, 401)
++            self.assertNotIn("PRIVATE_AUTHENTICATION_TRACE", response.text)
++        self.assertEqual(self.auth_calls, 4)
++        self.assertEqual(self.database_lookups, 0)
++        self.assertEqual(self.collection.calls, [])
++
++    async def test_cookie_csrf_cannot_be_bypassed_with_arbitrary_bearer_header(self):
++        saved = (await self.save()).json()["report"]
++        self.collection.calls.clear()
++        for method, path in [("POST", PREFIX), ("DELETE", f"{PREFIX}/{saved['id']}")]:
++            for headers in [{}, {"Authorization": "Bearer irrelevant-header"},
++                            {"cookie": "test-csrf=cookie-value", "X-Test-CSRF": "wrong-value"},
++                            {"X-Test-CSRF": "header-without-cookie"}]:
++                response = await self.request(method, path, csrf=False, headers=headers,
++                                              json={"bundle": bundle(), "confirm_storage": True})
++                self.assertEqual(response.status_code, 403)
++                self.assertEqual(response.json()["detail"]["code"], "RESEARCH_REPORT_CSRF")
++        self.assertEqual(self.collection.calls, [])
++        # Cookie-authenticated reads don't mutate storage and need no CSRF.
++        self.assertEqual((await self.request("GET", csrf=False)).status_code, 200)
++
++    async def test_only_trusted_bearer_ci_auth_mode_skips_csrf(self):
++        saved = await self.save(mode="bearer_ci", csrf=False)
++        self.assertEqual(saved.status_code, 200)
++        deleted = await self.request("DELETE", f"{PREFIX}/{saved.json()['report']['id']}", mode="bearer_ci", csrf=False)
++        self.assertEqual(deleted.status_code, 200)
++        for mode in ("bearer", "anonymous", ""):
++            self.assertEqual((await self.request("GET", mode=mode)).status_code, 401)
++
++    async def test_pending_account_deletion_blocks_all_routes(self):
++        for method, path in [("GET", PREFIX), ("POST", PREFIX), ("GET", f"{PREFIX}/{uuid4()}"), ("DELETE", f"{PREFIX}/{uuid4()}")]:
++            response = await self.request(method, path, headers={"x-test-deleting": "yes"})
++            self.assertEqual(response.status_code, 403)
++        self.assertEqual(self.database_lookups, 0)
++
++    async def test_query_parameters_and_client_owner_claims_are_rejected(self):
++        for method in ("GET", "POST", "DELETE"):
++            path = PREFIX if method != "DELETE" else f"{PREFIX}/{uuid4()}"
++            response = await self.request(method, path + "?owner=user:B", json={"bundle": bundle(), "confirm_storage": True})
++            self.assertEqual(response.status_code, 400)
++        for extra in ("owner", "owner_id", "user_id", "id", "saved_at"):
++            response = await self.request("POST", json={"bundle": bundle(), "confirm_storage": True, extra: "untrusted"})
++            self.assertEqual(response.status_code, 400)
++        self.assertEqual(self.database_lookups, 0)
++
++    async def test_explicit_boolean_confirmation_is_mandatory(self):
++        variants = [{"bundle": bundle()}, {"bundle": bundle(), "confirm_storage": False},
++                    {"bundle": bundle(), "confirm_storage": 1}, {"bundle": bundle(), "confirm_storage": "true"},
++                    {"confirm_storage": True}, [], None]
++        for value in variants:
++            response = await self.request("POST", content=json.dumps(value), headers={"content-type": "application/json"})
++            self.assertEqual(response.status_code, 400)
++        self.assertEqual(self.database_lookups, 0)
++
++    async def test_malformed_utf8_duplicate_keys_and_non_json_content_are_rejected(self):
++        variants = [b"\xff", b"{bad}", b'{"bundle":{},"confirm_storage":true,"confirm_storage":true}',
++                    b'{"bundle":{"manifest":1,"manifest":2},"confirm_storage":true}',
++                    b'{"bundle":NaN,"confirm_storage":true}']
++        for content in variants:
++            response = await self.request("POST", content=content, headers={"content-type": "application/json"})
++            self.assertEqual(response.status_code, 400)
++        for content_type in ("text/plain", "application/x-www-form-urlencoded", "application/jsonp", ""):
++            response = await self.request("POST", content=b"{}", headers={"content-type": content_type})
++            self.assertEqual(response.status_code, 415)
++        self.assertEqual(self.database_lookups, 0)
++
++    async def test_oversized_declared_body_rejected_before_streaming_and_database(self):
++        streamed = []
++
++        async def body():
++            streamed.append(True)
++            yield b"{}"
++
++        response = await self.request("POST", content=body(), headers={"content-type": "application/json",
++            "content-length": str(self.router_module.MAX_BODY_BYTES + 1)})
++        self.assertEqual(response.status_code, 413)
++        self.assertEqual(streamed, [])
++        self.assertEqual(self.database_lookups, 0)
++
++    async def test_streamed_body_cap_applies_without_or_with_forged_content_length(self):
++        self.router_module.MAX_BODY_BYTES = 512
++        for declared in (None, "1"):
++            chunks = []
++
++            async def body():
++                for index in range(5):
++                    chunks.append(index)
++                    yield b" " * 300
++
++            headers = {"content-type": "application/json"}
++            if declared is not None:
++                headers["content-length"] = declared
++            response = await self.request("POST", content=body(), headers=headers)
++            self.assertEqual(response.status_code, 413)
++            self.assertEqual(chunks, [0, 1])
++        self.assertEqual(self.database_lookups, 0)
++
++    async def test_missing_and_foreign_valid_ids_are_indistinguishable(self):
++        saved = (await self.save()).json()["report"]
++        for method in ("GET", "DELETE"):
++            foreign = await self.request(method, f"{PREFIX}/{saved['id']}", owner="user:B")
++            missing = await self.request(method, f"{PREFIX}/{uuid4()}", owner="user:B")
++            self.assertEqual(foreign.status_code, 404)
++            self.assertEqual(foreign.json(), missing.json())
++        self.assertEqual((await self.request("GET", owner="user:B")).json()["reports"], [])
++
++    async def test_client_idempotency_header_never_skips_ownership_or_payload_validation(self):
++        headers = {"Idempotency-Key": "same-client-key"}
++        first = await self.save(headers=headers)
++        replay = await self.save(headers=headers)
++        different = await self.save(value=bundle(title="Another snapshot"), headers=headers)
++        foreign = await self.save(owner="user:B", headers=headers)
++        self.assertTrue(replay.json()["replay"])
++        self.assertEqual(replay.json()["report"], first.json()["report"])
++        self.assertNotEqual(different.json()["report"]["id"], first.json()["report"]["id"])
++        self.assertNotEqual(foreign.json()["report"]["id"], first.json()["report"]["id"])
++        malformed = await self.request("POST", json={"bundle": bundle(), "confirm_storage": False}, headers=headers)
++        self.assertEqual(malformed.status_code, 400)
++
++    async def test_auth_body_and_database_deadlines_return_private_generic_errors(self):
++        self.router_module.REQUEST_TIMEOUT_SECONDS = 0.01
++        self.auth_delay = 0.05
++        response = await self.request("GET")
++        self.assertEqual(response.status_code, 504)
++        self.auth_delay = 0
++
++        async def slow_body():
++            yield b"{"
++            await asyncio.sleep(0.05)
++            yield b"}"
++
++        response = await self.request("POST", content=slow_body(), headers={"content-type": "application/json"})
++        self.assertEqual(response.status_code, 504)
++        original_find = self.collection.find_one
++
++        async def slow_find(query):
++            await asyncio.sleep(0.05)
++            return await original_find(query)
++
++        self.collection.find_one = slow_find
++        response = await self.request("GET")
++        self.assertEqual(response.status_code, 504)
++        self.assertEqual(response.json()["detail"]["code"], "RESEARCH_REPORT_TIMEOUT")
++
++    async def test_database_errors_do_not_escape_and_committed_save_retry_replays(self):
++        self.collection.fail_after_append = True
++        response = await self.save()
++        self.assertEqual(response.status_code, 503)
++        self.assertNotIn("SYNTHETIC_INTERNAL_DATABASE_TRACE", response.text)
++        retry = await self.save()
++        self.assertEqual(retry.status_code, 200)
++        self.assertTrue(retry.json()["replay"])
++
++    async def test_rate_limits_are_owner_scoped_and_memory_bounded_with_expiry(self):
++        current = [0.0]
++        limiter = self.router_module._OwnerRateLimiter(requests=2, max_owners=2, window_seconds=60, clock=lambda: current[0])
++        self.router_module._limiter = limiter
++        self.assertEqual((await self.request("GET")).status_code, 200)
++        self.assertEqual((await self.request("GET")).status_code, 200)
++        self.assertEqual((await self.request("GET")).status_code, 429)
++        self.assertEqual((await self.request("GET", owner="user:B")).status_code, 200)
++        self.assertEqual((await self.request("GET", owner="user:C")).status_code, 429)
++        self.assertEqual(len(limiter.windows), 2)
++        current[0] = 60.0
++        self.assertEqual((await self.request("GET", owner="user:C")).status_code, 200)
++        self.assertEqual(len(limiter.windows), 1)
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/backend/tests/test_research_reports_privacy.py b/backend/tests/test_research_reports_privacy.py
+new file mode 100644
+--- /dev/null
++++ b/backend/tests/test_research_reports_privacy.py
+@@ -0,0 +1,83 @@
++"""Synthetic privacy checks; never connect to or erase a real database."""
++import ast
++import importlib.util
++from pathlib import Path
++import sys
++import types
++import unittest
++from unittest.mock import AsyncMock, patch
++
++from domains.research_reports.privacy import erase_account_reports, report_export_index
++
++
++class ResearchPrivacyTests(unittest.IsolatedAsyncioTestCase):
++    async def test_export_is_owner_scoped_metadata_with_explicit_separate_content(self):
++        db = types.SimpleNamespace(research_report_buckets=object())
++        receipt = {"id": "12345678-1234-1234-1234-123456789abc", "title": "Synthetic", "saved_at": "2026-09-13T00:00:00Z", "byte_size": 20}
++        with patch("domains.research_reports.privacy.ResearchReportService") as service:
++            service.return_value.list = AsyncMock(return_value={"reports": [receipt], "used_bytes": 20, "limits": {}})
++            exported = await report_export_index(db, "owner-a")
++            service.assert_called_once_with(db.research_report_buckets)
++            service.return_value.list.assert_awaited_once_with("owner-a")
++        self.assertIs(exported["content_included"], False)
++        self.assertEqual(exported["reports"][0]["download_path"], "/api/v1/research/reports/" + receipt["id"])
++        self.assertNotIn("bundle", exported["reports"][0])
++
++    async def test_erasure_targets_only_exact_owner_bucket(self):
++        bucket = types.SimpleNamespace(delete_one=AsyncMock())
++        await erase_account_reports(types.SimpleNamespace(research_report_buckets=bucket), "owner-a")
++        bucket.delete_one.assert_awaited_once_with({"_id": "owner-a"})
++
++
++class InstalledResearchWiringTests(unittest.IsolatedAsyncioTestCase):
++    async def test_legacy_cache_cannot_skip_report_auth_or_resurrect_deleted_receipt(self):
++        backend = Path(__file__).resolve().parents[1]
++        path = backend / "middleware/idempotency.py"
++        if not path.exists():
++            self.skipTest("Run this installed-wiring check in the actual Fynd backend")
++        from starlette.requests import Request
++        from starlette.responses import Response
++        core = types.ModuleType("core")
++        core.__path__ = []
++        db = types.ModuleType("core.db")
++        def forbidden_db():
++            raise AssertionError("Legacy cache must not be touched for report routes")
++        db.get_db = forbidden_db
++        config = types.ModuleType("core.config")
++        config.settings = types.SimpleNamespace(SESSION_COOKIE_NAME="synthetic_session")
++        security = types.ModuleType("core.security")
++        security.decode_access_token = lambda _: None
++        sessions = types.ModuleType("core.sessions")
++        sessions.get_session = AsyncMock(side_effect=AssertionError("Legacy auth must not run"))
++        time_utils = types.ModuleType("core.time_utils")
++        time_utils.utc_now = lambda: None
++        core.sessions = sessions
++        spec = importlib.util.spec_from_file_location("isolated_report_idempotency", path)
++        module = importlib.util.module_from_spec(spec)
++        with patch.dict(sys.modules, {"core": core, "core.db": db, "core.config": config, "core.security": security, "core.sessions": sessions, "core.time_utils": time_utils}):
++            spec.loader.exec_module(module)
++        middleware = module.IdempotencyMiddleware(lambda *_: None)
++        for route in ["/api/v1/research/reports", "/api/v1/research/reports/12345678-1234-1234-1234-123456789abc"]:
++            request = Request({"type": "http", "method": "POST", "path": route, "headers": [(b"idempotency-key", b"synthetic-old-cache-key")], "query_string": b""})
++            fresh_auth = AsyncMock(return_value=Response(status_code=401))
++            result = await middleware.dispatch(request, fresh_auth)
++            self.assertEqual(result.status_code, 401)
++            fresh_auth.assert_awaited_once_with(request)
++
++    async def test_actual_server_mount_and_privacy_hooks_exist(self):
++        backend = Path(__file__).resolve().parents[1]
++        server = backend / "server.py"
++        privacy = backend / "domains/privacy/service.py"
++        if not server.exists() or not privacy.exists():
++            self.skipTest("Run this installed-wiring check in the actual Fynd backend")
++        server_tree = ast.parse(server.read_text())
++        self.assertTrue(any(isinstance(n, ast.ImportFrom) and n.module == "domains.research_reports.router" for n in ast.walk(server_tree)))
++        self.assertTrue(any(isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr == "include_router" and any(isinstance(a, ast.Name) and a.id == "research_reports_router" for a in n.args) for n in ast.walk(server_tree)))
++        privacy_tree = ast.parse(privacy.read_text())
++        functions = {n.name: n for n in privacy_tree.body if isinstance(n, ast.AsyncFunctionDef)}
++        for function, target in [("_build_bundle", "report_export_index"), ("sweep_expired_deletions", "erase_account_reports")]:
++            self.assertTrue(any(isinstance(n, ast.Await) and isinstance(n.value, ast.Call) and isinstance(n.value.func, ast.Name) and n.value.func.id == target for n in ast.walk(functions[function])))
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/frontend/src/lib/researchAccount.js b/frontend/src/lib/researchAccount.js
+new file mode 100644
+--- /dev/null
++++ b/frontend/src/lib/researchAccount.js
+@@ -0,0 +1,91 @@
++import { exportReport, parseReport } from './researchReport';
++
++export const MAX_SAVED_REPORT_BYTES = 8 * 1024 * 1024;
++export const ACCOUNT_LIMITS = Object.freeze({ max_reports: 20, max_report_bytes: MAX_SAVED_REPORT_BYTES, max_total_bytes: 10 * 1024 * 1024 });
++const UUID = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
++const FILES = ['evidence.jsonl', 'candidates.jsonl', 'outcomes.jsonl', 'edges.jsonl'];
++const META_FIELDS = ['id', 'title', 'saved_at', 'byte_size'];
++const plain = value => value !== null && typeof value === 'object' && !Array.isArray(value) && [Object.prototype, null].includes(Object.getPrototypeOf(value));
++const bytes = text => new Blob([text]).size;
++const exactKeys = (value, names) => plain(value) && Reflect.ownKeys(value).length === names.length && names.every(name => Object.prototype.hasOwnProperty.call(value, name));
++const validTitle = value => typeof value === 'string' && Boolean(value.trim()) && value.length <= 500 && !Array.from(value).some(character => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127);
++
++export class ResearchAccountError extends Error {
++  constructor(code, message) { super(message); this.name = 'ResearchAccountError'; this.code = code; }
++}
++function invalidResponse() { throw new ResearchAccountError('ACCOUNT_INVALID_RESPONSE', 'Fynd returned an invalid saved-report response. Your current report has not been changed.'); }
++function invalidSnapshot() { throw new ResearchAccountError('ACCOUNT_INVALID_SNAPSHOT', 'This research snapshot is invalid or unsupported. Your current report has not been changed.'); }
++function tooLarge() { throw new ResearchAccountError('ACCOUNT_REPORT_TOO_LARGE', 'This report exceeds the 8 MiB account-save limit. You can still use the local report and download it.'); }
++function reportUuid(value) {
++  if (typeof value !== 'string' || !UUID.test(value)) throw new ResearchAccountError('ACCOUNT_INVALID_REPORT_ID', 'A valid saved-report ID is required.');
++  return value.toLowerCase();
++}
++function validTimestamp(value) {
++  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})$/.test(value)) return false;
++  const year = Number(value.slice(0, 4)), month = Number(value.slice(5, 7)), day = Number(value.slice(8, 10));
++  const days = [31, (year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0)) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
++  if (month < 1 || month > 12 || day < 1 || day > days[month - 1] || Number(value.slice(11, 13)) > 23 || Number(value.slice(14, 16)) > 59 || Number(value.slice(17, 19)) > 59) return false;
++  return Number.isFinite(Date.parse(value));
++}
++export function validateSavedMetadata(value) {
++  if (!exactKeys(value, META_FIELDS) || typeof value.id !== 'string' || !UUID.test(value.id) || !validTitle(value.title) || !validTimestamp(value.saved_at) ||
++      !Number.isSafeInteger(value.byte_size) || value.byte_size < 1 || value.byte_size > MAX_SAVED_REPORT_BYTES) invalidResponse();
++  return { id: value.id.toLowerCase(), title: value.title, saved_at: value.saved_at, byte_size: value.byte_size };
++}
++
++// These are source files, not a second evidence schema. The existing parser
++// regenerates derived relations, URL tables, CSV and statistics when reopened.
++function snapshotText(bundle) {
++  if (!exactKeys(bundle, ['manifest', 'files']) || !plain(bundle.manifest) || !exactKeys(bundle.files, FILES)) invalidSnapshot();
++  const manifestKeys = ['schemaVersion', 'title', 'omissions', 'warnings', ...(Object.prototype.hasOwnProperty.call(bundle.manifest, 'runSummary') ? ['runSummary'] : [])];
++  if (!exactKeys(bundle.manifest, manifestKeys) || bundle.manifest.schemaVersion !== 1 || !validTitle(bundle.manifest.title) ||
++      !Array.isArray(bundle.manifest.omissions) || !Array.isArray(bundle.manifest.warnings) || bundle.manifest.omissions.length > 1000 || bundle.manifest.warnings.length > 1000 ||
++      [...bundle.manifest.omissions, ...bundle.manifest.warnings].some(value => typeof value !== 'string' || value.length > 1000)) invalidSnapshot();
++  for (const name of FILES) {
++    if (typeof bundle.files[name] !== 'string') invalidSnapshot();
++    if (bytes(bundle.files[name]) > MAX_SAVED_REPORT_BYTES) tooLarge();
++  }
++  let text;
++  try { text = JSON.stringify(bundle); } catch { invalidSnapshot(); }
++  if (bytes(text) > MAX_SAVED_REPORT_BYTES) tooLarge();
++  return text;
++}
++export function accountSnapshot(report) {
++  let exported;
++  try { exported = exportReport(report); } catch { invalidSnapshot(); }
++  const { manifest, files } = exported;
++  const bundle = {
++    manifest: { schemaVersion: 1, title: manifest.title, omissions: manifest.omissions, warnings: manifest.warnings, ...(manifest.runSummary ? { runSummary: manifest.runSummary } : {}) },
++    files: Object.fromEntries(FILES.map(name => [name, files[name]])),
++  };
++  snapshotText(bundle);
++  return bundle;
++}
++
++export function validateAccountListing(value) {
++  if (!exactKeys(value, ['reports', 'used_bytes', 'limits']) || !Array.isArray(value.reports) || value.reports.length > ACCOUNT_LIMITS.max_reports ||
++      !exactKeys(value.limits, Object.keys(ACCOUNT_LIMITS)) || Object.entries(ACCOUNT_LIMITS).some(([name, limit]) => value.limits[name] !== limit) ||
++      !Number.isSafeInteger(value.used_bytes) || value.used_bytes < 0 || value.used_bytes > ACCOUNT_LIMITS.max_total_bytes) invalidResponse();
++  const reports = value.reports.map(validateSavedMetadata);
++  if (new Set(reports.map(report => report.id)).size !== reports.length || reports.reduce((sum, report) => sum + report.byte_size, 0) !== value.used_bytes) invalidResponse();
++  return { reports, used_bytes: value.used_bytes, limits: { ...ACCOUNT_LIMITS } };
++}
++export function validateSavedReceipt(value) {
++  if (!exactKeys(value, ['report', 'replay']) || typeof value.replay !== 'boolean') invalidResponse();
++  return { report: validateSavedMetadata(value.report), replay: value.replay };
++}
++export function validateDeleteReceipt(value) {
++  if (!exactKeys(value, ['deleted']) || value.deleted !== true) invalidResponse();
++  return { deleted: true };
++}
++export function reopenSavedSnapshot(detail, expectedUuid) {
++  const expected = reportUuid(expectedUuid);
++  if (!exactKeys(detail, ['report']) || !exactKeys(detail.report, [...META_FIELDS, 'bundle'])) invalidResponse();
++  const metadata = validateSavedMetadata(Object.fromEntries(META_FIELDS.map(name => [name, detail.report[name]])));
++  if (metadata.id !== expected) invalidResponse();
++  const text = snapshotText(detail.report.bundle);
++  // byte_size is the server's canonical JSON quota measurement. Equivalent
++  // Python/JavaScript numeric encodings need not have identical byte lengths.
++  if (detail.report.bundle.manifest.title !== metadata.title) invalidResponse();
++  try { return parseReport(text, 'saved-report.json'); } catch { invalidSnapshot(); }
++}
+diff --git a/frontend/src/lib/researchAccount.test.js b/frontend/src/lib/researchAccount.test.js
+new file mode 100644
+--- /dev/null
++++ b/frontend/src/lib/researchAccount.test.js
+@@ -0,0 +1,147 @@
++import { buildReport, exportReport, parseReport } from './researchReport';
++import { ACCOUNT_LIMITS, MAX_SAVED_REPORT_BYTES, ResearchAccountError, accountSnapshot, reopenSavedSnapshot, validateSavedMetadata, validateAccountListing, validateSavedReceipt, validateDeleteReceipt } from './researchAccount';
++
++const ID = '12345678-1234-4234-8234-123456789abc';
++const OTHER_ID = '12345678-1234-4234-8234-123456789abd';
++const metadata = (extra = {}) => ({ id: ID, title: 'Stored synthetic research', saved_at: '2026-09-13T12:30:00.123456+00:00', byte_size: 100, ...extra });
++const evidence = () => buildReport({ title: 'Stored synthetic research', records: [
++  { id: 'source-a', url: 'https://example.org/paper', title: 'Synthetic HTML', kind: 'studies', content: 'Synthetic retained text, not a real finding.', contentStatus: 'full', doi: '10.9999/synthetic' },
++  { id: 'source-b', url: 'https://example.net/paper.pdf', title: 'Synthetic PDF', kind: 'studies', doi: '10.9999/synthetic' },
++], trace: { candidates: [{ url: 'https://example.org/paper', selected: true, reason: 'Synthetic reason' }], outcomes: [{ url: 'https://example.org/paper', status: 'completed' }], edges: [{ sourceUrl: 'https://example.org/search', targetUrl: 'https://example.org/paper' }] }, omissions: ['Synthetic fixture only.'], warnings: ['No live verification.'] });
++const emptyRun = () => buildReport({
++  id: '00000000-0000-4000-8000-000000000001', status: 'completed', title: 'Stored synthetic research',
++  input: { urls: [], boards: [{ provider: 'lever', board: 'synthetic', limit: 20 }], pageLimit: 1, followLinks: false },
++  progress: { total: 1, done: 1, pending: 0, inflight: 0, completed: 1, partial: 0, failed: 0, uncertain: 0 },
++  result: { pages: [], jobs: [], records: [], incomplete: false,
++    counts: { savedPages: 0, savedJobs: 0, structuredRecords: 0, successfulEmptyBoards: 1, selectedPages: 0, attemptedPages: 0, discoveredUrls: 0, notFetched: 0, frontierOmitted: 0, linksSkipped: 0, omittedRecords: 0, truncatedRecords: 0 },
++    errors: [], warnings: [], searchSlices: [],
++  },
++});
++const detailFor = (bundle, extra = {}) => ({ report: { ...metadata({ title: bundle.manifest.title, byte_size: new Blob([JSON.stringify(bundle)]).size }), bundle, ...extra } });
++const listing = (reports = []) => ({ reports, used_bytes: reports.reduce((sum, report) => sum + report.byte_size, 0), limits: { ...ACCOUNT_LIMITS } });
++
++describe('owner-scoped research snapshot boundary', () => {
++  test.each([evidence, emptyRun])('round-trips the full normalized report without storing derived files', fixture => {
++    const report = fixture(), snapshot = accountSnapshot(report);
++    expect(Object.keys(snapshot.files)).toEqual(['evidence.jsonl', 'candidates.jsonl', 'outcomes.jsonl', 'edges.jsonl']);
++    expect(snapshot.manifest.reportId).toBeUndefined();
++    expect(snapshot.manifest.counts).toBeUndefined();
++    expect(reopenSavedSnapshot(detailFor(snapshot), ID)).toEqual(report);
++    expect(parseReport(JSON.stringify(snapshot), 'saved-report.json')).toEqual(report);
++  });
++
++  test('keeps read-only snapshots independent of account and ownership identifiers', () => {
++    const snapshot = accountSnapshot(evidence());
++    expect(Object.keys(snapshot)).toEqual(['manifest', 'files']);
++    expect(snapshot.owner_id).toBeUndefined();
++    expect(snapshot.accountId).toBeUndefined();
++    const receipt = validateSavedReceipt({ report: metadata(), replay: false });
++    expect(receipt).toEqual({ report: metadata(), replay: false });
++    expect(validateSavedReceipt({ report: metadata(), replay: true }).replay).toBe(true);
++  });
++  test('a valid Unicode body crossing the 60000-unit limit remains UTF-8-safe in actual account snapshots', () => {
++    const text = 'a'.repeat(59999);
++    const report = buildReport({ title: 'Unicode source boundary', records: [{ url: 'https://example.org/unicode', content: `${text}😀` }] });
++    const snapshot = accountSnapshot(report);
++    expect(JSON.parse(snapshot.files['evidence.jsonl']).content).toBe(text);
++    expect(reopenSavedSnapshot(detailFor(snapshot), ID)).toEqual(report);
++  });
++
++  test('rejects over-8 MiB account snapshots without lowering local portable limits', () => {
++    const report = buildReport(Array.from({ length: 44 }, (_, index) => ({ url: `https://example.org/large-${index}`, title: 'Synthetic escaped text', content: '\\'.repeat(48000), contentStatus: 'unknown' })));
++    const portable = JSON.stringify(exportReport(report));
++    expect(new Blob([portable]).size).toBeGreaterThan(MAX_SAVED_REPORT_BYTES);
++    expect(new Blob([portable]).size).toBeLessThan(20 * 1024 * 1024);
++    expect(() => accountSnapshot(report)).toThrow(ResearchAccountError);
++    try { accountSnapshot(report); } catch (error) { expect(error.code).toBe('ACCOUNT_REPORT_TOO_LARGE'); }
++    expect(parseReport(portable).id).toBe(report.id);
++  });
++
++  test('validates complete account listings and exact configured caps', () => {
++    expect(validateAccountListing(listing())).toEqual(listing());
++    expect(validateAccountListing(listing([metadata()])).reports).toEqual([metadata()]);
++    expect(ACCOUNT_LIMITS).toEqual({ max_reports: 20, max_report_bytes: 8388608, max_total_bytes: 10485760 });
++  });
++
++  test.each([
++    { id: 'not-a-uuid' }, { title: '' }, { title: 'x'.repeat(501) }, { title: 'bad\u0000title' },
++    { saved_at: '2026-02-30T10:00:00Z' }, { saved_at: '2026-09-13' }, { saved_at: '2026-09-13T25:00:00Z' },
++    { byte_size: 0 }, { byte_size: MAX_SAVED_REPORT_BYTES + 1 }, { byte_size: 1.5 }, { owner_id: 'someone' },
++  ])('rejects malformed or expanded listing metadata', change => {
++    expect(() => validateSavedMetadata(metadata(change))).toThrow(ResearchAccountError);
++  });
++
++  test('accepts timezone-aware timestamps and canonicalizes UUID case only', () => {
++    const valid = metadata({ id: ID.toUpperCase(), saved_at: '2024-02-29T12:00:00Z' });
++    expect(validateSavedMetadata(valid)).toEqual({ ...valid, id: ID });
++  });
++
++  test('rejects inconsistent, duplicate, excessive and malformed listings', () => {
++    const duplicate = listing([metadata(), metadata({ id: ID.toUpperCase() })]);
++    expect(() => validateAccountListing(duplicate)).toThrow(ResearchAccountError);
++    expect(() => validateAccountListing({ ...listing([metadata()]), used_bytes: 101 })).toThrow(ResearchAccountError);
++    expect(() => validateAccountListing({ ...listing(), limits: { ...ACCOUNT_LIMITS, max_reports: 200 } })).toThrow(ResearchAccountError);
++    expect(() => validateAccountListing({ ...listing(), reports: 'invalid' })).toThrow(ResearchAccountError);
++    expect(() => validateAccountListing({ ...listing(), used_bytes: -1 })).toThrow(ResearchAccountError);
++    expect(() => validateAccountListing({ ...listing(), owner_id: 'forged' })).toThrow(ResearchAccountError);
++    expect(() => validateAccountListing(listing(Array.from({ length: 21 }, () => metadata())))).toThrow(ResearchAccountError);
++    expect(() => validateAccountListing(listing([metadata({ byte_size: MAX_SAVED_REPORT_BYTES }), metadata({ id: OTHER_ID, byte_size: MAX_SAVED_REPORT_BYTES })]))).toThrow(ResearchAccountError);
++  });
++
++  test('requires the exact saved UUID and well-formed receipts', () => {
++    const snapshot = accountSnapshot(evidence());
++    expect(() => reopenSavedSnapshot(detailFor(snapshot), OTHER_ID)).toThrow(ResearchAccountError);
++    expect(() => reopenSavedSnapshot(detailFor(snapshot), `/reports/${ID}`)).toThrow(ResearchAccountError);
++    expect(() => reopenSavedSnapshot({ report: metadata() }, ID)).toThrow(ResearchAccountError);
++    expect(() => reopenSavedSnapshot(detailFor(snapshot, { byte_size: MAX_SAVED_REPORT_BYTES + 1 }), ID)).toThrow(ResearchAccountError);
++    expect(() => reopenSavedSnapshot(detailFor(snapshot, { title: 'Wrong metadata title' }), ID)).toThrow(ResearchAccountError);
++    expect(() => validateSavedReceipt({ report: metadata(), replay: 'false' })).toThrow(ResearchAccountError);
++    expect(() => validateSavedReceipt({ report: metadata(), replay: false, owner_id: 'other' })).toThrow(ResearchAccountError);
++    expect(validateDeleteReceipt({ deleted: true })).toEqual({ deleted: true });
++    expect(() => validateDeleteReceipt({ deleted: false })).toThrow(ResearchAccountError);
++    expect(() => validateDeleteReceipt({ deleted: true, bundle: {} })).toThrow(ResearchAccountError);
++  });
++
++  test('reparses untrusted saved content instead of accepting supplied report objects', () => {
++    const snapshot = accountSnapshot(evidence());
++    snapshot.files['evidence.jsonl'] = JSON.stringify({ url: 'javascript:alert(1)', title: 'Unsafe saved content' });
++    expect(() => reopenSavedSnapshot(detailFor(snapshot), ID)).toThrow(ResearchAccountError);
++    snapshot.files['evidence.jsonl'] = '{"url":"https://example.org","__proto__":{"polluted":true}}';
++    expect(() => reopenSavedSnapshot(detailFor(snapshot), ID)).toThrow(ResearchAccountError);
++    const wrong = detailFor(accountSnapshot(evidence())); wrong.report.bundle.files['../secret'] = 'unsafe';
++    expect(() => reopenSavedSnapshot(wrong, ID)).toThrow(ResearchAccountError);
++    expect(() => accountSnapshot(null)).toThrow(ResearchAccountError);
++    const badTitle = evidence(); badTitle.title = 'Invalid\naccount label';
++    expect(() => accountSnapshot(badTitle)).toThrow(ResearchAccountError);
++  });
++
++  test('treats server byte_size as bounded quota metadata, not a browser JSON fingerprint', () => {
++    const report = evidence(), snapshot = accountSnapshot(report), detail = detailFor(snapshot);
++    detail.report.byte_size += 2;
++    expect(reopenSavedSnapshot(detail, ID)).toEqual(report);
++    const saved = metadata({ byte_size: detail.report.byte_size });
++    expect(validateSavedReceipt({ report: saved, replay: false }).report.byte_size).toBe(detail.report.byte_size);
++  });
++
++  test('retains up to 1000 notes in account envelopes and rejects overflow without truncation', () => {
++    const report = evidence();
++    report.warnings = Array.from({ length: 1000 }, (_, index) => `Warning ${index}`);
++    report.omissions = [...report.omissions, ...Array.from({ length: 1000 - report.omissions.length }, (_, index) => `Omission ${index}`)];
++    const snapshot = accountSnapshot(report);
++    expect(snapshot.manifest.warnings).toEqual(report.warnings);
++    expect(snapshot.manifest.omissions).toEqual(report.omissions);
++    expect(reopenSavedSnapshot(detailFor(snapshot), ID)).toEqual(report);
++    report.warnings.push('Overflow');
++    expect(() => accountSnapshot(report)).toThrow(ResearchAccountError);
++    report.warnings.pop(); report.omissions.push('Overflow');
++    expect(() => accountSnapshot(report)).toThrow(ResearchAccountError);
++  });
++
++  test('rejects oversized saved responses and unsafe envelopes before reopening', () => {
++    const snapshot = accountSnapshot(evidence());
++    snapshot.files['evidence.jsonl'] = 'x'.repeat(MAX_SAVED_REPORT_BYTES + 1);
++    const detail = { report: { ...metadata(), bundle: snapshot } };
++    expect(() => reopenSavedSnapshot(detail, ID)).toThrow(ResearchAccountError);
++    expect(() => reopenSavedSnapshot({ ...detailFor(accountSnapshot(evidence())), accountId: 'forged' }, ID)).toThrow(ResearchAccountError);
++  });
++});
+diff --git a/frontend/src/components/ResearchAccountLibrary.jsx b/frontend/src/components/ResearchAccountLibrary.jsx
+new file mode 100644
+--- /dev/null
++++ b/frontend/src/components/ResearchAccountLibrary.jsx
+@@ -0,0 +1,164 @@
++import React, { useCallback, useEffect, useRef, useState } from 'react';
++import { api } from '../lib/api';
++import { ResearchAccountError, accountSnapshot, reopenSavedSnapshot, validateAccountListing, validateSavedReceipt, validateDeleteReceipt } from '../lib/researchAccount';
++
++const endpoint = '/api/v1/research/reports';
++const sizeLabel = bytes => `${(bytes / (1024 * 1024)).toFixed(2)} MiB`;
++
++function friendlyError(error, operation) {
++  if (error instanceof ResearchAccountError) return error.message;
++  const status = error?.response?.status;
++  if (status === 401) return 'Your Fynd session has expired. Sign in again, then retry.';
++  if (status === 403) return 'Your account is not authorized for this action. Check your account permissions and required consent.';
++  if (status === 404) return 'That saved report is unavailable. Choose Saved reports to refresh the list.';
++  if (status === 413) return 'This report exceeds an account-storage limit. Keep it local and download a copy instead.';
++  if (status === 429) return 'Too many account requests. Wait a moment, then retry.';
++  if (status === 503) return 'Account report storage is temporarily unavailable. Try again shortly.';
++  if (operation === 'save' || operation === 'delete') return 'The account change could not be confirmed. It may have completed; refresh Saved reports before retrying.';
++  return 'The saved report could not be loaded. Your open report is unchanged. Try again shortly.';
++}
++
++// This component never persists automatically. Every network request follows a
++// user action; all response data is validated before it reaches a report view.
++export default function ResearchAccountLibrary({ report, onReport, onBusy, resetKey }) {
++  const [acknowledged, setAcknowledged] = useState(false);
++  const [listing, setListing] = useState(null);
++  const [confirmation, setConfirmation] = useState(null);
++  const [busy, setBusy] = useState(null);
++  const [error, setError] = useState('');
++  const [notice, setNotice] = useState('');
++  const mounted = useRef(true), sequence = useRef(0), request = useRef(null);
++  const latestReport = useRef(report), latestReset = useRef(resetKey);
++  const reportCallback = useRef(onReport), busyCallback = useRef(onBusy);
++  latestReport.current = report; latestReset.current = resetKey;
++  reportCallback.current = onReport; busyCallback.current = onBusy;
++
++  const cancel = useCallback(() => {
++    ++sequence.current;
++    const active = request.current;
++    request.current = null;
++    active?.controller.abort();
++    if (mounted.current) setBusy(null);
++    if (active?.kind === 'load') busyCallback.current?.(false);
++  }, []);
++
++  useEffect(() => {
++    mounted.current = true;
++    return () => { mounted.current = false; cancel(); };
++  }, [cancel]);
++
++  useEffect(() => {
++    cancel(); setAcknowledged(false); setConfirmation(null); setError(''); setNotice('');
++  }, [report, resetKey, cancel]);
++
++  function begin(kind, id = '') {
++    cancel(); setError(''); setNotice(''); setConfirmation(null);
++    const active = { kind, id, controller: new AbortController(), version: ++sequence.current, report: latestReport.current, reset: latestReset.current };
++    request.current = active; setBusy({ kind, id });
++    if (kind === 'load') busyCallback.current?.(true);
++    return active;
++  }
++  function current(active) {
++    return mounted.current && sequence.current === active.version && !active.controller.signal.aborted &&
++      latestReport.current === active.report && latestReset.current === active.reset;
++  }
++  function finish(active) {
++    if (!current(active)) return;
++    request.current = null; setBusy(null);
++    if (active.kind === 'load') busyCallback.current?.(false);
++  }
++  function failure(active, problem) {
++    if (current(active)) setError(friendlyError(problem, active.kind));
++  }
++
++  async function loadListing() {
++    const active = begin('list');
++    try {
++      const response = await api.get(endpoint, { signal: active.controller.signal, timeout: 15000 });
++      if (!current(active)) return;
++      const next = validateAccountListing(response?.data);
++      if (current(active)) { setListing(next); setNotice('Saved report list loaded. No evidence report was opened.'); }
++    } catch (problem) { failure(active, problem); }
++    finally { finish(active); }
++  }
++
++  async function save() {
++    if (!report || !acknowledged) return;
++    const active = begin('save');
++    try {
++      const bundle = accountSnapshot(active.report);
++      const response = await api.post(endpoint, { bundle, confirm_storage: true }, { signal: active.controller.signal, timeout: 20000 });
++      if (!current(active)) return;
++      const receipt = validateSavedReceipt(response?.data);
++      // byte_size is the server's bounded canonical size, which can differ from
++      // browser JSON serialization (for example, Python 1.0 versus JS 1).
++      if (receipt.report.title !== bundle.manifest.title) {
++        throw new ResearchAccountError('ACCOUNT_INVALID_RESPONSE', 'Fynd returned inconsistent saved-report details. The save may have completed; refresh Saved reports before retrying.');
++      }
++      if (current(active)) {
++        setAcknowledged(false); setListing(null);
++        setNotice(receipt.replay ? 'This report snapshot is already saved in your Fynd account. Choose Saved reports to refresh the list.' : 'Report snapshot saved in your Fynd account. Choose Saved reports to refresh the list.');
++      }
++    } catch (problem) { failure(active, problem); }
++    finally { finish(active); }
++  }
++
++  async function loadSaved(id) {
++    const active = begin('load', id);
++    try {
++      const response = await api.get(`${endpoint}/${encodeURIComponent(id)}`, { signal: active.controller.signal, timeout: 20000 });
++      if (!current(active)) return;
++      const next = reopenSavedSnapshot(response?.data, id);
++      if (current(active)) {
++        reportCallback.current(next);
++        setNotice('Saved snapshot opened. Its sources were not fetched or independently verified.');
++      }
++    } catch (problem) { failure(active, problem); }
++    finally { finish(active); }
++  }
++
++  async function deleteSaved(id) {
++    if (confirmation !== id) return;
++    const active = begin('delete', id);
++    try {
++      const response = await api.delete(`${endpoint}/${encodeURIComponent(id)}`, { signal: active.controller.signal, timeout: 15000 });
++      if (!current(active)) return;
++      validateDeleteReceipt(response?.data);
++      if (current(active)) {
++        setListing(previous => previous ? {
++          ...previous,
++          reports: previous.reports.filter(item => item.id !== id),
++          used_bytes: Math.max(0, previous.used_bytes - (previous.reports.find(item => item.id === id)?.byte_size || 0)),
++        } : null);
++        setNotice('Saved account copy deleted. Any report already open in this tab is unchanged.');
++      }
++    } catch (problem) { failure(active, problem); }
++    finally { finish(active); }
++  }
++
++  return <section className="liquid-card p-5 space-y-4" aria-labelledby="research-account-heading" data-testid="research-account-library">
++    <div><h2 id="research-account-heading" className="text-lg font-semibold">Your saved research</h2><p className="text-sm muted mt-2">Account storage is optional. Saving explicitly uploads a report snapshot to your private Fynd account; it does not crawl sources or independently verify imported claims.</p></div>
++    <p className="text-xs muted">Limits: 8 MiB per report, 10 MiB total, and 20 saved reports. Larger reports stay local—download them before leaving.</p>
++    <div className="space-y-3">
++      <label className="flex items-start gap-2 text-sm"><input type="checkbox" className="mt-1" checked={acknowledged} disabled={!report || busy?.kind === 'save'} onChange={event => setAcknowledged(event.target.checked)} /><span>I want to store this report in my Fynd account</span></label>
++      <div className="flex flex-wrap gap-2">
++        <button type="button" className="liquid-capsule liquid-primary" disabled={!report || !acknowledged || busy?.kind === 'save'} onClick={save}>{busy?.kind === 'save' ? 'Saving report…' : 'Save report'}</button>
++        <button type="button" className="liquid-capsule liquid-secondary" disabled={busy?.kind === 'list'} onClick={loadListing}>{busy?.kind === 'list' ? 'Loading saved list…' : 'Saved reports'}</button>
++      </div>
++    </div>
++    <p className="text-xs muted">Nothing is saved or listed automatically. Opening a saved report replaces the current view only after validation; failed loads leave it unchanged. If a save or deletion is interrupted, it may still finish on the server. Refresh Saved reports to check.</p>
++    {error && <p role="alert" className="rounded-xl border border-red-400 p-3 text-sm">{error}</p>}
++    {notice && <p role="status" className="text-sm muted">{notice}</p>}
++    {listing && <div className="space-y-3" aria-label="Saved report list">
++      <p className="text-xs muted">{listing.reports.length} saved reports · {sizeLabel(listing.used_bytes)} account storage used</p>
++      {listing.reports.length ? <ul className="space-y-3">{listing.reports.map(item => <li key={item.id} className="rounded-xl border border-line dark:border-line-dark p-3 space-y-2">
++        <div><h3 className="font-medium text-sm break-words">{item.title || 'Untitled saved report'}</h3><p className="text-xs muted">{sizeLabel(item.byte_size)} · Saved {item.saved_at}</p></div>
++        <div className="flex gap-2 flex-wrap">
++          <button type="button" className="liquid-capsule liquid-secondary" aria-label={`Open saved report: ${item.title}`} disabled={busy?.kind === 'load' && busy.id === item.id} onClick={() => loadSaved(item.id)}>{busy?.kind === 'load' && busy.id === item.id ? 'Opening…' : 'Open saved report'}</button>
++          <button type="button" className="liquid-capsule liquid-secondary" aria-label={`Delete saved report: ${item.title}`} disabled={busy?.kind === 'delete' && busy.id === item.id} onClick={() => { setConfirmation(item.id); setError(''); }}>{busy?.kind === 'delete' && busy.id === item.id ? 'Deleting…' : 'Delete account copy'}</button>
++        </div>
++        {confirmation === item.id && <div className="border-t border-line dark:border-line-dark pt-3 space-y-2"><p className="text-sm">Delete this saved account copy? Download a copy first if you want to keep it.</p><div className="flex gap-2 flex-wrap"><button type="button" className="liquid-capsule liquid-secondary" aria-label={`Confirm delete: ${item.title}`} onClick={() => deleteSaved(item.id)}>Confirm delete</button><button type="button" className="liquid-capsule liquid-secondary" onClick={() => setConfirmation(null)}>Keep saved report</button></div></div>}
++      </li>)}</ul> : <p className="text-sm muted">No reports are saved in this account.</p>}
++    </div>}
++  </section>;
++}
+diff --git a/frontend/src/components/ResearchAccountLibrary.test.jsx b/frontend/src/components/ResearchAccountLibrary.test.jsx
+new file mode 100644
+--- /dev/null
++++ b/frontend/src/components/ResearchAccountLibrary.test.jsx
+@@ -0,0 +1,334 @@
++import React from 'react';
++import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
++import { api } from '../lib/api';
++import { ResearchAccountError, accountSnapshot, reopenSavedSnapshot, validateAccountListing, validateSavedReceipt, validateDeleteReceipt } from '../lib/researchAccount';
++import ResearchAccountLibrary from './ResearchAccountLibrary';
++
++jest.mock('../lib/api', () => ({ api: { get: jest.fn(), post: jest.fn(), delete: jest.fn() } }), { virtual: true });
++jest.mock('../lib/researchAccount', () => ({
++  ResearchAccountError: jest.requireActual('../lib/researchAccount').ResearchAccountError,
++  accountSnapshot: jest.fn(), reopenSavedSnapshot: jest.fn(), validateAccountListing: jest.fn(), validateSavedReceipt: jest.fn(), validateDeleteReceipt: jest.fn(),
++}));
++
++const endpoint = '/api/v1/research/reports';
++const first = { id: '11111111-1111-4111-8111-111111111111', title: 'Saved evidence one', saved_at: '2026-09-13T09:00:00Z', byte_size: 400 };
++const second = { id: '22222222-2222-4222-8222-222222222222', title: 'Saved evidence two', saved_at: '2026-09-13T10:00:00Z', byte_size: 500 };
++const listing = { reports: [first, second], used_bytes: 900, limits: { max_reports: 20, max_report_bytes: 8388608, max_total_bytes: 10485760 } };
++const localReport = { id: 'local-report', title: 'Local evidence', records: [] };
++const snapshot = { manifest: { schemaVersion: 1, title: 'Local evidence' }, files: {} };
++const savedMetadata = { ...first, title: snapshot.manifest.title, byte_size: new Blob([JSON.stringify(snapshot)]).size };
++const reopened = { id: 'reopened-report', title: 'Reopened evidence', records: [] };
++const detail = { report: { ...first, bundle: snapshot } };
++
++function deferred() {
++  let resolve, reject;
++  const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
++  return { promise, resolve, reject };
++}
++function acknowledge() { fireEvent.click(screen.getByRole('checkbox', { name: 'I want to store this report in my Fynd account' })); }
++function saveReport() { acknowledge(); fireEvent.click(screen.getByRole('button', { name: 'Save report', exact: true })); }
++async function showListing() {
++  api.get.mockResolvedValueOnce({ data: listing });
++  fireEvent.click(screen.getByRole('button', { name: 'Saved reports', exact: true }));
++  await screen.findByRole('heading', { name: first.title });
++}
++function openSaved(item = first) { fireEvent.click(screen.getByRole('button', { name: `Open saved report: ${item.title}` })); }
++
++describe('ResearchAccountLibrary explicit storage', () => {
++  beforeEach(() => {
++    jest.resetAllMocks();
++    accountSnapshot.mockReturnValue(snapshot);
++    reopenSavedSnapshot.mockReturnValue(reopened);
++    validateAccountListing.mockImplementation(value => value);
++    validateSavedReceipt.mockImplementation(value => value);
++    validateDeleteReceipt.mockImplementation(value => value);
++  });
++
++  test('does not fetch or persist on mount or report changes and explains storage limits', () => {
++    const { rerender } = render(<ResearchAccountLibrary report={localReport} resetKey={0} />);
++    rerender(<ResearchAccountLibrary report={{ ...localReport, id: 'replacement' }} resetKey={1} />);
++
++    expect(api.get).not.toHaveBeenCalled();
++    expect(api.post).not.toHaveBeenCalled();
++    expect(api.delete).not.toHaveBeenCalled();
++    expect(screen.getByRole('button', { name: 'Save report', exact: true }).disabled).toBe(true);
++    expect(screen.getByText(/8 MiB per report, 10 MiB total, and 20 saved reports/)).toBeTruthy();
++    expect(screen.getByText(/Saving explicitly uploads a report snapshot to your private Fynd account/)).toBeTruthy();
++    expect(screen.getByText(/it may still finish on the server/)).toBeTruthy();
++  });
++
++  test('requires an open report and explicit upload acknowledgement before saving', async () => {
++    const { rerender } = render(<ResearchAccountLibrary report={null} />);
++    expect(screen.getByRole('checkbox').disabled).toBe(true);
++    fireEvent.click(screen.getByRole('button', { name: 'Save report', exact: true }));
++    expect(api.post).not.toHaveBeenCalled();
++
++    rerender(<ResearchAccountLibrary report={localReport} />);
++    expect(screen.getByRole('checkbox').disabled).toBe(false);
++    expect(screen.getByRole('button', { name: 'Save report', exact: true }).disabled).toBe(true);
++    api.post.mockResolvedValueOnce({ data: { report: savedMetadata, replay: false } });
++    saveReport();
++
++    await screen.findByText(/Report snapshot saved in your Fynd account/);
++    expect(accountSnapshot).toHaveBeenCalledWith(localReport);
++    expect(api.post).toHaveBeenCalledWith(endpoint, { bundle: snapshot, confirm_storage: true }, expect.objectContaining({ timeout: 20000, signal: expect.anything() }));
++    expect(validateSavedReceipt).toHaveBeenCalledWith({ report: savedMetadata, replay: false });
++    expect(screen.getByRole('checkbox').checked).toBe(false);
++    expect(api.get).not.toHaveBeenCalled();
++  });
++
++  test('a changed report clears its upload acknowledgement', () => {
++    const { rerender } = render(<ResearchAccountLibrary report={localReport} resetKey={0} />);
++    acknowledge();
++    expect(screen.getByRole('checkbox').checked).toBe(true);
++    rerender(<ResearchAccountLibrary report={{ ...localReport, id: 'new' }} resetKey={0} />);
++    expect(screen.getByRole('checkbox').checked).toBe(false);
++    expect(screen.getByRole('button', { name: 'Save report', exact: true }).disabled).toBe(true);
++  });
++
++  test('rejects an oversized or invalid snapshot locally without uploading it', async () => {
++    accountSnapshot.mockImplementation(() => { throw new ResearchAccountError('ACCOUNT_REPORT_TOO_LARGE', 'This snapshot exceeds 8 MiB. Download a local copy instead.'); });
++    render(<ResearchAccountLibrary report={localReport} />);
++    saveReport();
++
++    expect((await screen.findByRole('alert')).textContent).toContain('exceeds 8 MiB');
++    expect(api.post).not.toHaveBeenCalled();
++    expect(screen.queryByText(/Report snapshot saved in your Fynd account/)).toBeNull();
++  });
++
++  test('lists metadata only after a click and does not mark list or save operations as imports', async () => {
++    const onBusy = jest.fn(), onReport = jest.fn();
++    render(<ResearchAccountLibrary report={localReport} onReport={onReport} onBusy={onBusy} />);
++    await showListing();
++
++    expect(api.get).toHaveBeenCalledWith(endpoint, expect.objectContaining({ timeout: 15000, signal: expect.anything() }));
++    expect(validateAccountListing).toHaveBeenCalledWith(listing);
++    expect(screen.getByText(/2 saved reports/)).toBeTruthy();
++    expect(onReport).not.toHaveBeenCalled();
++    expect(onBusy).not.toHaveBeenCalled();
++
++    api.post.mockResolvedValueOnce({ data: { report: savedMetadata, replay: true } });
++    saveReport();
++    await screen.findByText(/already saved in your Fynd account/);
++    expect(onBusy).not.toHaveBeenCalled();
++    expect(api.get).toHaveBeenCalledTimes(1);
++  });
++
++  test('validates a saved detail with its expected ID before passing it to the parent', async () => {
++    const onReport = jest.fn(), onBusy = jest.fn();
++    render(<ResearchAccountLibrary report={localReport} onReport={onReport} onBusy={onBusy} />);
++    await showListing();
++    api.get.mockResolvedValueOnce({ data: detail });
++    openSaved();
++
++    await waitFor(() => expect(onReport).toHaveBeenCalledWith(reopened));
++    expect(reopenSavedSnapshot).toHaveBeenCalledWith(detail, first.id);
++    expect(api.get).toHaveBeenLastCalledWith(`${endpoint}/${first.id}`, expect.objectContaining({ timeout: 20000 }));
++    expect(onBusy.mock.calls).toEqual([[true], [false]]);
++    expect(screen.getByText(/Its sources were not fetched or independently verified/)).toBeTruthy();
++  });
++
++  test('a malformed saved response does not replace the open report', async () => {
++    const onReport = jest.fn();
++    reopenSavedSnapshot.mockImplementation(() => { throw new ResearchAccountError('ACCOUNT_INVALID_SNAPSHOT', 'The saved report failed validation. Your open report is unchanged.'); });
++    render(<ResearchAccountLibrary report={localReport} onReport={onReport} />);
++    await showListing();
++    api.get.mockResolvedValueOnce({ data: { report: { ...second, bundle: {} } } });
++    openSaved();
++
++    expect((await screen.findByRole('alert')).textContent).toContain('failed validation');
++    expect(onReport).not.toHaveBeenCalled();
++    expect(screen.queryByText(/Saved snapshot opened/)).toBeNull();
++  });
++
++  test.each([
++    [401, 'session has expired'], [403, 'not authorized'], [404, 'saved report is unavailable'],
++    [413, 'exceeds an account-storage limit'], [429, 'Too many account requests'], [503, 'temporarily unavailable'],
++  ])('renders a friendly %s response without exposing backend details', async (status, expected) => {
++    api.get.mockRejectedValueOnce({ response: { status, data: { detail: 'SECRET_BACKEND_TRACE' } }, message: 'SECRET_BACKEND_TRACE' });
++    render(<ResearchAccountLibrary report={localReport} />);
++    fireEvent.click(screen.getByRole('button', { name: 'Saved reports', exact: true }));
++
++    expect((await screen.findByRole('alert')).textContent).toContain(expected);
++    expect(screen.queryByText(/SECRET_BACKEND_TRACE/)).toBeNull();
++  });
++
++  test('requires inline confirmation before deleting and leaves the open report alone', async () => {
++    const onReport = jest.fn(), onBusy = jest.fn();
++    render(<ResearchAccountLibrary report={localReport} onReport={onReport} onBusy={onBusy} />);
++    await showListing();
++    fireEvent.click(screen.getByRole('button', { name: `Delete saved report: ${first.title}` }));
++    expect(api.delete).not.toHaveBeenCalled();
++    fireEvent.click(screen.getByRole('button', { name: 'Keep saved report' }));
++    expect(screen.queryByRole('button', { name: `Confirm delete: ${first.title}` })).toBeNull();
++
++    fireEvent.click(screen.getByRole('button', { name: `Delete saved report: ${first.title}` }));
++    api.delete.mockResolvedValueOnce({ data: { deleted: true } });
++    fireEvent.click(screen.getByRole('button', { name: `Confirm delete: ${first.title}` }));
++
++    await screen.findByText(/Saved account copy deleted/);
++    expect(api.delete).toHaveBeenCalledWith(`${endpoint}/${first.id}`, expect.objectContaining({ timeout: 15000, signal: expect.anything() }));
++    expect(validateDeleteReceipt).toHaveBeenCalledWith({ deleted: true });
++    expect(screen.queryByRole('heading', { name: first.title })).toBeNull();
++    expect(screen.getByRole('heading', { name: second.title })).toBeTruthy();
++    expect(onReport).not.toHaveBeenCalled();
++    expect(onBusy).not.toHaveBeenCalled();
++  });
++
++  test('does not remove list entries when a delete receipt fails validation', async () => {
++    validateDeleteReceipt.mockImplementation(() => { throw new ResearchAccountError('ACCOUNT_INVALID_RESPONSE', 'Deletion could not be confirmed. Refresh Saved reports.'); });
++    render(<ResearchAccountLibrary report={localReport} />);
++    await showListing();
++    fireEvent.click(screen.getByRole('button', { name: `Delete saved report: ${first.title}` }));
++    api.delete.mockResolvedValueOnce({ data: { deleted: false } });
++    fireEvent.click(screen.getByRole('button', { name: `Confirm delete: ${first.title}` }));
++
++    await screen.findByRole('alert');
++    expect(screen.getByRole('heading', { name: first.title })).toBeTruthy();
++    expect(screen.queryByText(/Saved account copy deleted/)).toBeNull();
++  });
++
++  test('uncertain save failures do not claim the server write was canceled', async () => {
++    api.post.mockRejectedValueOnce(new Error('private server trace'));
++    render(<ResearchAccountLibrary report={localReport} />);
++    saveReport();
++
++    expect((await screen.findByRole('alert')).textContent).toContain('It may have completed');
++    expect(screen.queryByText(/private server trace/)).toBeNull();
++    expect(screen.queryByText(/write was canceled/)).toBeNull();
++  });
++
++  test('a save receipt must match the submitted title before success is shown', async () => {
++    api.post.mockResolvedValueOnce({ data: { report: { ...savedMetadata, title: 'A different report' }, replay: false } });
++    render(<ResearchAccountLibrary report={localReport} />);
++    saveReport();
++
++    expect((await screen.findByRole('alert')).textContent).toContain('inconsistent saved-report details');
++    expect(screen.queryByText(/Report snapshot saved in your Fynd account/)).toBeNull();
++  });
++
++  test('accepts a valid server canonical byte size that differs from browser serialization', async () => {
++    validateSavedReceipt.mockImplementation(jest.requireActual('../lib/researchAccount').validateSavedReceipt);
++    api.post.mockResolvedValueOnce({ data: { report: { ...savedMetadata, byte_size: savedMetadata.byte_size + 2 }, replay: false } });
++    render(<ResearchAccountLibrary report={localReport} />);
++    saveReport();
++
++    await screen.findByText(/Report snapshot saved in your Fynd account/);
++    expect(screen.queryByRole('alert')).toBeNull();
++  });
++
++  test.each([0, 8388609, 1.5])('rejects malformed or out-of-bounds saved byte_size %s', async byteSize => {
++    validateSavedReceipt.mockImplementation(jest.requireActual('../lib/researchAccount').validateSavedReceipt);
++    api.post.mockResolvedValueOnce({ data: { report: { ...savedMetadata, byte_size: byteSize }, replay: false } });
++    render(<ResearchAccountLibrary report={localReport} />);
++    saveReport();
++
++    expect((await screen.findByRole('alert')).textContent).toContain('invalid saved-report response');
++    expect(screen.queryByText(/Report snapshot saved in your Fynd account/)).toBeNull();
++  });
++
++  test('a late save cannot mark a replacement report as saved', async () => {
++    const pending = deferred();
++    api.post.mockReturnValueOnce(pending.promise);
++    const { rerender } = render(<ResearchAccountLibrary report={localReport} resetKey={0} />);
++    saveReport();
++    const signal = api.post.mock.calls[0][2].signal;
++    rerender(<ResearchAccountLibrary report={{ ...localReport, id: 'replacement' }} resetKey={1} />);
++    expect(signal.aborted).toBe(true);
++    await act(async () => pending.resolve({ data: { report: savedMetadata, replay: false } }));
++
++    expect(validateSavedReceipt).not.toHaveBeenCalled();
++    expect(screen.queryByText(/Report snapshot saved in your Fynd account/)).toBeNull();
++    expect(screen.getByRole('checkbox').checked).toBe(false);
++  });
++
++  test('a reset invalidates an account load and keeps a late response out of the parent', async () => {
++    const pending = deferred(), onReport = jest.fn(), onBusy = jest.fn();
++    const { rerender } = render(<ResearchAccountLibrary report={localReport} onReport={onReport} onBusy={onBusy} resetKey={0} />);
++    await showListing();
++    api.get.mockReturnValueOnce(pending.promise);
++    openSaved();
++    const signal = api.get.mock.calls[1][1].signal;
++    rerender(<ResearchAccountLibrary report={localReport} onReport={onReport} onBusy={onBusy} resetKey={1} />);
++    expect(signal.aborted).toBe(true);
++    await act(async () => pending.resolve({ data: detail }));
++
++    expect(onReport).not.toHaveBeenCalled();
++    expect(reopenSavedSnapshot).not.toHaveBeenCalled();
++    expect(onBusy.mock.calls).toEqual([[true], [false]]);
++    expect(screen.queryByText(/Saved snapshot opened/)).toBeNull();
++  });
++
++  test('a newer account load aborts the older request and only opens the newer result', async () => {
++    const older = deferred(), newer = deferred(), onReport = jest.fn();
++    render(<ResearchAccountLibrary report={localReport} onReport={onReport} />);
++    await showListing();
++    api.get.mockReturnValueOnce(older.promise).mockReturnValueOnce(newer.promise);
++    openSaved(first);
++    const olderSignal = api.get.mock.calls[1][1].signal;
++    openSaved(second);
++    expect(olderSignal.aborted).toBe(true);
++    const newerDetail = { report: { ...second, bundle: snapshot } };
++    await act(async () => newer.resolve({ data: newerDetail }));
++    await act(async () => older.resolve({ data: detail }));
++
++    expect(onReport).toHaveBeenCalledTimes(1);
++    expect(reopenSavedSnapshot).toHaveBeenCalledTimes(1);
++    expect(reopenSavedSnapshot).toHaveBeenCalledWith(newerDetail, second.id);
++  });
++
++  test('unmount aborts an account load and suppresses late errors and callbacks', async () => {
++    const pending = deferred(), onReport = jest.fn(), onBusy = jest.fn();
++    const { unmount } = render(<ResearchAccountLibrary report={localReport} onReport={onReport} onBusy={onBusy} />);
++    await showListing();
++    api.get.mockReturnValueOnce(pending.promise);
++    openSaved();
++    const signal = api.get.mock.calls[1][1].signal;
++    unmount();
++    expect(signal.aborted).toBe(true);
++    await act(async () => pending.reject({ response: { status: 503 } }));
++
++    expect(onReport).not.toHaveBeenCalled();
++    expect(onBusy.mock.calls).toEqual([[true], [false]]);
++  });
++
++  test('an invalid list does not become actionable saved-report rows', async () => {
++    validateAccountListing.mockImplementation(() => { throw new ResearchAccountError('ACCOUNT_INVALID_RESPONSE', 'The saved report list failed validation.'); });
++    api.get.mockResolvedValueOnce({ data: { reports: [{ ...first, id: '../admin' }] } });
++    render(<ResearchAccountLibrary report={localReport} />);
++    fireEvent.click(screen.getByRole('button', { name: 'Saved reports', exact: true }));
++
++    await screen.findByRole('alert');
++    expect(screen.queryByRole('heading', { name: first.title })).toBeNull();
++    expect(api.get).toHaveBeenCalledTimes(1);
++  });
++
++  test('round-trips a real compact snapshot through validated account responses', async () => {
++    const actual = jest.requireActual('../lib/researchAccount');
++    const { buildReport } = jest.requireActual('../lib/researchReport');
++    accountSnapshot.mockImplementation(actual.accountSnapshot);
++    reopenSavedSnapshot.mockImplementation(actual.reopenSavedSnapshot);
++    validateAccountListing.mockImplementation(actual.validateAccountListing);
++    validateSavedReceipt.mockImplementation(actual.validateSavedReceipt);
++    const realReport = buildReport({ title: 'Real-contract fixture', records: [{ url: 'https://example.org/evidence', title: 'Retained fixture source', kind: 'paper', content: 'Synthetic retained evidence body.', contentStatus: 'partial' }] });
++    const realBundle = actual.accountSnapshot(realReport);
++    const realMetadata = { ...first, title: realBundle.manifest.title, byte_size: new Blob([JSON.stringify(realBundle)]).size };
++    const onReport = jest.fn();
++    render(<ResearchAccountLibrary report={realReport} onReport={onReport} />);
++    api.post.mockResolvedValueOnce({ data: { report: realMetadata, replay: false } });
++    saveReport();
++    await screen.findByText(/Report snapshot saved in your Fynd account/);
++
++    api.get.mockResolvedValueOnce({ data: { reports: [realMetadata], used_bytes: realMetadata.byte_size, limits: actual.ACCOUNT_LIMITS } });
++    fireEvent.click(screen.getByRole('button', { name: 'Saved reports', exact: true }));
++    await screen.findByRole('heading', { name: realMetadata.title });
++    api.get.mockResolvedValueOnce({ data: { report: { ...realMetadata, bundle: realBundle } } });
++    openSaved(realMetadata);
++    await waitFor(() => expect(onReport).toHaveBeenCalledTimes(1));
++
++    expect(onReport.mock.calls[0][0].title).toBe(realReport.title);
++    expect(onReport.mock.calls[0][0].records[0].url).toBe('https://example.org/evidence');
++    expect(onReport.mock.calls[0][0].records[0].contentStatus).toBe('partial');
++    expect(onReport.mock.calls[0][0].records[0].content).toBe('Synthetic retained evidence body.');
++  });
++});
+diff --git a/backend/server.py b/backend/server.py
+--- a/backend/server.py
++++ b/backend/server.py
+@@ -27,5 +27,6 @@
+ from domains.auth.router import router as auth_router
+ from domains.consent.router import router as consent_router
+ from domains.users.router import router as users_router
++from domains.research_reports.router import router as research_reports_router
+ from domains.passport.router import router as passport_router
+ from domains.documents.router import router as documents_router
+@@ -395,3 +396,4 @@
+ app.include_router(consent_router)
+ app.include_router(users_router)
++app.include_router(research_reports_router)
+ app.include_router(passport_router)
+diff --git a/backend/middleware/idempotency.py b/backend/middleware/idempotency.py
+--- a/backend/middleware/idempotency.py
++++ b/backend/middleware/idempotency.py
+@@ -51,4 +51,10 @@
+     async def dispatch(self, request: Request, call_next: Callable) -> Response:
++        # Reports use owner-scoped, payload-hash deduplication after auth.
++        # Never let the legacy response cache bypass current authorization,
++        # storage consent, request validation, or a previously deleted report.
++        path = request.url.path
++        if path == "/api/v1/research/reports" or path.startswith("/api/v1/research/reports/"):
++            return await call_next(request)
+         if request.method not in STATE_METHODS or not request.url.path.startswith("/api/v1/"):
+             return await call_next(request)
+         key = request.headers.get("Idempotency-Key")
+diff --git a/backend/domains/privacy/service.py b/backend/domains/privacy/service.py
+--- a/backend/domains/privacy/service.py
++++ b/backend/domains/privacy/service.py
+@@ -167,2 +167,4 @@
++    from domains.research_reports.privacy import report_export_index
+     bundle: dict = {
++        "research_reports": await report_export_index(db, user_id),
+         "profile": user,
+@@ -245,2 +247,4 @@
+             await db[coll].delete_many({"user_id": uid})
++        from domains.research_reports.privacy import erase_account_reports
++        await erase_account_reports(db, uid)
+         await db.users.delete_one({"id": uid})
+

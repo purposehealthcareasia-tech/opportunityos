@@ -1,0 +1,61 @@
+diff --git a/frontend/src/components/FyndJobResearchImport.jsx b/frontend/src/components/FyndJobResearchImport.jsx
+index 2db60c5..9ed1b38 100644
+--- a/frontend/src/components/FyndJobResearchImport.jsx
++++ b/frontend/src/components/FyndJobResearchImport.jsx
+@@ -79,13 +79,14 @@ export default function FyndJobResearchImport({ onReport, onBusy, resetKey }) {
+   const cancel = useCallback(() => {
+     ++sequence.current;
+     request.current?.abort(); request.current = null;
+-    if (mounted.current) { setBusy(false); busyCallback.current?.(false); }
++    if (mounted.current) setBusy(false);
++    busyCallback.current?.(false);
+   }, []);
+ 
+   useEffect(() => {
+     mounted.current = true;
+-    return () => { mounted.current = false; ++sequence.current; request.current?.abort(); request.current = null; busyCallback.current?.(false); };
+-  }, []);
++    return () => { mounted.current = false; cancel(); };
++  }, [cancel]);
+   useEffect(() => {
+     cancel();
+     const next = prefill(location.search);
+diff --git a/frontend/src/components/FyndJobResearchImport.test.jsx b/frontend/src/components/FyndJobResearchImport.test.jsx
+index 0a215d2..ecfb488 100644
+--- a/frontend/src/components/FyndJobResearchImport.test.jsx
++++ b/frontend/src/components/FyndJobResearchImport.test.jsx
+@@ -7,10 +7,11 @@ import FyndJobResearchImport from './FyndJobResearchImport';
+ jest.mock('../lib/api', () => ({ api: { get: jest.fn() } }));
+ const JOB_ID = '1393c281-2d9f-4ed8-a38f-16b7c4b02f6d';
+ const SECOND_ID = '2493c281-2d9f-4ed8-a38f-16b7c4b02f6d';
++const ROUTER_FUTURE = { v7_startTransition: true, v7_relativeSplatPath: true };
+ const job = (extra = {}) => ({ id: JOB_ID, title: 'Research engineer', company_name: 'Example company', origin_url: 'https://example.org/careers/research', apply_url: 'https://example.org/apply/private-reference', jd_text: 'A retained job description.', source: 'greenhouse', status: 'active', is_sample: false, needs_origin: false, posted_at: '2026-09-01T10:00:00Z', last_verified: '2026-09-02T12:00:00Z', score: 99, gates: ['private gate'], have_gap: ['private skill gap'], ...extra });
+ function setup(props = {}, path = '/research') {
+   const onReport = props.onReport || jest.fn();
+-  const rendered = render(<MemoryRouter initialEntries={[path]}><FyndJobResearchImport onReport={onReport} {...props} /></MemoryRouter>);
++  const rendered = render(<MemoryRouter initialEntries={[path]} future={ROUTER_FUTURE}><FyndJobResearchImport onReport={onReport} {...props} /></MemoryRouter>);
+   return { ...rendered, onReport };
+ }
+ function enter(value = JOB_ID) {
+@@ -135,9 +136,11 @@ describe('Fynd stored-job research import', () => {
+ 
+   test('unmount aborts and suppresses late errors and reports', async () => {
+     const pending = deferred(); api.get.mockReturnValue(pending.promise);
+-    const { onReport, unmount } = setup(); enter(); load();
++    const onBusy = jest.fn();
++    const { onReport, unmount } = setup({ onBusy }); enter(); load();
+     const signal = api.get.mock.calls[0][1].signal;
+     unmount(); expect(signal.aborted).toBe(true);
++    expect(onBusy).toHaveBeenLastCalledWith(false);
+     await act(async () => { pending.resolve({ data: job() }); await pending.promise; });
+     expect(onReport).not.toHaveBeenCalled();
+   });
+@@ -148,7 +151,7 @@ describe('Fynd stored-job research import', () => {
+     const { rerender } = setup({ onReport, onBusy, resetKey: 1 }); enter(); load();
+     expect(onBusy).toHaveBeenCalledWith(true);
+     const signal = api.get.mock.calls[0][1].signal;
+-    rerender(<MemoryRouter><FyndJobResearchImport onReport={onReport} onBusy={onBusy} resetKey={2} /></MemoryRouter>);
++    rerender(<MemoryRouter future={ROUTER_FUTURE}><FyndJobResearchImport onReport={onReport} onBusy={onBusy} resetKey={2} /></MemoryRouter>);
+     expect(signal.aborted).toBe(true);
+     await act(async () => { pending.resolve({ data: job() }); await pending.promise; });
+     expect(onReport).not.toHaveBeenCalled();

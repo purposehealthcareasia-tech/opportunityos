@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../lib/auth';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import ThemeToggle from './ThemeToggle';
 import { LogOut, Gauge } from 'lucide-react';
 import { api } from '../lib/api';
@@ -50,6 +50,7 @@ export function Topbar() {
       <div className="flex items-center gap-2">
         <SmartCTA className="hidden lg:inline-flex text-xs" />
         <UsageMeterChip />
+        <Link to="/research" className="md:hidden liquid-capsule liquid-secondary text-xs" data-testid="mobile-research-link">Research</Link>
         <ThemeToggle />
         <button
           type="button"

@@ -12,6 +12,7 @@ import RoleRoute from './components/RoleRoute';
 // landing bundle stays lean. Every page is < 200 lines, so per-route
 // chunks are cheap and load on first authenticated navigation.
 const Passport         = lazy(() => import('./pages/Passport'));
+const Research         = lazy(() => import('./pages/Research'));
 const Preferences      = lazy(() => import('./pages/Preferences'));
 const Eligibility      = lazy(() => import('./pages/Eligibility'));
 const Feed             = lazy(() => import('./pages/Feed'));
@@ -59,6 +60,7 @@ export default function App() {
           <Route path="/preferences" element={<Preferences />} />
           <Route path="/eligibility" element={<Eligibility />} />
           <Route path="/feed" element={<Feed />} />
+          <Route path="/research" element={<Research />} />
           <Route path="/jobs/:jobId" element={<JobDetail />} />
           <Route path="/applications" element={<Applications />} />
           <Route path="/applications/:applicationId/prep" element={<ApplicationPrep />} />

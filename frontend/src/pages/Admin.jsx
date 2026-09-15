@@ -755,6 +755,7 @@ const STATUS_STYLE = {
 };
 
 const CATEGORY_META = {
+  discovery: { label: 'Discovery', Icon: Search },
   ai:        { label: 'AI',        Icon: Cable },
   auth:      { label: 'Auth',      Icon: Lock },
   email:     { label: 'Email',     Icon: Inbox },
@@ -867,14 +868,21 @@ function IntegrationsTab({ isAdmin }) {
     (acc[r.category || 'misc'] = acc[r.category || 'misc'] || []).push(r);
     return acc;
   }, {});
-  // Stable category order: auth → ai → payments → email → sms → voice → storage → misc.
-  const CAT_ORDER = ['auth', 'ai', 'payments', 'email', 'sms', 'voice', 'storage', 'misc'];
+  // Stable category order: auth → ai → discovery → payments → email → sms → voice → storage → misc.
+  const CAT_ORDER = ['auth', 'ai', 'discovery', 'payments', 'email', 'sms', 'voice', 'storage', 'misc'];
   const catEntries = Object.entries(byCat).sort(
     ([a], [b]) => CAT_ORDER.indexOf(a) - CAT_ORDER.indexOf(b),
   );
 
   return (
     <section className="space-y-5" data-testid="admin-integrations-tab">
+      {rows.some((p) => p.slug === 'lynk_collider') && (
+        <div className="rounded-lg border border-line dark:border-line-dark p-4 text-sm space-y-1" data-testid="collider-readiness-notice">
+          <h3 className="font-semibold">LYNK Collider · connection readiness</h3>
+          <p className="muted">This connection does not launch scans or submit applications. A connected gateway is not proof that its scraping providers are ready.</p>
+          <p className="muted">Launch requires private hosting, per-user isolation, source-policy enforcement, and usage and retention controls. Internet coverage is not measurable as a reliable percentage.</p>
+        </div>
+      )}
       {flash && <FlashBanner {...flash} onDismiss={() => setFlash(null)} />}
 
       {/* Summary strip */}

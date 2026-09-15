@@ -467,6 +467,11 @@ def test_no_raw_httpx_asyncclient_outside_guarded_paths():
         "domains/discovery/adapters/public_apis.py",
         "domains/discovery/adapters/usajobs.py",
         # A. First-party vendor integrations (fixed hosts, documented APIs).
+        # Private Collider service: fixed operator-only origin, no redirects,
+        # no caller-controlled URL; only admin readiness probes are routed.
+        "domains/collider/client.py",
+        # Separate customer service: fixed HTTPS origin, signed backend owner.
+        "domains/collider/customer_client.py",
         "integrations/auth/apple_provider.py",
         "integrations/auth/google_provider.py",
         "integrations/payments/razorpay_provider.py",

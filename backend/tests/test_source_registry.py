@@ -18,13 +18,32 @@ import pytest_asyncio
 
 @pytest_asyncio.fixture(autouse=True)
 async def _reset_motor_client_per_test():
+    import asyncio
     from core import db as _core_db
-    _core_db._client = None
-    _core_db._db = None
-    # Drop the collection so seed_verified_sources() has a clean slate
-    # every test — otherwise a prior test's lifecycle transition leaks
-    # into the next test's assertions about `inserted` / `preserved`.
+    # Force-drop any client the test-runner inherited — motor caches
+    # the loop reference at client construction, and pytest-asyncio
+    # 1.x reuses the same fixture-scoped loop id but the underlying
+    # loop object rotates between tests. Unconditional reset is the
+    # safe path: worst case, an extra motor instantiation per test.
+    if _core_db._client is not None:
+        try:
+            _core_db._client.close()
+        except Exception:
+            pass
+        _core_db._client = None
+        _core_db._db = None
+    # Verify the just-created client is bound to the actively-running
+    # loop; if not, force one more recreate to converge.
     db = _core_db.get_db()
+    running = asyncio.get_running_loop()
+    if _core_db._client.get_io_loop() is not running:
+        try:
+            _core_db._client.close()
+        except Exception:
+            pass
+        _core_db._client = None
+        _core_db._db = None
+        db = _core_db.get_db()
     await db.source_registry.delete_many({})
     yield
 

@@ -1,0 +1,11 @@
+diff --git a/backend/middleware/idempotency.py b/backend/middleware/idempotency.py
+--- a/backend/middleware/idempotency.py
++++ b/backend/middleware/idempotency.py
+@@ -55,3 +55,7 @@
+         path = request.url.path
++        # Auth must always execute its current checks and preserve Set-Cookie.
++        # Never cache/replay authentication, logout, or account-deletion responses.
++        if path == "/api/v1/auth" or path.startswith("/api/v1/auth/"):
++            return await call_next(request)
+         if path == "/api/v1/research/reports" or path.startswith("/api/v1/research/reports/"):
+             return await call_next(request)

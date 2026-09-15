@@ -1,0 +1,10 @@
+diff --git a/frontend/src/lib/researchScans.js b/frontend/src/lib/researchScans.js
+--- a/frontend/src/lib/researchScans.js
++++ b/frontend/src/lib/researchScans.js
+@@ -20,5 +20,5 @@
+ export function newScanRequestKey() {
+   try {
+-    const secure = globalThis.crypto;
++    const secure = typeof window === 'undefined' ? undefined : window.crypto;
+     if (typeof secure?.randomUUID === 'function') {
+       const key = secure.randomUUID();

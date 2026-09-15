@@ -1,0 +1,813 @@
+diff --git a/frontend/src/lib/researchReport.js b/frontend/src/lib/researchReport.js
+index 11959d8..18c3782 100644
+--- a/frontend/src/lib/researchReport.js
++++ b/frontend/src/lib/researchReport.js
+@@ -115,6 +115,64 @@ function arrayField(value, label) {
+   if (value.length > MAX_TRACE) fail(`${label} exceeds 5,000 items.`);
+   return value;
+ }
++const RUN_STATES = ['queued', 'running', 'paused', 'cancel_requested', 'completed', 'partial', 'failed', 'cancelled'];
++const RUN_COUNTS = ['savedPages', 'savedJobs', 'structuredRecords', 'successfulEmptyBoards', 'selectedPages', 'attemptedPages', 'discoveredUrls', 'notFetched', 'frontierOmitted', 'linksSkipped', 'omittedRecords', 'truncatedRecords'];
++const RUN_PROGRESS = ['total', 'done', 'pending', 'inflight', 'completed', 'partial', 'failed', 'uncertain'];
++const nonnegative = value => Number.isSafeInteger(value) && value >= 0;
++function normalizeRunSummary(value) {
++  if (!object(value) || value.format !== 'lynk-collider-run-v1' || !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(value.id || '') ||
++      !RUN_STATES.includes(value.status) || !object(value.input) || !object(value.counts) || !object(value.progress) ||
++      !RUN_COUNTS.every(key => nonnegative(value.counts[key])) || !RUN_PROGRESS.every(key => nonnegative(value.progress[key])) ||
++      typeof value.incomplete !== 'boolean') fail('Invalid Collider run summary. Include its run ID, input, status, progress and counts.');
++  const bounded = (rows, name, limit) => {
++    const values = arrayField(rows, name);
++    if (values.length > limit) fail(`${name} exceeds the supported run-summary limit (${limit}).`);
++    return values;
++  };
++  const supplied = value.input;
++  if (!Array.isArray(supplied.urls) || !Array.isArray(supplied.boards) || !Number.isSafeInteger(supplied.pageLimit) || supplied.pageLimit < 1 || typeof supplied.followLinks !== 'boolean') fail('Invalid Collider run input.');
++  const input = { urls: bounded(supplied.urls, 'run input URLs', 20).map(publicUrl), boards: bounded(supplied.boards, 'run input boards', 3).map(board => {
++    if (!object(board) || !clean(board.provider, 50) || !clean(board.board, 80)) fail('Invalid Collider board input.');
++    return { provider: clean(board.provider, 50), board: clean(board.board, 80), ...(nonnegative(board.limit) ? { limit: board.limit } : {}) };
++  }), pageLimit: supplied.pageLimit, followLinks: supplied.followLinks };
++  if (supplied.query !== undefined) { if (!clean(supplied.query, 400)) fail('Invalid Collider query.'); input.query = clean(supplied.query, 400); }
++  if (!input.urls.length && !input.boards.length && !input.query) fail('A Collider run needs an explicit query, source URL or board.');
++  for (const [key, limit, length] of [['providers', 4, 50], ['querySlices', 3, 400]]) if (supplied[key] !== undefined) {
++    input[key] = bounded(supplied[key], `run ${key}`, limit).map(item => { if (!clean(item, length)) fail(`Invalid run ${key}.`); return clean(item, length); });
++  }
++  if (supplied.maxDepth !== undefined) { if (!nonnegative(supplied.maxDepth) || supplied.maxDepth > 2) fail('Invalid Collider depth.'); input.maxDepth = supplied.maxDepth; }
++  if (supplied.crawlMode !== undefined) { if (!['jobs', 'web'].includes(supplied.crawlMode)) fail('Invalid Collider crawl mode.'); input.crawlMode = supplied.crawlMode; }
++  const counts = Object.fromEntries(RUN_COUNTS.map(key => [key, value.counts[key]]));
++  const progress = Object.fromEntries(RUN_PROGRESS.map(key => [key, value.progress[key]]));
++  if (RUN_PROGRESS.slice(2).reduce((sum, key) => sum + progress[key], 0) !== progress.total ||
++      ['completed', 'partial', 'failed', 'uncertain'].reduce((sum, key) => sum + progress[key], 0) !== progress.done) fail('Collider progress counters are inconsistent.');
++  const diagnostics = (rows, name) => bounded(rows, name, 1000).map(row => {
++    if (!object(row) || !clean(row.code, 100)) fail(`Invalid ${name} entry.`);
++    return { code: clean(row.code, 100), unitId: clean(row.unitId, 200), source: clean(row.source, 200), url: row.url ? publicUrl(row.url) : '' };
++  });
++  const searchSlices = bounded(value.searchSlices, 'run search slices', 4).map(slice => {
++    if (!object(slice)) fail('Invalid run search slice.');
++    return { unitId: clean(slice.unitId, 200), query: clean(slice.query, 400), status: clean(slice.status, 80), returned: nonnegative(slice.returned) ? slice.returned : null,
++      providers: bounded(slice.providers, 'run search providers', 4).map(provider => {
++        if (!object(provider)) fail('Invalid run search provider.');
++        return { id: clean(provider.id, 50), status: clean(provider.status, 80), code: clean(provider.code, 100), returned: nonnegative(provider.returned) ? provider.returned : null };
++      }), completeness: 'unknown' };
++  });
++  return { format: 'lynk-collider-run-v1', id: value.id.toLowerCase(), status: value.status, input, progress, counts, incomplete: value.incomplete,
++    createdAt: date(value.createdAt), updatedAt: date(value.updatedAt), finishedAt: date(value.finishedAt),
++    coverageScope: clean(value.coverageScope, 1000), selectionPriority: clean(value.selectionPriority, 1000),
++    errors: diagnostics(value.errors, 'run errors'), warnings: diagnostics(value.warnings, 'run warnings'), searchSlices };
++}
++function colliderRunSummary(root, payload) {
++  // Recognize a detailed Collider run, not an arbitrary object containing empty arrays.
++  if (!object(root.result) || !['pages', 'jobs', 'records'].every(key => Array.isArray(payload[key])) ||
++      typeof root.id !== 'string' || !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(root.id) ||
++      !RUN_STATES.includes(root.status) || !object(root.input) || !object(root.progress) || !object(payload.counts)) return null;
++  return normalizeRunSummary({ format: 'lynk-collider-run-v1', id: root.id, status: root.status, input: root.input, progress: root.progress, counts: payload.counts,
++    incomplete: payload.incomplete, createdAt: root.createdAt, updatedAt: root.updatedAt, finishedAt: root.finishedAt,
++    coverageScope: payload.coverage?.scope, selectionPriority: payload.selectionPriority, errors: payload.errors, warnings: payload.warnings,
++    searchSlices: payload.searchSlices ?? (object(payload.discovery) ? [payload.discovery] : []) });
++}
+ function normalizeTrace(root, payload, records, omissions) {
+   const trace = object(root.trace) ? root.trace : {}, candidates = [], outcomes = [], edges = [];
+   const discoveries = [payload.discovery, ...arrayField(payload.searchSlices, 'searchSlices')].filter(object);
+@@ -150,13 +208,15 @@ function normalizeTrace(root, payload, records, omissions) {
+   if (!edges.length) omissions.push('No source-to-target edges were supplied; crawl lineage was not reconstructed.');
+   return { candidates, outcomes, edges };
+ }
+-function normalizeReport(input, maxBytes = MAX_BYTES) {
++function normalizeReport(input, maxBytes = MAX_BYTES, portable = false) {
+   inspect(input, maxBytes);
+   const root = Array.isArray(input) ? { records: input } : input;
+   if (!object(root)) fail('Import a report object or evidence array.');
+   const payload = object(root.result) ? root.result : root;
+   const rows = [...arrayField(payload.records, 'records'), ...arrayField(payload.pages, 'pages'), ...arrayField(payload.jobs, 'jobs')];
+-  if (!rows.length) fail('No evidence records were found. Supported fields: records, pages or result.pages.');
++  const runSummary = portable && root.runSummary ? normalizeRunSummary(root.runSummary) : colliderRunSummary(root, payload);
++  if (!rows.length && !runSummary) fail('No evidence records were found. Supply records, pages, result.pages, or a detailed Collider run with its summary.');
++  if (!rows.length && ['savedPages', 'savedJobs', 'structuredRecords'].some(key => runSummary.counts[key] !== 0)) fail('The Collider summary reports saved evidence, but this export contains none. Import the detailed evidence export.');
+   if (rows.length > MAX_RECORDS) fail('Report exceeds the 1,000 evidence-record limit.');
+   const warnings = [], omissions = ['This package contains only retained imported data, not all upstream discoveries.', 'Source bodies, selection reasons, history and lineage absent from the input remain unavailable.', 'Dedicated raw-HTML and contact-specific fields are omitted; retained text is not automatically redacted.', 'Other unsupported fields and identifiers are omitted.'];
+   arrayField(root.warnings, 'warnings').slice(0, 100).forEach(value => { if (typeof value === 'string') warnings.push(clean(value, 1000)); });
+@@ -168,7 +228,8 @@ function normalizeReport(input, maxBytes = MAX_BYTES) {
+   records.forEach(record => { const count = (used.get(record.id) || 0) + 1; used.set(record.id, count); if (count > 1) record.id += `_${count}`; });
+   const relations = linkRecords(records, warnings), trace = normalizeTrace(root, payload, records, omissions);
+   if (root.result?.counts?.frontierOmitted || root.result?.counts?.linksSkipped || root.result?.counts?.omittedRecords) omissions.push('The imported Collider summary reports omitted frontier links or records; their details were not restored.');
+-  const report = { schemaVersion: 1, id: `report_${hash(JSON.stringify({ records, trace }))}`, title: clean(root.title || root.query || root.input?.query) || 'Imported research',
++  const report = { schemaVersion: 1, id: `report_${hash(JSON.stringify({ records, trace, ...(runSummary ? { runSummary } : {}) }))}`, title: clean(root.title || root.query || root.input?.query) || (runSummary ? `Collider run ${runSummary.id}` : 'Imported research'),
++    ...(runSummary ? { runSummary } : {}),
+     records, relations, trace, omissions: [...new Set(omissions)], warnings: [...new Set(warnings)],
+     stats: { records: records.length, domains: new Set(records.map(record => record.hostname)).size, relations: relations.length, candidates: trace.candidates.length, outcomes: trace.outcomes.length, edges: trace.edges.length } };
+   if (byteLength(JSON.stringify(report)) > MAX_NORMALIZED_BYTES) fail('Normalized evidence exceeds the 10 MB processing limit.');
+@@ -199,7 +260,8 @@ export function parseReport(text, fileName = '') {
+     };
+     return normalizeReport({ title: input.manifest.title, records: read('evidence.jsonl', MAX_RECORDS),
+       trace: { candidates: read('candidates.jsonl', MAX_TRACE), outcomes: read('outcomes.jsonl', MAX_TRACE), edges: read('edges.jsonl', MAX_TRACE) },
+-      omissions: input.manifest.omissions, warnings: input.manifest.warnings }, MAX_NORMALIZED_BYTES);
++      ...(input.manifest.runSummary ? { runSummary: input.manifest.runSummary } : {}),
++      omissions: input.manifest.omissions, warnings: input.manifest.warnings }, MAX_NORMALIZED_BYTES, true);
+   }
+   if (size > MAX_BYTES) fail('Report exceeds the 5 MB limit.');
+   return buildReport(input);
+@@ -245,6 +307,7 @@ export function exportReport(report) {
+     'urls.jsonl': jsonl([...urls].map(([id, url]) => ({ id, url }))),
+   };
+   const manifest = { schemaVersion: 1, reportId: report.id, title: report.title, scope: 'Imported retained evidence only; no network collection or independent verification.', completeness: 'unknown', internetCoveragePercent: null,
++    ...(report.runSummary ? { runSummary: report.runSummary } : {}),
+     counts: report.stats, omissions: report.omissions, warnings: report.warnings,
+     relationPolicy: 'Identifier matches do not merge records, prove causality, or establish independent evidence.',
+     outcomeLinkPolicy: 'Outcome evidenceIds are same-URL references only, including for failed attempts; they do not establish which attempt produced evidence.',
+diff --git a/frontend/src/lib/researchReport.test.js b/frontend/src/lib/researchReport.test.js
+index f426754..c6c05ef 100644
+--- a/frontend/src/lib/researchReport.test.js
++++ b/frontend/src/lib/researchReport.test.js
+@@ -1,6 +1,25 @@
+ import { buildReport, parseReport, filterRecords, buildDossier, exportReport } from './researchReport';
+ 
+ const row = (extra = {}) => ({ url: 'https://example.com/paper', title: 'A result', ...extra });
++const emptyColliderRun = () => ({
++  id: '00000000-0000-4000-8000-000000000001', status: 'partial',
++  input: { urls: [], boards: [], query: 'Synthetic zero-result run', pageLimit: 1, followLinks: false },
++  createdAt: '2026-09-11T00:00:00Z', updatedAt: '2026-09-11T00:01:00Z', finishedAt: '2026-09-11T00:01:00Z',
++  progress: { total: 2, done: 2, pending: 0, inflight: 0, completed: 0, partial: 1, failed: 1, uncertain: 0 },
++  units: [{ id: 'page-unit', kind: 'page', status: 'failed', input: { url: 'https://example.org/no-evidence' }, error: 'SOURCE_TIMEOUT' }],
++  edges: [{ sourceUrl: 'https://example.org/search', targetUrl: 'https://example.org/no-evidence', type: 'imported-link' }],
++  result: {
++    pages: [], jobs: [], records: [], incomplete: true,
++    counts: { savedPages: 0, savedJobs: 0, structuredRecords: 0, successfulEmptyBoards: 0, selectedPages: 1, attemptedPages: 1, discoveredUrls: 1, notFetched: 1, frontierOmitted: 0, linksSkipped: 0, omittedRecords: 0, truncatedRecords: 0 },
++    coverage: { percent: null, denominator: null, scope: 'Synthetic bounded sources only.' },
++    selectionPriority: 'Synthetic explicit-source ordering.',
++    errors: [{ code: 'SOURCE_TIMEOUT', unitId: 'page-unit', url: 'https://example.org/no-evidence' }],
++    warnings: [{ code: 'PARSER_WARNING', unitId: 'page-unit' }],
++    searchSlices: [{ unitId: 'search-unit', query: 'Synthetic zero-result run', status: 'partial', returned: 1,
++      results: [{ url: 'https://example.org/no-evidence', title: 'Synthetic candidate without retained evidence' }],
++      providers: [{ id: 'synthetic', status: 'ok', returned: 1 }, { id: 'synthetic-disabled', status: 'unconfigured', code: 'PROVIDER_UNCONFIGURED', returned: 0 }] }],
++  },
++});
+ describe('local research report tools', () => {
+   test('strips non-printing controls from text and rejects them in source URLs', () => {
+     const report = buildReport([row({ content: '\u0000A\tB\nC\rD\u0008\u007f' })]);
+@@ -73,6 +92,105 @@ describe('local research report tools', () => {
+     expect(report.trace.edges).toHaveLength(0);
+     expect(report.omissions.join(' ')).toMatch(/not restored/);
+   });
++  test('retains a valid zero-result Collider run with summary, diagnostics and trace', () => {
++    const input = emptyColliderRun(), report = parseReport(JSON.stringify(input), 'lynk-run.json');
++    expect(report.records).toEqual([]);
++    expect(report.stats).toEqual({ records: 0, domains: 0, relations: 0, candidates: 1, outcomes: 1, edges: 1 });
++    expect(report.title).toBe(input.input.query);
++    expect(report.runSummary.id).toBe(input.id);
++    expect(report.runSummary.status).toBe('partial');
++    expect(report.runSummary.progress).toEqual(input.progress);
++    expect(report.runSummary.counts).toEqual(input.result.counts);
++    expect(report.runSummary.errors[0].code).toBe('SOURCE_TIMEOUT');
++    expect(report.runSummary.warnings[0].code).toBe('PARSER_WARNING');
++    expect(report.runSummary.searchSlices[0].providers[1].code).toBe('PROVIDER_UNCONFIGURED');
++    expect(report.trace.outcomes[0].evidenceIds).toEqual([]);
++    expect(filterRecords(report)).toEqual([]);
++    expect(() => buildDossier(report, 'example.org')).toThrow(/no evidence/);
++  });
++  test('retains completed empty-board and queued zero-result observations without inventing evidence', () => {
++    const completed = emptyColliderRun();
++    completed.status = 'completed';
++    completed.input = { urls: [], boards: [{ provider: 'lever', board: 'synthetic', limit: 20 }], pageLimit: 1, followLinks: false };
++    completed.progress = { total: 1, done: 1, pending: 0, inflight: 0, completed: 1, partial: 0, failed: 0, uncertain: 0 };
++    completed.units = []; completed.edges = [];
++    completed.result = { ...completed.result, incomplete: false, errors: [], warnings: [], searchSlices: [], counts: Object.fromEntries(Object.keys(completed.result.counts).map(key => [key, key === 'successfulEmptyBoards' ? 1 : 0])) };
++    const report = buildReport(completed);
++    expect(report.records).toHaveLength(0);
++    expect(report.runSummary.status).toBe('completed');
++    expect(report.runSummary.counts.successfulEmptyBoards).toBe(1);
++    expect(exportReport(report).manifest.internetCoveragePercent).toBe(null);
++    const queued = emptyColliderRun();
++    queued.status = 'queued'; queued.finishedAt = null;
++    queued.progress = { total: 1, done: 0, pending: 1, inflight: 0, completed: 0, partial: 0, failed: 0, uncertain: 0 };
++    queued.units = []; queued.edges = [];
++    queued.result.errors = []; queued.result.warnings = []; queued.result.searchSlices = [];
++    queued.result.counts = Object.fromEntries(Object.keys(queued.result.counts).map(key => [key, 0]));
++    expect(buildReport(queued).runSummary.status).toBe('queued');
++  });
++  test('imports a complete gateway-shaped empty-board run envelope', () => {
++    const at = '2026-09-11T00:00:00.000Z', runId = '00000000-0000-4000-8000-000000000010', unitId = '00000000-0000-4000-8000-000000000011';
++    const board = { provider: 'lever', board: 'synthetic', limit: 20 };
++    const run = {
++      id: runId, input: { urls: [], boards: [board], pageLimit: 5, followLinks: false }, status: 'completed',
++      createdAt: at, updatedAt: at, startedAt: at, finishedAt: at, cancelRequestedAt: null, allocatedPages: 0,
++      units: [{ id: unitId, kind: 'board', input: board, status: 'completed', startedAt: at, finishedAt: at,
++        result: { status: 'completed', pages: [], jobs: [], records: [], errors: [], warnings: [], omittedRecords: 0, truncatedRecords: 0,
++          boards: [{ ...board, status: 'ok', returned: 0, omitted: 0, truncated: false }] } }],
++      events: [{ at, type: 'queued' }, { at, type: 'unit_completed', unitId }, { at, type: 'completed' }], eventsDropped: 0,
++      progress: { total: 1, done: 1, pending: 0, inflight: 0, completed: 1, partial: 0, failed: 0, uncertain: 0 },
++      result: {
++        counts: { savedPages: 0, savedJobs: 0, structuredRecords: 0, successfulEmptyBoards: 1, selectedPages: 0, attemptedPages: 0, discoveredUrls: 0, notFetched: 0, frontierOmitted: 0, linksSkipped: 0, omittedRecords: 0, truncatedRecords: 0 },
++        coverage: { percent: null, denominator: null, scope: 'Only explicit sources and bounded selected pages; pending, failed and uncertain reads are not verified coverage.' },
++        selectionPriority: 'Explicit seed URLs reserve page slots first, then discovery slices select in input order, then followed links use any remaining slots. All share one page cap; slots are not balanced across slices.',
++        incomplete: false, pages: [], jobs: [], records: [], errors: [], warnings: [], discovery: null, searchSlices: [],
++      },
++    };
++    const report = parseReport(JSON.stringify(run), `lynk-run-${runId}.json`);
++    expect(report.records).toHaveLength(0);
++    expect(report.runSummary.input.boards).toEqual([board]);
++    expect(report.runSummary.counts.successfulEmptyBoards).toBe(1);
++    expect(report.runSummary.progress.total).toBe(run.units.length);
++    expect(parseReport(JSON.stringify(exportReport(report)))).toEqual(report);
++  });
++  test('round-trips valid zero-result bundles including identity, diagnostics, omissions and empty CSV', () => {
++    const report = buildReport(emptyColliderRun()), bundle = exportReport(report);
++    expect(bundle.files['evidence.jsonl']).toBe('');
++    expect(bundle.files['evidence.csv'].trim().split(/\r?\n/)).toHaveLength(1);
++    expect(bundle.manifest.runSummary).toEqual(report.runSummary);
++    expect(bundle.manifest.internetCoveragePercent).toBe(null);
++    expect(parseReport(JSON.stringify(bundle), 'fynd-research-bundle.json')).toEqual(report);
++    const another = emptyColliderRun(); another.id = '00000000-0000-4000-8000-000000000002';
++    expect(buildReport(another).id).not.toBe(report.id);
++  });
++  test('rejects empty junk, incomplete run lookalikes and contradictory zero-evidence counts', () => {
++    for (const input of [{}, [], { records: [] }, { result: { pages: [], jobs: [], records: [] } }, { manifest: { schemaVersion: 1 }, files: {} }]) {
++      expect(() => parseReport(JSON.stringify(input))).toThrow();
++    }
++    for (const change of [input => { input.id = 'not-a-run-id'; }, input => { delete input.progress; }, input => { delete input.result.counts.savedPages; },
++      input => { input.progress.done = 0; }, input => { input.input.query = ''; }, input => { input.result.counts.savedJobs = 1; }]) {
++      const input = emptyColliderRun(); change(input);
++      expect(() => buildReport(input)).toThrow();
++    }
++    const bundle = exportReport(buildReport(emptyColliderRun()));
++    bundle.manifest.runSummary.status = 'invented';
++    expect(() => parseReport(JSON.stringify(bundle))).toThrow(/Invalid Collider/);
++  });
++  test('bounds and validates run diagnostics without treating imported text as trusted data', () => {
++    const input = emptyColliderRun();
++    input.result.errors[0].url = 'http://127.0.0.1/private';
++    expect(() => buildReport(input)).toThrow(/public http/);
++    input.result.errors = Array.from({ length: 1001 }, () => ({ code: 'SOURCE_TIMEOUT' }));
++    expect(() => buildReport(input)).toThrow(/run-summary limit/);
++  });
++  test('accepts portable bundles larger than the raw-report limit without raising the raw limit', () => {
++    const report = buildReport(Array.from({ length: 40 }, (_, index) => row({ url: `https://example.com/large-${index}`, content: '\\'.repeat(50000), contentStatus: 'full' })));
++    const bundleText = JSON.stringify(exportReport(report));
++    expect(new Blob([bundleText]).size > 5 * 1024 * 1024).toBe(true);
++    expect(new Blob([bundleText]).size < 20 * 1024 * 1024).toBe(true);
++    expect(parseReport(bundleText).id).toBe(report.id);
++    expect(() => parseReport(JSON.stringify({ records: [row({ content: 'x'.repeat(5 * 1024 * 1024) })] }))).toThrow(/5 MB/);
++  });
+   test('filters evidence by kind, completeness and search', () => {
+     const report = buildReport([row({ kind: 'paper', content: 'retained science', contentStatus: 'full', source: 'Journal', doi: '10.1234/xyz' }), row({ kind: 'video' })]);
+     expect(filterRecords(report, { kind: 'studies', contentStatus: 'full', query: 'science' })).toHaveLength(1);
+diff --git a/frontend/src/pages/Research.jsx b/frontend/src/pages/Research.jsx
+index 4a7c37b..9627d6f 100644
+--- a/frontend/src/pages/Research.jsx
++++ b/frontend/src/pages/Research.jsx
+@@ -1,6 +1,7 @@
+ import React, { useEffect, useMemo, useRef, useState } from 'react';
+ import { Upload, Download, Search, BookOpen, Link2, Building2, ListTree, ExternalLink, X } from 'lucide-react';
+ import { parseReport, filterRecords, buildDossier, exportReport, REPORT_KINDS, CONTENT_STATUSES } from '../lib/researchReport';
++import FyndJobResearchImport from '../components/FyndJobResearchImport';
+ 
+ const label = value => String(value).replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[_-]/g, ' ');
+ const tabs = [['evidence', 'Evidence', BookOpen], ['links', 'Research links', Link2], ['company', 'Company dossier', Building2], ['trace', 'Discovery trail', ListTree]];
+@@ -31,6 +32,7 @@ export default function Research() {
+   const [exportPreview, setExportPreview] = useState(null);
+   const [exportNotice, setExportNotice] = useState('');
+   const [copyStatus, setCopyStatus] = useState('');
++  const [jobImportReset, setJobImportReset] = useState(0);
+   const sequence = useRef(0);
+   const exportSequence = useRef(0);
+   const fileInput = useRef(null);
+@@ -41,15 +43,22 @@ export default function Research() {
+   function resetExport() {
+     ++exportSequence.current; setExportPreview(null); setExportNotice(''); setCopyStatus('');
+   }
+-  function accept(text, name) {
+-    const next = parseReport(text, name);
++  function acceptReport(next) {
+     setReport(next); setError(''); setPage(0); setQuery(''); setKind('all'); setContentStatus('all'); setDossier(null); setDomain('');
+     resetExport();
+   }
++  function accept(text, name) { acceptReport(parseReport(text, name)); }
++  function acceptFyndReport(next) {
++    ++sequence.current; setBusy(false); acceptReport(next);
++  }
++  function onFyndBusy(active) {
++    if (active) { ++sequence.current; setBusy(false); }
++  }
+   async function importFile(event) {
+     const file = event.target.files?.[0];
+     event.target.value = '';
+     if (!file) return;
++    setJobImportReset(value => value + 1);
+     const version = ++sequence.current;
+     setBusy(true); setError('');
+     try {
+@@ -60,10 +69,12 @@ export default function Research() {
+     finally { if (version === sequence.current) setBusy(false); }
+   }
+   function importPaste() {
++    setJobImportReset(value => value + 1);
+     ++sequence.current; setBusy(false);
+     try { accept(paste, 'pasted.json'); setPaste(''); } catch (e) { setError(e.message || 'Invalid report.'); }
+   }
+   function clear() {
++    setJobImportReset(value => value + 1);
+     ++sequence.current; setBusy(false); setReport(null); setDossier(null); setPaste(''); setError('');
+     resetExport();
+   }
+@@ -116,10 +127,11 @@ export default function Research() {
+     {error && <div role="alert" className="rounded-xl border border-red-400 p-4 text-sm">{error} {report && 'Your previously loaded report is unchanged.'}</div>}
+ 
+     {!report ? <section className="liquid-sheet p-6 sm:p-10 space-y-6" data-testid="research-empty">
++      <FyndJobResearchImport onReport={acceptFyndReport} onBusy={onFyndBusy} resetKey={jobImportReset} />
+       <div className="max-w-2xl"><BookOpen className="text-accent mb-4" size={28} /><h2 className="text-2xl font-semibold">A clearer view of what you actually found.</h2><p className="muted mt-3">Import a Collider run, an evidence JSON/JSONL file, or a downloaded research bundle. Up to 1,000 evidence records. Raw reports: 5 MB; portable bundles: 20 MB. Missing content and missing discovery history stay visible.</p></div>
+       <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">{tabs.map(([key, title, Icon]) => <div key={key} className="border border-line dark:border-line-dark rounded-2xl p-4"><Icon size={18} className="mb-3 text-accent" /><h3 className="font-medium text-sm">{title}</h3><p className="muted text-xs mt-2">{({ evidence: 'Separate evidence kind from how much content was obtained.', links: 'Inspect shared identifiers without merging distinct records.', company: 'Separate selected-host material, external coverage, and history.', trace: 'Export retained records and disclose what was never captured.' })[key]}</p></div>)}</div>
+       <details className="border-t border-line dark:border-line-dark pt-4"><summary className="cursor-pointer text-sm font-medium">Paste report JSON or get an example format</summary><div className="mt-4 space-y-3">
+-        <label className="block text-sm" htmlFor="report-paste">Report JSON</label><textarea id="report-paste" className={`${inputClass} font-mono min-h-40`} value={paste} maxLength={5 * 1024 * 1024} onChange={e => setPaste(e.target.value)} placeholder={'{"title":"My research","records":[…]}'} />
++        <label className="block text-sm" htmlFor="report-paste">Report JSON</label><textarea id="report-paste" className={`${inputClass} font-mono min-h-40`} value={paste} maxLength={20 * 1024 * 1024} onChange={e => setPaste(e.target.value)} placeholder={'{"title":"My research","records":[…]}'} />
+         <div className="flex flex-wrap gap-2"><button type="button" className="liquid-capsule liquid-primary" disabled={!paste.trim()} onClick={importPaste}>Open pasted report</button><button type="button" className="liquid-capsule liquid-secondary" onClick={() => downloadFile('fynd-report-template.json', { title: 'Example format — replace with your own evidence', records: [{ id: 'source-1', url: 'https://example.org/evidence', title: 'Example record — not real research', kind: 'unknown', contentStatus: 'metadata-only', content: '', identifiers: { doi: [], pmid: [], trial: [] } }] })}>Download template</button></div>
+       </div></details>
+     </section> : <>
+@@ -127,6 +139,14 @@ export default function Research() {
+         <div className="flex flex-wrap gap-3 justify-between items-center"><div className="min-w-0"><h2 className="text-xl font-semibold break-words">{report.title || 'Imported research'}</h2><p className="text-xs muted mt-1">{report.records.length} retained evidence records · {report.relations.length} identifier {report.relations.length === 1 ? 'relationship' : 'relationships'}</p></div><div className="flex flex-wrap gap-2"><button type="button" className="liquid-capsule liquid-secondary" onClick={() => exportData(false)}><Download size={15} />Download bundle</button><button type="button" className="liquid-capsule liquid-secondary" onClick={clear}><X size={15} />Clear report</button></div></div>
+         {!!report.warnings?.length && <details><summary className="cursor-pointer text-xs muted">Import notes ({report.warnings.length})</summary><ul className="list-disc pl-5 text-xs muted mt-2 space-y-1">{report.warnings.map((warning, i) => <li key={i}>{typeof warning === 'string' ? warning : JSON.stringify(warning)}</li>)}</ul></details>}
+       </section>
++      {report.runSummary && <section className="liquid-card p-5 space-y-3" aria-labelledby="run-summary-heading">
++        <h2 id="run-summary-heading" className="text-lg font-semibold">Imported Collider run</h2>
++        <p className="text-sm">Run status: {label(report.runSummary.status)} · {report.runSummary.progress.done} of {report.runSummary.progress.total} recorded steps settled</p>
++        <p className="text-xs muted break-all">Run ID: {report.runSummary.id}</p>
++        <p className="text-xs muted">Saved pages: {report.runSummary.counts.savedPages} · Saved jobs: {report.runSummary.counts.savedJobs} · Structured records: {report.runSummary.counts.structuredRecords} · Successful empty boards: {report.runSummary.counts.successfulEmptyBoards}</p>
++        <p className="text-xs muted">Imported run state only; completeness and internet coverage are not independently verified. {report.runSummary.incomplete ? 'The source marks this run incomplete.' : 'A completed run does not establish complete search coverage.'}</p>
++        <details><summary className="cursor-pointer text-sm font-medium">Run diagnostics and summary</summary><pre className="mt-3 text-xs whitespace-pre-wrap break-words max-h-80 overflow-y-auto">{JSON.stringify(report.runSummary, null, 2)}</pre></details>
++      </section>}
+       {exportPreview && <section className="liquid-card p-5 space-y-3" aria-labelledby="export-heading">
+         <div className="flex flex-wrap justify-between items-start gap-3"><div className="min-w-0"><h2 id="export-heading" className="text-lg font-semibold">Your export is ready</h2><p className="text-xs muted mt-1 break-all">Filename: {exportPreview.name}</p></div><button type="button" className="liquid-capsule liquid-secondary" onClick={copyExport} disabled={copyStatus === 'Copying…'}>Copy export</button></div>
+         <p className="text-sm muted" role="status">{exportNotice}</p>
+@@ -144,7 +164,7 @@ export default function Research() {
+           <p className="text-xs muted">{r.contentBasis}</p>
+           {r.content && <details><summary className="text-sm cursor-pointer">Read retained content</summary><pre className="mt-3 text-sm whitespace-pre-wrap break-words font-sans max-h-80 overflow-y-auto">{r.content}</pre></details>}
+           <div className="flex flex-wrap gap-3 text-xs"><span className="muted break-all">Record {r.id}</span>{r.url && <a href={r.url} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer" className="inline-flex items-center gap-1">Open source<ExternalLink size={12} /></a>}</div>
+-        </article>) : <p className="liquid-card p-6 muted">No records match these filters. Try a different evidence kind or content state.</p>}
++        </article>) : <p className="liquid-card p-6 muted">{report.records.length ? 'No records match these filters. Try a different evidence kind or content state.' : 'This imported run contains no collected evidence. Review the run summary and Discovery trail for retained diagnostics. Empty results do not prove absence.'}</p>}
+         {rows.length > 25 && <div className="flex items-center justify-center gap-4"><button className="liquid-capsule liquid-secondary" disabled={page === 0} onClick={() => setPage(p => p - 1)}>Previous</button><span className="text-xs muted">Page {page + 1} of {Math.ceil(rows.length / 25)}</span><button className="liquid-capsule liquid-secondary" disabled={(page + 1) * 25 >= rows.length} onClick={() => setPage(p => p + 1)}>Next</button></div>}
+       </section>}
+ 
+diff --git a/frontend/src/pages/Research.test.jsx b/frontend/src/pages/Research.test.jsx
+index ab50980..ff12f9b 100644
+--- a/frontend/src/pages/Research.test.jsx
++++ b/frontend/src/pages/Research.test.jsx
+@@ -1,7 +1,72 @@
+ import React from 'react';
+-import { act, fireEvent, render, screen, within } from '@testing-library/react';
++import { act, fireEvent, render as rtlRender, screen, within } from '@testing-library/react';
++import { MemoryRouter } from 'react-router-dom';
+ import Research from './Research';
+ import { parseReport, exportReport } from '../lib/researchReport';
++import { api } from '../lib/api';
++
++jest.mock('../lib/api', () => ({ api: { get: jest.fn() } }));
++const render = element => rtlRender(<MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>{element}</MemoryRouter>);
++
++describe('Research stored-job connection', () => {
++  const id = '1393c281-2d9f-4ed8-a38f-16b7c4b02f6d';
++  const storedJob = { id, title: 'Stored research job', company_name: 'Example', origin_url: 'https://example.org/careers/research', jd_text: 'Stored description, not freshly collected.', is_sample: false };
++  const startJob = () => {
++    fireEvent.change(screen.getByLabelText('Fynd job ID or internal path'), { target: { value: id } });
++    fireEvent.click(screen.getByRole('button', { name: 'Load Fynd job', exact: true }));
++  };
++  beforeEach(() => api.get.mockReset());
++
++  test('opens an existing job as evidence, then clears back to the import screen', async () => {
++    api.get.mockResolvedValue({ data: storedJob });
++    render(<Research />);
++    await act(async () => { startJob(); });
++    expect(screen.getByRole('heading', { name: 'Example — Stored research job' })).toBeTruthy();
++    expect(screen.getAllByTestId('evidence-record')).toHaveLength(1);
++    expect(screen.getByText('Stored description, not freshly collected.')).toBeTruthy();
++    expect(screen.queryByTestId('fynd-job-research-import')).toBeNull();
++    fireEvent.click(screen.getByRole('button', { name: 'Clear report' }));
++    expect(screen.getByTestId('fynd-job-research-import')).toBeTruthy();
++    expect(screen.queryAllByTestId('evidence-record')).toHaveLength(0);
++  });
++
++  test('a newer stored-job request invalidates an older file read immediately', async () => {
++    let finishFile, finishJob;
++    api.get.mockReturnValue(new Promise(resolve => { finishJob = resolve; }));
++    render(<Research />);
++    uploadFile({ name: 'old.json', size: 20, text: () => new Promise(resolve => { finishFile = resolve; }) });
++    startJob();
++    await act(async () => { finishFile(JSON.stringify(reportFixture)); });
++    expect(screen.queryAllByTestId('evidence-record')).toHaveLength(0);
++    await act(async () => { finishJob({ data: storedJob }); });
++    expect(screen.getByRole('heading', { name: 'Example — Stored research job' })).toBeTruthy();
++  });
++
++  test('starting a file read aborts an older job request before the file completes', async () => {
++    let finishFile, finishJob;
++    api.get.mockReturnValue(new Promise(resolve => { finishJob = resolve; }));
++    render(<Research />); startJob();
++    const signal = api.get.mock.calls[0][1].signal;
++    uploadFile({ name: 'new.json', size: 20, text: () => new Promise(resolve => { finishFile = resolve; }) });
++    expect(signal.aborted).toBe(true);
++    await act(async () => { finishJob({ data: storedJob }); });
++    expect(screen.queryAllByTestId('evidence-record')).toHaveLength(0);
++    await act(async () => { finishFile(JSON.stringify(reportFixture)); });
++    expect(screen.getByRole('heading', { name: reportFixture.title })).toBeTruthy();
++  });
++
++  test('pasting a report cancels a pending job load and keeps the pasted evidence', async () => {
++    let finishJob;
++    api.get.mockReturnValue(new Promise(resolve => { finishJob = resolve; }));
++    render(<Research />); startJob();
++    const signal = api.get.mock.calls[0][1].signal;
++    openPastedReport();
++    expect(signal.aborted).toBe(true);
++    await act(async () => { finishJob({ data: storedJob }); });
++    expect(screen.getByRole('heading', { name: reportFixture.title })).toBeTruthy();
++    expect(screen.getAllByTestId('evidence-record')).toHaveLength(3);
++  });
++});
+ 
+ const reportFixture = {
+   title: 'Fixture evidence — not live research',
+@@ -43,6 +108,15 @@ const companyFixture = {
+     { id: 'subdomain', url: 'https://docs.example.com/products/payments', title: 'Unverified subdomain product', kind: 'web' },
+   ],
+ };
++const zeroResultFixture = {
++  id: '00000000-0000-4000-8000-000000000003', status: 'failed',
++  input: { urls: ['https://example.org/unavailable'], boards: [], pageLimit: 1, followLinks: false },
++  progress: { total: 1, done: 1, pending: 0, inflight: 0, completed: 0, partial: 0, failed: 1, uncertain: 0 },
++  units: [{ id: 'failed-page', kind: 'page', status: 'failed', input: { url: 'https://example.org/unavailable' }, error: 'SOURCE_TIMEOUT' }],
++  result: { pages: [], jobs: [], records: [], incomplete: true,
++    counts: { savedPages: 0, savedJobs: 0, structuredRecords: 0, successfulEmptyBoards: 0, selectedPages: 1, attemptedPages: 1, discoveredUrls: 1, notFetched: 1, frontierOmitted: 0, linksSkipped: 0, omittedRecords: 0, truncatedRecords: 0 },
++    errors: [{ code: 'SOURCE_TIMEOUT', unitId: 'failed-page', url: 'https://example.org/unavailable' }], warnings: [], searchSlices: [] },
++};
+ 
+ function openPastedReport(value = reportFixture) {
+   // Opening details also exercises the entry point available to keyboard users.
+@@ -68,6 +142,36 @@ describe('Research workspace', () => {
+     expect(screen.getByRole('note').textContent).toContain('no report is uploaded or saved to your account');
+     expect(screen.queryAllByTestId('evidence-record')).toHaveLength(0);
+     expect(screen.queryByRole('button', { name: 'Download bundle' })).toBeNull();
++    expect(screen.getByLabelText('Report JSON').maxLength).toBe(20 * 1024 * 1024);
++  });
++
++  test('shows a valid zero-result Collider run instead of an import failure and retains diagnostics', () => {
++    render(<Research />);
++    openPastedReport(zeroResultFixture);
++    expect(screen.queryByRole('alert')).toBeNull();
++    expect(screen.queryByTestId('research-empty')).toBeNull();
++    expect(screen.getByRole('heading', { name: 'Imported Collider run' })).toBeTruthy();
++    expect(screen.getByText('Run status: failed · 1 of 1 recorded steps settled')).toBeTruthy();
++    expect(screen.getByText(/This imported run contains no collected evidence/)).toBeTruthy();
++    expect(screen.getByText(/Empty results do not prove absence/)).toBeTruthy();
++    expect(screen.queryByText(/No records match these filters/)).toBeNull();
++    expect(screen.getByText(/SOURCE_TIMEOUT/)).toBeTruthy();
++    expect(screen.getAllByRole('status').some(item => item.textContent === '0 matching records')).toBe(true);
++    expect(screen.queryAllByTestId('evidence-record')).toHaveLength(0);
++    fireEvent.click(screen.getByRole('button', { name: 'Discovery trail' }));
++    expect(screen.getByText('Retained fetch outcomes').parentElement.textContent).toContain('1');
++    expect(screen.getByRole('button', { name: 'Download traceable bundle' })).toBeTruthy();
++  });
++
++  test('accepts a zero-result replacement file but retains it when subsequent empty junk is imported', async () => {
++    render(<Research />);
++    openPastedReport();
++    await act(async () => { uploadFile({ name: 'zero-result.json', size: 1000, text: jest.fn().mockResolvedValue(JSON.stringify(zeroResultFixture)) }); });
++    expect(screen.getByRole('heading', { name: 'Imported Collider run' })).toBeTruthy();
++    expect(screen.queryAllByTestId('evidence-record')).toHaveLength(0);
++    await act(async () => { uploadFile({ name: 'empty-junk.json', size: 2, text: jest.fn().mockResolvedValue('{}') }); });
++    expect(screen.getByRole('alert').textContent).toContain('Your previously loaded report is unchanged.');
++    expect(screen.getByRole('heading', { name: 'Imported Collider run' })).toBeTruthy();
+   });
+ 
+   test('opens pasted JSON without representing metadata as retained full content', () => {
+@@ -308,6 +412,20 @@ describe('Research workspace', () => {
+       expect(writeText).not.toHaveBeenCalled();
+     });
+ 
++    test('exports and reopens a zero-result run without losing its summary or diagnostics', () => {
++      render(<Research />);
++      openPastedReport(zeroResultFixture);
++      fireEvent.click(screen.getByRole('button', { name: 'Download bundle' }));
++      const bundleText = screen.getByLabelText('Export text').value;
++      expect(JSON.parse(bundleText).manifest.runSummary.errors[0].code).toBe('SOURCE_TIMEOUT');
++      fireEvent.click(screen.getByRole('button', { name: 'Clear report' }));
++      openPastedReport(bundleText);
++      expect(screen.queryByRole('alert')).toBeNull();
++      expect(screen.getByRole('heading', { name: 'Imported Collider run' })).toBeTruthy();
++      expect(screen.getByText(/SOURCE_TIMEOUT/)).toBeTruthy();
++      expect(screen.queryAllByTestId('evidence-record')).toHaveLength(0);
++    });
++
+     test.each([false, true])('copies the prepared export bytes only after an explicit click (CSV: %s)', async csv => {
+       render(<Research />);
+       openPastedReport();
+diff --git a/frontend/src/components/FyndJobResearchImport.jsx b/frontend/src/components/FyndJobResearchImport.jsx
+new file mode 100644
+--- /dev/null
++++ b/frontend/src/components/FyndJobResearchImport.jsx
+@@ -0,0 +1,132 @@
++import React, { useCallback, useEffect, useRef, useState } from 'react';
++import { useLocation } from 'react-router-dom';
++import { api } from '../lib/api';
++import { buildReport } from '../lib/researchReport';
++
++const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
++const UUID_RE = new RegExp(`^${UUID}$`, 'i');
++const JOB_PATH_RE = new RegExp(`^/jobs/(${UUID})/?$`, 'i');
++const INPUT_ERROR = 'Enter a Fynd job UUID or an internal /jobs/UUID path. External job links are not supported here.';
++const inputClass = 'w-full rounded-xl border border-line dark:border-line-dark bg-white/60 dark:bg-black/20 px-3 py-2 text-sm';
++// eslint-disable-next-line no-control-regex -- Intentionally remove non-printing ASCII controls from imported source labels.
++const clean = (value, max) => typeof value === 'string' ? value.replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, max) : '';
++const storedDate = value => typeof value === 'string' && /^\d{4}-\d\d-\d\d/.test(value) && value.length <= 40 && Number.isFinite(Date.parse(value)) ? value : '';
++class ImportProblem extends Error {}
++
++function prefill(search) {
++  const values = new URLSearchParams(search).getAll('job');
++  if (!values.length) return { value: '', error: '' };
++  if (values.length !== 1 || !UUID_RE.test(values[0])) return { value: '', error: 'The research link has an invalid Fynd job ID. Enter a valid job UUID below.' };
++  return { value: values[0].toLowerCase(), error: '' };
++}
++
++function jobReport(job, expectedId) {
++  if (!job || typeof job !== 'object' || Array.isArray(job) || typeof job.id !== 'string' || !UUID_RE.test(job.id) || job.id.toLowerCase() !== expectedId) {
++    throw new ImportProblem('Fynd returned a different or invalid job record. Nothing was imported.');
++  }
++  if (job.is_sample === true) throw new ImportProblem('Sample jobs cannot be imported as research evidence. Choose a non-sample Fynd job.');
++  if (job.is_sample !== false) throw new ImportProblem('This stored job does not declare whether it is a sample. Nothing was imported.');
++  if (job.needs_origin === true || typeof job.origin_url !== 'string' || !job.origin_url.trim()) throw new ImportProblem('This job has no usable original source. The application link will not be substituted.');
++  if (job.jd_text != null && typeof job.jd_text !== 'string') throw new ImportProblem('The stored job description has an unsupported format. Nothing was imported.');
++  const body = job.jd_text || '';
++  if (body.length > 60000 || new Blob([body]).size > 250000) throw new ImportProblem('The stored description is too large for this bounded import. Use a smaller evidence export.');
++  const title = clean(job.title, 500) || 'Stored Fynd job', company = clean(job.company_name, 300);
++  const verified = storedDate(job.last_verified), status = clean(job.status, 80);
++  try {
++    return buildReport({
++      title: company ? `${company} — ${title}` : title,
++      records: [{ id: job.id.toLowerCase(), url: job.origin_url, title: company ? `${title} · ${company}` : title,
++        kind: 'jobs', source: clean(job.source, 200) || 'Fynd stored job', content: body,
++        contentStatus: body.trim() ? 'unknown' : 'metadata-only', publishedAt: storedDate(job.posted_at) }],
++      omissions: [
++        'Imported one existing Fynd job observation through the signed-in job-detail API; the original website was not fetched.',
++        'Stored descriptions and source metadata may be incomplete or stale. This import does not verify freshness, availability, or completeness.',
++        'Personal match scores, eligibility gates, skill gaps and the separate application-link field were not copied. The original source URL is retained. No application was prepared or submitted.',
++      ],
++      warnings: [
++        ...(status ? [`Stored Fynd status: ${status}. This status was not rechecked against the source.`] : []),
++        ...(verified ? [`Last verification timestamp supplied by Fynd: ${verified}. No new verification was performed here.`] : []),
++      ],
++    });
++  } catch {
++    throw new ImportProblem('The original source URL or stored evidence is unsafe or unsupported. Nothing was imported.');
++  }
++}
++
++function friendlyError(error) {
++  if (error instanceof ImportProblem) return error.message;
++  const status = error?.response?.status;
++  if (status === 401) return 'Your Fynd session has expired. Sign in again, then retry this import.';
++  if (status === 403) return 'Fynd did not authorize this job read. Review your account permissions and required career-data consent, then retry.';
++  if (status === 404) return 'That Fynd job could not be found. Check the job ID or open another job.';
++  if (['ECONNABORTED', 'ETIMEDOUT'].includes(error?.code)) return 'Fynd took too long to respond. Your report is unchanged; try again shortly.';
++  if (status === 503) return 'Fynd job details are temporarily unavailable. Your report is unchanged; try again shortly.';
++  return 'The stored Fynd job could not be loaded. Your report is unchanged; try again shortly.';
++}
++
++// resetKey is an optional parent-controlled cancellation token for Clear/replace.
++// No automatic fetch, local storage, external URL request, or application action.
++export default function FyndJobResearchImport({ onReport, onBusy, resetKey }) {
++  const location = useLocation();
++  const initial = prefill(location.search);
++  const [value, setValue] = useState(initial.value);
++  const [error, setError] = useState(initial.error);
++  const [notice, setNotice] = useState('');
++  const [busy, setBusy] = useState(false);
++  const mounted = useRef(true), request = useRef(null), sequence = useRef(0), lastReset = useRef(resetKey);
++  const busyCallback = useRef(onBusy);
++  busyCallback.current = onBusy;
++  const cancel = useCallback(() => {
++    ++sequence.current;
++    request.current?.abort(); request.current = null;
++    if (mounted.current) { setBusy(false); busyCallback.current?.(false); }
++  }, []);
++
++  useEffect(() => {
++    mounted.current = true;
++    return () => { mounted.current = false; ++sequence.current; request.current?.abort(); request.current = null; busyCallback.current?.(false); };
++  }, []);
++  useEffect(() => {
++    cancel();
++    const next = prefill(location.search);
++    setValue(next.value); setError(next.error); setNotice('');
++  }, [location.search, cancel]);
++  useEffect(() => {
++    if (lastReset.current === resetKey) return;
++    lastReset.current = resetKey;
++    cancel(); setValue(''); setError(''); setNotice('');
++  }, [resetKey, cancel]);
++
++  async function load(event) {
++    event.preventDefault();
++    cancel(); setError(''); setNotice('');
++    const text = value.trim(), id = UUID_RE.test(text) ? text.toLowerCase() : JOB_PATH_RE.exec(text)?.[1]?.toLowerCase();
++    if (!id) { setError(INPUT_ERROR); return; }
++    const controller = new AbortController(), version = ++sequence.current;
++    request.current = controller; setBusy(true); busyCallback.current?.(true);
++    try {
++      const response = await api.get(`/api/v1/jobs/${encodeURIComponent(id)}`, { signal: controller.signal, timeout: 15000 });
++      if (!mounted.current || version !== sequence.current || controller.signal.aborted) return;
++      const report = jobReport(response?.data, id);
++      if (!mounted.current || version !== sequence.current || controller.signal.aborted) return;
++      onReport(report);
++      setNotice('Stored Fynd job loaded. The original source was not fetched or reverified.');
++    } catch (failure) {
++      if (mounted.current && version === sequence.current && !controller.signal.aborted) setError(friendlyError(failure));
++    } finally {
++      if (mounted.current && version === sequence.current) { request.current = null; setBusy(false); busyCallback.current?.(false); }
++    }
++  }
++  function clear() { cancel(); setValue(''); setError(''); setNotice(''); }
++
++  return <section className="liquid-card p-5 space-y-4" aria-labelledby="fynd-job-import-heading" data-testid="fynd-job-research-import">
++    <div><h2 id="fynd-job-import-heading" className="text-lg font-semibold">Research a Fynd job</h2><p className="text-sm muted mt-2">Load a job already stored in Fynd using your signed-in access. This reads Fynd’s saved observation, not the live employer website. Sample jobs are excluded.</p></div>
++    <form onSubmit={load} className="space-y-3" aria-busy={busy}>
++      <label className="block text-xs muted space-y-1"><span>Fynd job ID or internal path</span><input className={inputClass} value={value} maxLength={80} autoComplete="off" spellCheck={false} placeholder="Job UUID or /jobs/UUID" onChange={event => { cancel(); setValue(event.target.value); setError(''); setNotice(''); }} /></label>
++      <div className="flex flex-wrap gap-2"><button type="submit" className="liquid-capsule liquid-primary" disabled={busy || !value.trim()}>{busy ? 'Loading stored job…' : 'Load Fynd job'}</button><button type="button" className="liquid-capsule liquid-secondary" onClick={clear} disabled={!value && !busy && !error && !notice}>Clear job input</button></div>
++    </form>
++    <p className="text-xs muted">A linked job ID is only prefilled—nothing loads until you choose Load Fynd job. Loading replaces the open research report; a failed load leaves it unchanged. No application action is taken.</p>
++    {error && <p role="alert" className="rounded-xl border border-red-400 p-3 text-sm">{error}</p>}
++    {notice && <p role="status" className="text-sm muted">{notice}</p>}
++  </section>;
++}
+diff --git a/frontend/src/components/FyndJobResearchImport.test.jsx b/frontend/src/components/FyndJobResearchImport.test.jsx
+new file mode 100644
+--- /dev/null
++++ b/frontend/src/components/FyndJobResearchImport.test.jsx
+@@ -0,0 +1,157 @@
++import React from 'react';
++import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
++import { MemoryRouter } from 'react-router-dom';
++import { api } from '../lib/api';
++import FyndJobResearchImport from './FyndJobResearchImport';
++
++jest.mock('../lib/api', () => ({ api: { get: jest.fn() } }));
++const JOB_ID = '1393c281-2d9f-4ed8-a38f-16b7c4b02f6d';
++const SECOND_ID = '2493c281-2d9f-4ed8-a38f-16b7c4b02f6d';
++const job = (extra = {}) => ({ id: JOB_ID, title: 'Research engineer', company_name: 'Example company', origin_url: 'https://example.org/careers/research', apply_url: 'https://example.org/apply/private-reference', jd_text: 'A retained job description.', source: 'greenhouse', status: 'active', is_sample: false, needs_origin: false, posted_at: '2026-09-01T10:00:00Z', last_verified: '2026-09-02T12:00:00Z', score: 99, gates: ['private gate'], have_gap: ['private skill gap'], ...extra });
++function setup(props = {}, path = '/research') {
++  const onReport = props.onReport || jest.fn();
++  const rendered = render(<MemoryRouter initialEntries={[path]}><FyndJobResearchImport onReport={onReport} {...props} /></MemoryRouter>);
++  return { ...rendered, onReport };
++}
++function enter(value = JOB_ID) {
++  fireEvent.change(screen.getByLabelText('Fynd job ID or internal path'), { target: { value } });
++}
++function load() { fireEvent.click(screen.getByRole('button', { name: 'Load Fynd job', exact: true })); }
++function deferred() { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; }
++
++describe('Fynd stored-job research import', () => {
++  beforeEach(() => { api.get.mockReset(); });
++
++  test('prefills a strict deep-link UUID without automatically reading any API', () => {
++    setup({}, `/research?job=${JOB_ID}`);
++    expect(screen.getByLabelText('Fynd job ID or internal path').value).toBe(JOB_ID);
++    expect(api.get).not.toHaveBeenCalled();
++    expect(screen.getByText(/nothing loads until you choose/)).toBeTruthy();
++  });
++
++  test('rejects invalid and duplicated deep-link IDs without API calls', () => {
++    const view = setup({}, '/research?job=https%3A%2F%2Fexample.org%2Fjobs');
++    expect(screen.getByRole('alert').textContent).toMatch(/invalid Fynd job ID/);
++    expect(api.get).not.toHaveBeenCalled();
++    view.unmount();
++    setup({}, `/research?job=${JOB_ID}&job=${SECOND_ID}`);
++    expect(screen.getByRole('alert').textContent).toMatch(/invalid Fynd job ID/);
++    expect(api.get).not.toHaveBeenCalled();
++  });
++
++  test('imports an explicit internal job path through the existing API and excludes personal/application fields', async () => {
++    api.get.mockResolvedValue({ data: job() });
++    const { onReport } = setup();
++    enter(`/jobs/${JOB_ID}`); load();
++    await waitFor(() => expect(onReport).toHaveBeenCalledTimes(1));
++    expect(api.get).toHaveBeenCalledWith(`/api/v1/jobs/${JOB_ID}`, expect.objectContaining({ signal: expect.anything(), timeout: 15000 }));
++    const report = onReport.mock.calls[0][0], record = report.records[0];
++    expect(report.records).toHaveLength(1);
++    expect(record.kind).toBe('jobs');
++    expect(record.contentStatus).toBe('unknown');
++    expect(record.content).toBe('A retained job description.');
++    expect(record.url).toBe(job().origin_url);
++    expect(record.sourceId).toBe(JOB_ID);
++    expect(report.omissions.join(' ')).toMatch(/original website was not fetched/);
++    expect(report.warnings.join(' ')).toMatch(/No new verification/);
++    const serialized = JSON.stringify(report);
++    expect(serialized).not.toContain('private-reference');
++    expect(serialized).not.toContain('private gate');
++    expect(serialized).not.toContain('private skill gap');
++    expect(serialized).not.toContain('"score":99');
++    expect(screen.getByRole('status').textContent).toMatch(/not fetched or reverified/);
++  });
++
++  test('retains a bodyless job as metadata-only', async () => {
++    api.get.mockResolvedValue({ data: job({ jd_text: null }) });
++    const { onReport } = setup(); enter(); load();
++    await waitFor(() => expect(onReport).toHaveBeenCalledTimes(1));
++    expect(onReport.mock.calls[0][0].records[0].contentStatus).toBe('metadata-only');
++  });
++
++  test.each(['https://fynd.llc/jobs/' + JOB_ID, '/jobs/' + JOB_ID + '?x=1', '../jobs/' + JOB_ID, 'not-a-uuid', '/jobs/' + JOB_ID + '/extra'])('rejects non-internal identifiers without fetching: %s', value => {
++    setup(); enter(value); load();
++    expect(screen.getByRole('alert').textContent).toMatch(/External job links are not supported/);
++    expect(api.get).not.toHaveBeenCalled();
++  });
++
++  test.each([
++    [{ is_sample: true }, /Sample jobs/],
++    [{ is_sample: undefined }, /does not declare whether it is a sample/],
++    [{ origin_url: '' }, /no usable original source/],
++    [{ origin_url: null, apply_url: 'https://example.org/apply' }, /will not be substituted/],
++    [{ needs_origin: true }, /no usable original source/],
++    [{ origin_url: 'javascript:alert(1)' }, /unsafe or unsupported/],
++    [{ origin_url: 'http://127.0.0.1/private' }, /unsafe or unsupported/],
++    [{ origin_url: 'https://user:password@example.org/private' }, /unsafe or unsupported/],
++    [{ id: SECOND_ID }, /different or invalid job record/],
++    [{ jd_text: 'x'.repeat(60001) }, /too large/],
++  ])('rejects unusable stored evidence without replacing a report', async (extra, message) => {
++    api.get.mockResolvedValue({ data: job(extra) });
++    const { onReport } = setup(); enter(); load();
++    expect((await screen.findByRole('alert')).textContent).toMatch(message);
++    expect(onReport).not.toHaveBeenCalled();
++  });
++
++  test.each([
++    [{ response: { status: 401, data: { detail: 'secret server trace' } } }, /Sign in again/],
++    [{ response: { status: 403, data: { detail: { code: 'consent_required', secret: 'secret server trace' } } } }, /required career-data consent/],
++    [{ response: { status: 404 } }, /could not be found/],
++    [{ code: 'ECONNABORTED', message: 'secret server trace' }, /too long to respond/],
++    [{ response: { status: 503 } }, /temporarily unavailable/],
++    [{ response: { status: 500, data: { detail: 'secret server trace' } } }, /could not be loaded/],
++  ])('maps network errors to safe messages and preserves existing reports', async (error, message) => {
++    api.get.mockRejectedValue(error);
++    const { onReport } = setup(); enter(); load();
++    const alert = await screen.findByRole('alert');
++    expect(alert.textContent).toMatch(message);
++    expect(alert.textContent).not.toContain('secret server trace');
++    expect(onReport).not.toHaveBeenCalled();
++  });
++
++  test('clear aborts pending reads and ignores a late success even if the client ignores abort', async () => {
++    const pending = deferred(); api.get.mockReturnValue(pending.promise);
++    const { onReport } = setup(); enter(); load();
++    const signal = api.get.mock.calls[0][1].signal;
++    fireEvent.click(screen.getByRole('button', { name: 'Clear job input' }));
++    expect(signal.aborted).toBe(true);
++    await act(async () => { pending.resolve({ data: job() }); await pending.promise; });
++    expect(onReport).not.toHaveBeenCalled();
++    expect(screen.getByLabelText('Fynd job ID or internal path').value).toBe('');
++    expect(screen.queryByRole('status')).toBeNull();
++  });
++
++  test('new input and request supersede an older response', async () => {
++    const old = deferred(), next = deferred(); api.get.mockReturnValueOnce(old.promise).mockReturnValueOnce(next.promise);
++    const { onReport } = setup(); enter(); load();
++    const firstSignal = api.get.mock.calls[0][1].signal;
++    enter(SECOND_ID); load();
++    expect(firstSignal.aborted).toBe(true);
++    await act(async () => { next.resolve({ data: job({ id: SECOND_ID, title: 'Second job' }) }); await next.promise; });
++    await act(async () => { old.resolve({ data: job() }); await old.promise; });
++    expect(onReport).toHaveBeenCalledTimes(1);
++    expect(onReport.mock.calls[0][0].records[0].sourceId).toBe(SECOND_ID);
++  });
++
++  test('unmount aborts and suppresses late errors and reports', async () => {
++    const pending = deferred(); api.get.mockReturnValue(pending.promise);
++    const { onReport, unmount } = setup(); enter(); load();
++    const signal = api.get.mock.calls[0][1].signal;
++    unmount(); expect(signal.aborted).toBe(true);
++    await act(async () => { pending.resolve({ data: job() }); await pending.promise; });
++    expect(onReport).not.toHaveBeenCalled();
++  });
++
++  test('parent resetKey cancels a pending read without clearing the parent report', async () => {
++    const pending = deferred(); api.get.mockReturnValue(pending.promise);
++    const onReport = jest.fn(), onBusy = jest.fn();
++    const { rerender } = setup({ onReport, onBusy, resetKey: 1 }); enter(); load();
++    expect(onBusy).toHaveBeenCalledWith(true);
++    const signal = api.get.mock.calls[0][1].signal;
++    rerender(<MemoryRouter><FyndJobResearchImport onReport={onReport} onBusy={onBusy} resetKey={2} /></MemoryRouter>);
++    expect(signal.aborted).toBe(true);
++    await act(async () => { pending.resolve({ data: job() }); await pending.promise; });
++    expect(onReport).not.toHaveBeenCalled();
++    expect(onBusy).toHaveBeenLastCalledWith(false);
++  });
++});
+diff --git a/frontend/src/pages/JobDetail.jsx b/frontend/src/pages/JobDetail.jsx
+--- a/frontend/src/pages/JobDetail.jsx
++++ b/frontend/src/pages/JobDetail.jsx
+@@ -206,7 +206,12 @@
+             </Button>
+           </div>
+         </div>
++        {!job.is_sample && !derived && job.origin_url && (
++          <Link to={`/research?job=${encodeURIComponent(jobId)}`} className="text-sm underline text-accent inline-flex mt-3" data-testid="job-detail-research-link">
++            Inspect stored evidence in Research
++          </Link>
++        )}
+ 
+         {flash && (
+           <div className={`mt-3 rounded-md px-3 py-2 text-sm border ${
+             flash.kind === 'ok' ? 'border-accent/40 bg-accent/5 text-accent'

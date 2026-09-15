@@ -1,0 +1,24 @@
+diff --git a/frontend/src/lib/researchReport.js b/frontend/src/lib/researchReport.js
+--- a/frontend/src/lib/researchReport.js
++++ b/frontend/src/lib/researchReport.js
+@@ -5,2 +5,3 @@
+ const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
++// eslint-disable-next-line no-control-regex -- Intentionally remove non-printing ASCII controls from imported text.
+ const clean = (value, max = 500) => typeof value === 'string' ? value.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '').trim().slice(0, max) : '';
+@@ -28,2 +29,3 @@
+ function publicUrl(value) {
++  // eslint-disable-next-line no-control-regex -- Intentionally reject whitespace, ASCII controls and backslashes in source URLs.
+   if (typeof value !== 'string' || value.length > 2048 || /[\u0000-\u0020\\]/.test(value)) fail('A record contains an invalid or unsafe URL.');
+diff --git a/frontend/src/lib/researchReport.test.js b/frontend/src/lib/researchReport.test.js
+--- a/frontend/src/lib/researchReport.test.js
++++ b/frontend/src/lib/researchReport.test.js
+@@ -4,2 +4,9 @@
+ describe('local research report tools', () => {
++  test('strips non-printing controls from text and rejects them in source URLs', () => {
++    const report = buildReport([row({ content: '\u0000A\tB\nC\rD\u0008\u007f' })]);
++    expect(report.records[0].content).toBe('A\tB\nC\rD');
++    ['https://example.com/\u0000bad', 'https://example.com/\nbad', 'https://example.com/\\bad'].forEach(url => {
++      expect(() => buildReport([row({ url })])).toThrow(/unsafe URL/);
++    });
++  });
+   test('imports bounded JSON and JSONL without fetching', () => {
