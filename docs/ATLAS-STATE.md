@@ -188,3 +188,31 @@ tests/test_hostile_content_defense.py    60 passed
 
 **Founder external tester note:** the security surface (60 hostile-content-defense + 15 liveness + 13 entity-resolution + 14 policy + 7 registry + 9 connector-SDK = 118 tests) all pass in isolation. Recommend the external tester run each of these files in isolation mode for the security gate, then run the flake reproducer separately.
 
+
+---
+
+## §14 · P1 Batch 5 · Discovery adapter hardening (2026-02-14, orchestrator)
+
+**Gate finding folded in.** BATCH 4 SECURITY GATE flagged `domains/discovery/adapters/usajobs.py:94` as constructing a raw `httpx.AsyncClient` outside the tripwire's structural guarantee. It DID call `allow().raise_if_denied()`, so behavior was correct — but the tripwire had to ALLOW every discovery-adapter file by name, so any new adapter would need a per-file review.
+
+**Fix.** New module `domains/discovery/adapters/http.py` exports the single guarded factory `policy_gated_client(source_id, operation, ...)`. Every discovery adapter now writes:
+
+```python
+async with policy_gated_client("greenhouse", Operation.FETCH) as c:
+    r = await c.get(url)
+```
+
+The factory runs `source_policy.allow(...).raise_if_denied()` BEFORE constructing the `httpx.AsyncClient`, so fail-CLOSED is enforced at the network op site regardless of which adapter file called in. Kill switch is re-evaluated per call — no cache.
+
+**Sub-tripwire.** `test_no_raw_httpx_under_discovery` asserts that no file under `domains/discovery/` constructs `httpx.AsyncClient(` except the factory. Adding a new adapter without going through the factory fails the grep-lock structurally, before any code review.
+
+**Top-level tripwire pruned.** `public_apis.py` + `usajobs.py` removed from the top-level `ALLOW`, replaced by `http.py`. Future adapters inherit the gate; no per-file allowlist edits.
+
+**Tests wired.** 97/97 green across:
+- `test_hostile_content_defense.py` (60 + new discovery sub-tripwire)
+- `test_connector_sdk.py` (rewired `test_policy_deny_prevents_httpx_client_creation`, `test_kill_switch_halts_in_flight_connector`, byte-identical + normalize-contract onto the factory monkeypatch)
+- `test_source_policy_engine.py` (14)
+- `test_source_registry.py` (7)
+
+**Commit.** `38c31958`
+
