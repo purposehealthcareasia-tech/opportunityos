@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowRight, Zap, ClipboardCheck, IdCard, ShieldCheck, Rss } from 'lucide-react';
+import { ArrowRight, Zap, ClipboardCheck, IdCard, Rss } from 'lucide-react';
 import { api } from '../lib/api';
 
 /**
