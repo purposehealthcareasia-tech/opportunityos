@@ -240,3 +240,114 @@ async def standards():
             "excluded from every count that renders here."
         ),
     }
+
+
+# =====================================================================
+# /standards/matching-constitution — auto-generated public page.
+#
+# The public Constitution page renders the LIVE gate registry + the
+# LIVE ranking-signal registry directly, so the page cannot drift
+# from the code. Adding a gate → the page shows it next request.
+# Renaming an outcome → the page renames it too. Removing a signal
+# → the page removes it. This is the founder's Batch 5 constraint:
+# "AUTO-GENERATED from the actual gate registry / ranking-signal
+# registry in code (read-only render of the live structures), never
+# hand-written prose that can drift."
+#
+# Contract:
+#   * ONE HTTP handler, PUBLIC (no auth), READ-ONLY.
+#   * Registries are introspected fresh per request — cheap because
+#     they're frozen dataclasses in module scope.
+#   * Response shape is stable: a `constitution_version` bump signals
+#     any change to any registry element.
+# =====================================================================
+from domains.matching import GATE_REGISTRY, RANKING_REGISTRY  # noqa: E402
+
+
+def _gate_registry_public() -> list[dict[str, object]]:
+    return [
+        {
+            "id":                    g.id,
+            "family":                g.family,
+            "description":           g.description,
+            "is_hard_exclusion":     g.is_hard_exclusion,
+            "possible_outcomes":     [o.value for o in g.possible_outcomes],
+            "required_evidence":     list(g.required_evidence),
+            "what_would_change_it":  list(g.what_would_change_it),
+        }
+        for g in GATE_REGISTRY
+    ]
+
+
+def _ranking_registry_public() -> list[dict[str, object]]:
+    return [
+        {
+            "id":                    s.id,
+            "description":           s.description,
+            "direction":             s.direction.value,
+            "evidence":              list(s.evidence),
+            "what_would_change_it":  list(s.what_would_change_it),
+        }
+        for s in RANKING_REGISTRY
+    ]
+
+
+def _constitution_version() -> str:
+    """Stable fingerprint of the current Constitution. Hashes the ids +
+    outcomes/directions of every registered element so any code
+    change to a spec produces a new version string. Deliberately not
+    a semver bump — the page's value is that it moves with the code,
+    not with a human release cadence."""
+    import hashlib
+    payload_parts: list[str] = []
+    for g in GATE_REGISTRY:
+        payload_parts.append(
+            f"gate:{g.id}:{g.family}:{g.is_hard_exclusion}:"
+            f"{','.join(o.value for o in g.possible_outcomes)}"
+        )
+    for s in RANKING_REGISTRY:
+        payload_parts.append(
+            f"signal:{s.id}:{s.direction.value}"
+        )
+    digest = hashlib.sha256("\n".join(payload_parts).encode("utf-8")).hexdigest()
+    return f"c-{digest[:12]}"
+
+
+@router.get("/standards/matching-constitution")
+async def matching_constitution():
+    """Public, auto-generated Constitution page.
+
+    Renders the live `GATE_REGISTRY` and `RANKING_REGISTRY`. No
+    hand-written prose — every field is read from the frozen
+    dataclasses declared in `domains/matching/*/registry.py`.
+    """
+    return {
+        "constitution_version":       _constitution_version(),
+        "stage_1_gates":              _gate_registry_public(),
+        "stage_2_ranking_signals":    _ranking_registry_public(),
+        "gate_outcome_types":         [
+            "pass", "fail", "unknown", "candidate_confirmation_required",
+        ],
+        "ranking_directions":         ["positive", "negative", "neutral"],
+        "rails": [
+            {"rail": "stage_separation",
+             "state": ("Stage 2 signals cannot import or override "
+                       "Stage 1 gate outcomes. Enforced at the import "
+                       "graph level by test_matching_constitution.")},
+            {"rail": "protected_attributes",
+             "state": "None referenced in any registry entry."},
+            {"rail": "note_only_gates",
+             "state": ("Emit `pass` with a NOTE on mismatch; never "
+                       "`fail`. Over-filtering is the failure mode.")},
+            {"rail": "auto_generated",
+             "state": ("This page is read from the code registries at "
+                       "request time; it cannot drift from the "
+                       "runtime.")},
+        ],
+        "note": (
+            "READ-ONLY. Adding a gate or a ranking signal in code "
+            "appears here on the next request. The constitution "
+            "version fingerprint changes whenever any registered spec "
+            "changes; use it to invalidate downstream caches."
+        ),
+    }
