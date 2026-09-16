@@ -216,3 +216,70 @@ The factory runs `source_policy.allow(...).raise_if_denied()` BEFORE constructin
 
 **Commit.** `38c31958`
 
+
+---
+
+## §15 · P1 Batch 5 COMPLETE (2026-02-14) — STOP for founder gate before Batch 6
+
+**Scope delivered per orchestrator directive.**
+
+### Checkpoint 1 — Discovery adapter hardening (commit `38c31958`)
+- New guarded httpx factory `domains/discovery/adapters/http.py::policy_gated_client(source_id, operation, ...)`. Runs `source_policy.allow(...).raise_if_denied()` BEFORE constructing the httpx.AsyncClient. Kill switch re-evaluated per call.
+- `public_apis.py` (greenhouse/lever/ashby) + `usajobs.py` refactored onto the factory. Byte-identical output preserved (asserted).
+- Top-level tripwire `ALLOW` pruned: removed both discovery adapter files, replaced with the single factory file.
+- New discovery sub-tripwire `test_no_raw_httpx_under_discovery` asserts zero raw `AsyncClient(` under `domains/discovery/` except the factory. Future adapters inherit the gate structurally — no per-file allowlist edit needed.
+
+### Checkpoint 2 — Matching Constitution (commit `c67acd42` per branch)
+- `domains/matching/gates/{outcomes,registry}.py` — four permitted Stage 1 outcomes (`pass | fail | unknown | candidate_confirmation_required`) over the ATLAS gate list. Only `work_authorization / licensure / geography` (+ protocol families) may hard-exclude; note-only gates cannot emit `fail`.
+- `domains/matching/ranking/registry.py` — Stage 2 signals with direction, evidence, `what_would_change_it`. Zero protected attribute references (test-asserted).
+- `domains/matching/evaluator.py` — the ONLY module allowed to bridge both stages. Composes result envelope `{gate_outcomes, ranking_factors, positive, negative, unknown, stage1_short_circuited, terminal_fail_gate_id}`.
+- **Structural (import-graph) invariant** `test_ranking_module_does_not_import_gates` — AST scan asserts Stage 2 cannot even see Stage 1. Symmetric `test_gates_module_does_not_import_ranking` + `test_evaluator_is_the_only_bridge` permit only `__init__.py` + `evaluator.py` to bridge.
+- **Behavioral invariant** `test_stage2_short_circuits_on_stage1_fail` — evaluator drops any passed ranking contributions if ANY gate returned `fail`.
+- Both types of assertion present per founder's Batch 5 correction.
+
+### Checkpoint 3 — Application Route Engine (commit `8de50ec4`)
+- `domains/applications/routes/engine.py` — seven ATLAS route types: `direct_ats_api, structured_ats_form, unstructured_web_form, email_submission, federal_portal, partner_referral, no_apply_path`. Each `RouteSpec` carries the full payload: `automation_level, submission_permitted, required_candidate_actions, limitations, approval_requirement, authorization_expiry_hint, expected_receipt, resolution_evidence`.
+- `resolve_route(opportunity)` — deterministic classifier; ambiguity biases toward LESS automation. `partner_edge` first-class override; federal wins over ATS; email wins on mailto; unknown source + apply_url → UNSTRUCTURED (never DIRECT).
+- Totality + uniqueness tested (29 cases). `NO_APPLY_PATH` is the ONLY submission-restricted route; `AutomationLevel.UNPERMITTED` is exclusive to it.
+
+### Checkpoint 4 — Fastest-Path Engine (commit `1f0c9f70`)
+- `domains/applications/fastest_path/engine.py` — pure ranker over six bounded factors: `expected_value, urgency, time_cost, liveness, reversibility, risk_penalty`. Weighted composite in `[0,1]`.
+- **NO fabricated probabilities.** Confidence is a discrete tier (`high/med/low`) derived from count of informed factors; NOT a probability.
+- **Silence first-class.** Missing evidence → `None` factor → recorded in `unknown` + a `what_would_change_it` hint. NEVER coerced to zero.
+- **NO protected attributes** anywhere in input/output types or module source (AST-asserted).
+- `ActionKind`: `submit / authorize / prepare_only`. STRUCTURAL invariant: `PREPARE_ONLY` (submission-restricted) ALWAYS sorts after every submittable action regardless of score.
+
+### Checkpoint 5 — /standards/matching-constitution auto-gen page (commit `54fcee73`)
+- New public route `GET /api/v1/standards/matching-constitution`. Reads `GATE_REGISTRY` + `RANKING_REGISTRY` at request time — **no hand-written prose**. Confirmed live: `curl` returns 14 gates, 8 signals, 4 outcomes, 3 directions, version `c-97d0aee0f533`.
+- `constitution_version` fingerprint = sha256 of every id + family + outcomes + direction. Any code change to any registered spec → new version string. Downstream caches can invalidate on version change.
+- Byte-for-byte test `test_no_hand_written_prose_leaks_into_gate_fields` asserts handler description == registry description; any drift trips the test.
+- **Decision documented (Batch 5 constraint):** auto-generation implementation cost was under 1 day, so the constitution page shipped auto-generated per founder's rule. NOT dropped to spec-only.
+
+### Test surface — 170/170 across the Batch 5 gate
+```
+tests/test_hostile_content_defense.py                61 (60 + new discovery sub-tripwire)
+tests/test_connector_sdk.py                          16 (rewired onto factory monkeypatch)
+tests/test_source_policy_engine.py                   14
+tests/test_source_registry.py                         7
+tests/test_matching_constitution.py                  17 (architectural + behavioral)
+tests/test_matching_constitution_public_page.py       9
+tests/test_application_route_engine.py               29
+tests/test_fastest_path_engine.py                    18
+                                                   ────
+                                                    170  0 regressions
+```
+Plus zero regressions on the Batch 4 surface (`test_liveness_gate.py` 15/15, `test_entity_resolution.py` 13/13).
+
+### Tripwire status
+- `git ls-files | grep -E "\.env$|test_credentials\.md$|tmp_"` → CLEAN (exit 1, no matches).
+- Sub-tripwire test `test_no_raw_httpx_under_discovery` → PASS.
+- Top-level tripwire test `test_no_raw_httpx_asyncclient_outside_guarded_paths` → PASS.
+
+### Carried forward for founder async approval (no action from me)
+- BLOCKER-11.a/b/c privacy models — still pending founder decision.
+- Real-phone 390px mobile check — HUMAN_REQUIRED.
+- P1 Batch 4 pytest-asyncio motor loop-binding flake — DEFERRED with RCA in §13.
+- P2 code-review remediation (Admin.jsx IntegrationsTab split, 51 nested ternaries) — BLOCKED until ATLAS dictates.
+
+**STOP.** Awaiting founder Batch 5 gate result before starting Batch 6 (i18n foundation + AI generation firewall reuse).
+
