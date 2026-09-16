@@ -118,3 +118,52 @@ Batches are self-contained. STOP at each batch boundary for a report; founder ma
 | **6** | Lanes with exposed logic (career / income-now / newgrad / etc.; logic surfaced per-card) | pending | — |
 | **6** | i18n foundation (message-catalog scaffold, no runtime language switch yet) | pending | — |
 | **6** | AI boundaries (grounding invariants, no-fabrication test suite, generation firewall reuse) | pending | — |
+
+---
+
+## §11 · Task 2 · Pulse UI — MERGED (2026-09-16, `89c257ca`)
+
+Founder gate: 4/4 PASS. Focused pytest on `feat/pulse-ui-integration` = 238 passed. Merged to `main` (`--no-ff` for audit trail).
+Publish clicks remain the founder's alone.
+
+### Blockers awaiting founder decision (kept in honest-empty state on the platform)
+
+**BLOCKER-11.a · Comments (`/api/v1/pulse/posts/:id/comments`).** Returns `{items:[], next_cursor:null}`. Recommended privacy model: comments inherit the parent post's audience (members / followers / private). Commenters must be able to see the post; blocked-either-way pairs are hidden from each other's comment authorship. Moderation: soft-hide (never delete) via `is_hidden` flag settable by post-author (their thread) or admin (any thread); the original text is retained in `pulse_comment_history` for audit. Rate limit: 30 comments per user per rolling 10 minutes (reuses the existing rate-limit middleware). Comment length cap: 800 chars. Ready to build on founder approval.
+
+**BLOCKER-11.b · Threads / messaging (`/api/v1/pulse/threads`).** Returns `{items:[], next_cursor:null}`. Recommended privacy model: three-state thread (`pending` / `accepted` / `declined`). When a sender opens a thread with a non-follower recipient, the thread goes to `pending`; only the sender's FIRST message is visible to the recipient (rendered as a message request card, never in the main inbox). Recipient must ACCEPT before further messages become readable OR before the recipient's replies are permitted. `declined` is terminal — sender receives no notification (silent) but cannot re-open a new thread with the same recipient for 30 days. Recipient's `message_policy` (`requests` / `following` / `closed`) is the top-level gate before any of this. Ready to build on founder approval.
+
+**BLOCKER-11.c · Reports (`/api/v1/pulse/posts/:id/report`).** Not wired. Recommended: `report_reason ∈ {spam, harassment, prohibited_content, other}`; reports queue into `pulse_moderation_reports` collection with `status=pending`; author of a reported post is never notified; three unique reporters on the same post auto-marks it `is_hidden=true` pending admin review. Moderation ops staffing pending founder decision — the queue itself can ship without staffing.
+
+### HUMAN_REQUIRED · Real 390 px mobile-reflow verification
+
+The pod's Playwright context in this environment cannot honor `set_viewport_size({"width":390})` at context creation time — the tool reports viewport `1920×1080` even after the call. The Pulse CSS reflow machinery IS in place and verified passively:
+
+- `<body data-responsive="true">` is present (breakpoint switch engaged).
+- `.bottom-nav` element rendered but `getComputedStyle(bottomNav).display === "none"` at desktop width (confirms the mobile-only CSS rule was compiled and served).
+- `responsive-layout.css` + `responsive-navigation.js` are unchanged from the SOURCE.json-verified ZIP.
+
+**Founder action steps for real-device verification:**
+
+1. On your phone, navigate to `https://lynk-preview-2.preview.emergentagent.com/pulse/network.html`.
+2. In another tab/desktop, log in via any fixture in `memory/test_credentials.md` (pod's `/api/v1/auth/login`). Then reload the phone tab.
+3. Expect: single-column layout, bottom-nav bar visible with Feed / Discover / Post / Inbox / You tabs, no 3-column desktop sidebar.
+4. Rotate to landscape — layout should shift to 2-column at ≥ 640 px.
+
+Report back if any breakpoint fails so I can inspect the CSS directly.
+
+---
+
+## §12 · Batch 4 close-out re-verification (post-Task-2 merge)
+
+**Batch 4 security surface — 88 tests still green after Task 2 merge:**
+
+```
+tests/test_liveness_gate.py              15 passed
+tests/test_entity_resolution.py          13 passed
+tests/test_hostile_content_defense.py    60 passed
+                                         ────────
+                                         88 total, 0 regressions from Pulse work
+```
+
+The preempted flake work (pytest-asyncio / motor loop-binding on `test_apply_at_birth.py` + `test_source_registry.py`) resumes next per CONTINUE-HERE §2.b. Batch 4 security surface remains locked; only the test-runner isolation is under investigation.
+
