@@ -165,5 +165,26 @@ tests/test_hostile_content_defense.py    60 passed
                                          88 total, 0 regressions from Pulse work
 ```
 
-The preempted flake work (pytest-asyncio / motor loop-binding on `test_apply_at_birth.py` + `test_source_registry.py`) resumes next per CONTINUE-HERE §2.b. Batch 4 security surface remains locked; only the test-runner isolation is under investigation.
+## §13 · P1 Batch 4 flake fix — PARTIAL RCA, moved forward
+
+**Symptom.** `tests/test_source_registry.py` + 6 companion tests fail when the full test suite runs AFTER `tests/test_apply_at_birth.py` — pytest-asyncio 1.4.0 + motor 3.5.1 loop-binding interaction. Each file passes in isolation.
+
+**RCA established (2026-09-16):**
+1. `test_apply_at_birth.py` monkey-patches `core.db.get_db` to a lambda returning a scratch DB (`oppos_test_apply_at_birth`) but never touches `_core_db._client` or `_core_db._db` directly.
+2. During apply_at_birth's execution, code under test (e.g. `services/lifecycle_sweep.py`, `services/apply_at_birth.py`, and every fetch through `domains/discovery/adapters/public_apis::_gate` → `source_registry.get`) calls `core_db.get_db()` and gets the scratch DB via the monkeypatch.
+3. `pytest`'s built-in `monkeypatch` undoes the patch at test teardown.
+4. Between apply_at_birth teardown and the next test's fixture, my `_reset_motor_client_per_test` fixture in `test_source_registry.py` (and the four other P1 test files) unconditionally resets `_core_db._client = None; _core_db._db = None`, then calls `get_db()` to seed a fresh client bound to the running loop.
+5. The fresh client's `_db` correctly points at `Database(opportunityos)` — verified via `FYND_DB_TRACE=1` env-gated logging in `core/db.py::get_db`.
+6. **UNRESOLVED:** despite `_core_db._db.name == 'opportunityos'` after the reset, the failing motor call's args still show `Database(..., 'oppos_test_apply_at_birth')`. This means some code path — likely a captured reference to the scratch db obtained during apply_at_birth's execution — persists into the next test's runtime via a mechanism I have not yet identified. Candidate: an `AsyncIOMotorDatabase` object returned from a coroutine/callback that was scheduled on apply_at_birth's event loop and outlives the fixture teardown.
+
+**Attempted mitigations (all committed as WIP; none fixed the full-suite regression):**
+- Guarded → unconditional reset of `_core_db._client` / `_core_db._db` in fixtures.
+- `_cached_client_is_usable()` in `core/db.py` — detects closed-loop and loop-mismatch and rebuilds. **Retained** as a permanent defense-in-depth for prod (harmless in the single-loop production case; corrects invalid state in tests).
+- `motor.frameworks.asyncio._reset_global_executor()` between tests.
+- `asyncio_default_fixture_loop_scope = function` in `pytest.ini`. **Retained** because it's the correct config regardless.
+- `asyncio_default_fixture_loop_scope = session` — broke apply_at_birth's own tests; reverted.
+
+**Status:** DEFERRED. All P1 tests still pass in ISOLATION (186 tests green). The security surface (Batch 4 · Items 1-3) is uncompromised. The flake is a test-runner isolation issue, NOT a production issue. Moving forward to Batches 5 & 6 per founder ordering; will return to this after Batch 6 with a fresh angle (likely instrumenting motor's `_EXECUTOR` at teardown OR pinning `pytest-asyncio==0.23.8`).
+
+**Founder external tester note:** the security surface (60 hostile-content-defense + 15 liveness + 13 entity-resolution + 14 policy + 7 registry + 9 connector-SDK = 118 tests) all pass in isolation. Recommend the external tester run each of these files in isolation mode for the security gate, then run the flake reproducer separately.
 

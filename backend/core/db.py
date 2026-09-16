@@ -6,16 +6,50 @@ _client: AsyncIOMotorClient | None = None
 _db: AsyncIOMotorDatabase | None = None
 
 
-def get_client() -> AsyncIOMotorClient:
+def _cached_client_is_usable() -> bool:
+    """The cached motor client binds to the event loop that created
+    it. Under pytest-asyncio 1.x with function-scoped test loops, an
+    earlier test's loop may be closed by the time a later test tries
+    to use the cached client. Detect that here and force a rebuild.
+
+    Production is unaffected: the app runs on ONE long-lived loop so
+    this check always returns True after startup."""
     global _client
     if _client is None:
+        return False
+    try:
+        io_loop = _client.get_io_loop()
+    except Exception:
+        return False
+    if io_loop.is_closed():
+        return False
+    # Belt-and-braces: also detect the case where the cached client's
+    # loop is not the CURRENTLY running loop (pytest-asyncio 1.x may
+    # split fixture-setup and test-body across separate loops).
+    try:
+        import asyncio
+        running = asyncio.get_running_loop()
+        if running is not io_loop:
+            return False
+    except RuntimeError:
+        # No running loop — probably being called at import time. Trust
+        # the cached client; if the loop is closed the previous check
+        # would have caught it.
+        pass
+    return True
+
+
+def get_client() -> AsyncIOMotorClient:
+    global _client
+    if not _cached_client_is_usable():
         _client = AsyncIOMotorClient(settings.MONGO_URL, uuidRepresentation="standard")
     return _client
 
 
 def get_db() -> AsyncIOMotorDatabase:
-    global _db
-    if _db is None:
+    global _db, _client
+    if _db is None or not _cached_client_is_usable():
+        # _db was bound to a stale client's loop — rebuild both.
         _db = get_client()[settings.DB_NAME]
     return _db
 
