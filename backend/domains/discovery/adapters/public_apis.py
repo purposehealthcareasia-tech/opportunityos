@@ -25,38 +25,13 @@ import re
 from datetime import datetime, timezone
 from typing import Iterable, Optional
 
-import httpx
-
 from domains.source_policy import Operation
 from domains.discovery.connector_sdk import OpportunitySourceConnector
+from domains.discovery.adapters.http import policy_gated_client, DEFAULT_USER_AGENT
 
-
-async def _gate(source_id: str, operation: Operation) -> None:
-    """Deferred import to avoid a circular import chain through
-    `connector_sdk` at module load time (public_apis is imported by
-    `discovery/service.py`, which is imported very early in
-    `server.py`). Raises `PolicyDenied` on any DENY. Kill switch is
-    re-evaluated on every call — no cache."""
-    from domains.source_policy import PolicyDenied, allow  # noqa: F401
-    from domains.source_registry import get as _reg_get
-    from core.time_utils import utc_now
-    from domains.source_policy import PolicyDecision
-
-    rec = await _reg_get(source_id)
-    if rec is None:
-        raise PolicyDenied(PolicyDecision(
-            allowed=False,
-            reason="source_not_in_registry",
-            source_id=source_id,
-            operation=operation.value if hasattr(operation, "value") else str(operation),
-            evaluated_at=utc_now().isoformat(),
-            field_values={},
-        ))
-    decision = allow(source_record=rec, operation=operation)
-    decision.raise_if_denied()
-
-
-USER_AGENT = "LYNK-Autopilot/preview (contact: privacy@fynd.llc)"
+# Kept for byte-identical public surface — tests and callers may still
+# import USER_AGENT / DEFAULT_TIMEOUT from public_apis.
+USER_AGENT = DEFAULT_USER_AGENT
 DEFAULT_TIMEOUT = 15.0
 
 
@@ -120,12 +95,10 @@ def detect_newgrad(title: str, description_text: str) -> bool:
 
 
 # -------------------------------------------------------- shared helpers
-def _client() -> httpx.AsyncClient:
-    return httpx.AsyncClient(
-        headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
-        timeout=DEFAULT_TIMEOUT,
-        follow_redirects=True,
-    )
+# Client construction routed through the guarded factory
+# `domains/discovery/adapters/http.py::policy_gated_client`. The gate
+# runs once, at construction time; the yielded httpx.AsyncClient is
+# byte-identical to the pre-hardening client.
 
 
 def _now() -> datetime:
@@ -164,11 +137,11 @@ async def fetch_greenhouse(company_name: str, token: str) -> list[dict]:
 
     P1 Batch 2 · gate: FETCH must be permitted by source_policy for
     `greenhouse` before the HTTP client is constructed. Fail-CLOSED —
-    no network op fires on DENY.
+    no network op fires on DENY. Batch 5 hardening: gate now enforced
+    inside `policy_gated_client(...)`, not a per-adapter call.
     """
-    await _gate("greenhouse", Operation.FETCH)
     url = f"https://boards-api.greenhouse.io/v1/boards/{token}/jobs?content=true"
-    async with _client() as c:
+    async with policy_gated_client("greenhouse", Operation.FETCH) as c:
         r = await c.get(url)
     if r.status_code != 200:
         return []
@@ -211,12 +184,12 @@ async def fetch_lever(company_name: str, token: str) -> list[dict]:
 
     P1 Batch 2 · gate: FETCH must be permitted by source_policy for
     `lever` before the HTTP client is constructed. Fail-CLOSED.
+    Batch 5 hardening: gate enforced inside `policy_gated_client(...)`.
     """
-    await _gate("lever", Operation.FETCH)
     for host in ("api.lever.co", "api.eu.lever.co"):
         url = f"https://{host}/v0/postings/{token}?mode=json"
         try:
-            async with _client() as c:
+            async with policy_gated_client("lever", Operation.FETCH) as c:
                 r = await c.get(url)
         except Exception:
             continue
@@ -272,10 +245,10 @@ async def fetch_ashby(company_name: str, token: str) -> list[dict]:
 
     P1 Batch 2 · gate: FETCH must be permitted by source_policy for
     `ashby` before the HTTP client is constructed. Fail-CLOSED.
+    Batch 5 hardening: gate enforced inside `policy_gated_client(...)`.
     """
-    await _gate("ashby", Operation.FETCH)
     url = f"https://api.ashbyhq.com/posting-api/job-board/{token}"
-    async with _client() as c:
+    async with policy_gated_client("ashby", Operation.FETCH) as c:
         r = await c.get(url)
     if r.status_code != 200:
         return []

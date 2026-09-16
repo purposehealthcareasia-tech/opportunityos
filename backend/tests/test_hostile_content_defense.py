@@ -462,10 +462,12 @@ def test_no_raw_httpx_asyncclient_outside_guarded_paths():
     ALLOW = {
         # The safe fetcher itself.
         "services/hostile_content_defense.py",
-        # Source adapters — gated via source_policy.allow() at the
-        # module-level `_gate(...)` before any HTTP.
-        "domains/discovery/adapters/public_apis.py",
-        "domains/discovery/adapters/usajobs.py",
+        # Batch 5 hardening: single guarded factory for discovery
+        # adapters. Every discovery adapter now goes through this
+        # module's `policy_gated_client(...)`, so new adapters cannot
+        # bypass the source_policy gate without tripping the discovery
+        # sub-tripwire below (`test_no_raw_httpx_under_discovery`).
+        "domains/discovery/adapters/http.py",
         # A. First-party vendor integrations (fixed hosts, documented APIs).
         # Private Collider service: fixed operator-only origin, no redirects,
         # no caller-controlled URL; only admin readiness probes are routed.
@@ -503,6 +505,47 @@ def test_no_raw_httpx_asyncclient_outside_guarded_paths():
         f"raw httpx.AsyncClient found outside the guarded path — "
         f"route it through services.hostile_content_defense.safe_fetch "
         f"or add to the ALLOW list after review: {offenders}"
+    )
+
+
+# ==================================================================
+# 15b. Discovery sub-tripwire — no raw httpx.AsyncClient anywhere
+# under `domains/discovery/` except the single guarded factory.
+# ==================================================================
+def test_no_raw_httpx_under_discovery():
+    """Batch 5 hardening (folded in from the Batch 4 gate finding).
+
+    Every discovery adapter MUST route client construction through
+    `domains/discovery/adapters/http.py::policy_gated_client(...)`. The
+    factory runs the `source_policy.allow(...)` gate BEFORE handing
+    back an `httpx.AsyncClient`, so:
+
+      * a new adapter file cannot open a socket without first passing
+        the gate, and
+      * the tripwire's structural guarantee stops leaking through the
+        top-level ALLOW list (previously each adapter file had to be
+        allowlisted by name).
+
+    Only the factory file itself is permitted to construct
+    `httpx.AsyncClient(`.
+    """
+    root = pathlib.Path(__file__).resolve().parent.parent
+    discovery_root = root / "domains" / "discovery"
+    ALLOWED_FACTORY = "domains/discovery/adapters/http.py"
+    offenders: list[str] = []
+    for path in discovery_root.rglob("*.py"):
+        rel = path.relative_to(root).as_posix()
+        if rel == ALLOWED_FACTORY:
+            continue
+        text = path.read_text(encoding="utf-8", errors="ignore")
+        if re.search(r"httpx\.AsyncClient\s*\(", text):
+            offenders.append(rel)
+    assert not offenders, (
+        "raw httpx.AsyncClient(...) construction is forbidden under "
+        "domains/discovery/ except in the guarded factory "
+        f"{ALLOWED_FACTORY}. Route through `policy_gated_client(...)` "
+        f"so the source_policy gate is enforced structurally. "
+        f"Offenders: {offenders}"
     )
 
 

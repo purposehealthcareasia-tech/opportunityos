@@ -30,7 +30,8 @@ import re
 from datetime import datetime, timezone
 from typing import Optional
 
-import httpx
+from domains.discovery.adapters.http import policy_gated_client
+from domains.source_policy import Operation
 
 
 BASE_URL = "https://data.usajobs.gov/api/search"
@@ -62,23 +63,10 @@ async def fetch_usajobs(location_name: Optional[str] = "Phoenix, Arizona",
 
     P1 Batch 2 · gate: FETCH must be permitted by source_policy for
     `usajobs` before the HTTP client is constructed. Fail-CLOSED.
+    Batch 5 hardening: gate enforced inside `policy_gated_client(...)`.
     """
     if not _is_configured():
         return []
-
-    # Deferred import — same rationale as public_apis._gate (avoid
-    # circular import chain at module load time).
-    from domains.source_policy import Operation, PolicyDenied, PolicyDecision, allow
-    from domains.source_registry import get as _reg_get
-    from core.time_utils import utc_now
-    _rec = await _reg_get("usajobs")
-    if _rec is None:
-        raise PolicyDenied(PolicyDecision(
-            allowed=False, reason="source_not_in_registry",
-            source_id="usajobs", operation=Operation.FETCH.value,
-            evaluated_at=utc_now().isoformat(), field_values={},
-        ))
-    allow(source_record=_rec, operation=Operation.FETCH).raise_if_denied()
 
     ua_email = os.environ["USAJOBS_USER_AGENT_EMAIL"]
     key = os.environ["USAJOBS_API_KEY"]
@@ -91,7 +79,9 @@ async def fetch_usajobs(location_name: Optional[str] = "Phoenix, Arizona",
     }
 
     out: list[dict] = []
-    async with httpx.AsyncClient(headers=headers, timeout=20.0) as c:
+    async with policy_gated_client(
+        "usajobs", Operation.FETCH, headers=headers, timeout=20.0,
+    ) as c:
         for page in range(1, max_pages + 1):
             params = {
                 "LocationName": location_name or "",

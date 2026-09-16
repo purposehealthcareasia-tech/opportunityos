@@ -148,8 +148,12 @@ async def test_policy_deny_prevents_httpx_client_creation(monkeypatch, _seeded_r
     `httpx.AsyncClient` is NEVER instantiated when policy denies.
 
     Simulates the invariant 'no byte leaves the pod on DENY'.
+
+    Batch 5 hardening: the gate now runs inside the shared factory
+    `domains/discovery/adapters/http.py::policy_gated_client`, so we
+    sabotage that module's httpx binding + _gate function.
     """
-    from domains.discovery.adapters import public_apis
+    from domains.discovery.adapters import http as http_factory
 
     # Sabotage: any httpx.AsyncClient instantiation from now on raises
     # loudly, so if the gate does NOT fail-close we'll see it.
@@ -162,22 +166,21 @@ async def test_policy_deny_prevents_httpx_client_creation(monkeypatch, _seeded_r
         async def __aenter__(self): return self
         async def __aexit__(self, *a): return False
 
-    monkeypatch.setattr(public_apis.httpx, "AsyncClient", _Tripwire)
+    monkeypatch.setattr(http_factory.httpx, "AsyncClient", _Tripwire)
 
     # Point the greenhouse fetcher's gate at LinkedIn (rejected).
     from domains.source_registry import get
     linkedin = await get("linkedin")
     assert linkedin is not None
-    # Swap the registry lookup so the gate reads LinkedIn's rejected
-    # statuses even though the call target is the Greenhouse function.
-    from domains.discovery.adapters import public_apis as _pa
-    real_gate = _pa._gate
+    # Rewrite the factory's gate to look up LinkedIn (a rejected
+    # source) so we can deterministically produce a DENY without
+    # editing the registry.
+    real_gate = http_factory._gate
     async def _sabotaged_gate(source_id: str, op: Operation) -> None:
-        # Rewrite source_id → LinkedIn (a rejected source) so we can
-        # deterministically produce a DENY without editing the registry.
         return await real_gate("linkedin", op)
-    monkeypatch.setattr(_pa, "_gate", _sabotaged_gate)
+    monkeypatch.setattr(http_factory, "_gate", _sabotaged_gate)
 
+    from domains.discovery.adapters import public_apis as _pa
     # This MUST raise before httpx.AsyncClient is even constructed.
     with pytest.raises(PolicyDenied):
         await _pa.fetch_greenhouse("acme", "acme")
@@ -189,7 +192,7 @@ async def test_kill_switch_halts_in_flight_connector(monkeypatch, _seeded_regist
     instantiated. The next call raises PolicyDenied with
     reason='kill_switch_engaged' and never issues HTTP."""
     from domains.discovery.adapters.public_apis import GreenhouseConnector
-    from domains.discovery.adapters import public_apis
+    from domains.discovery.adapters import http as http_factory
 
     # Ensure no accidental HTTP is possible.
     class _Tripwire:
@@ -201,7 +204,7 @@ async def test_kill_switch_halts_in_flight_connector(monkeypatch, _seeded_regist
         async def __aenter__(self): return self
         async def __aexit__(self, *a): return False
 
-    monkeypatch.setattr(public_apis.httpx, "AsyncClient", _Tripwire)
+    monkeypatch.setattr(http_factory.httpx, "AsyncClient", _Tripwire)
 
     c = GreenhouseConnector()
     # First: kill switch OFF — check_policy should PERMIT (but we skip
@@ -222,23 +225,41 @@ async def test_kill_switch_halts_in_flight_connector(monkeypatch, _seeded_regist
 async def test_connector_fetch_output_byte_identical_to_raw(monkeypatch, _seeded_registry):
     """Byte-identical rail: `GreenhouseConnector().fetch(n,t)` returns
     EXACTLY what `fetch_greenhouse(n,t)` returns on the same canned
-    upstream response."""
-    from domains.discovery.adapters import public_apis
+    upstream response.
+
+    Batch 5 hardening: swap the guarded factory's `policy_gated_client`
+    for a mock-transport variant that still runs the real gate before
+    returning a MockTransport-backed client.
+    """
+    from domains.discovery.adapters import http as http_factory
     from domains.discovery.adapters.public_apis import (
         GreenhouseConnector, fetch_greenhouse,
     )
+    from contextlib import asynccontextmanager
 
     transport = _mock_transport_gh(_CANNED_GH)
+    real_gate = http_factory._gate
 
-    # Patch _client() to return a mock-backed client.
-    def _mock_client():
-        return httpx.AsyncClient(
+    @asynccontextmanager
+    async def _mock_gated_client(source_id, operation, *, headers=None,
+                                  timeout=15.0, follow_redirects=True,
+                                  **_kw):
+        # Still run the real gate so fail-CLOSED remains covered.
+        await real_gate(source_id, operation)
+        async with httpx.AsyncClient(
             transport=transport,
-            headers={"User-Agent": public_apis.USER_AGENT,
+            headers={"User-Agent": http_factory.DEFAULT_USER_AGENT,
                      "Accept": "application/json"},
-            timeout=public_apis.DEFAULT_TIMEOUT,
-        )
-    monkeypatch.setattr(public_apis, "_client", _mock_client)
+            timeout=timeout,
+        ) as c:
+            yield c
+
+    monkeypatch.setattr(http_factory, "policy_gated_client",
+                        _mock_gated_client)
+    # `public_apis` did `from ... import policy_gated_client`, so also
+    # rebind the name inside that module.
+    from domains.discovery.adapters import public_apis as _pa
+    monkeypatch.setattr(_pa, "policy_gated_client", _mock_gated_client)
 
     raw_out = await fetch_greenhouse("ExampleCo", "exampleco")
     sdk_out = await GreenhouseConnector().fetch("ExampleCo", "exampleco")
@@ -272,19 +293,30 @@ def test_connector_sdk_has_no_llm_calls():
 @pytest.mark.asyncio
 async def test_normalized_posting_shape(monkeypatch, _seeded_registry):
     from domains.discovery.connector_sdk import REQUIRED_NORMALIZED_KEYS
-    from domains.discovery.adapters import public_apis
+    from domains.discovery.adapters import http as http_factory
     from domains.discovery.adapters.public_apis import GreenhouseConnector
+    from contextlib import asynccontextmanager
 
     transport = _mock_transport_gh(_CANNED_GH)
+    real_gate = http_factory._gate
 
-    def _mock_client():
-        return httpx.AsyncClient(
+    @asynccontextmanager
+    async def _mock_gated_client(source_id, operation, *, headers=None,
+                                  timeout=15.0, follow_redirects=True,
+                                  **_kw):
+        await real_gate(source_id, operation)
+        async with httpx.AsyncClient(
             transport=transport,
-            headers={"User-Agent": public_apis.USER_AGENT,
+            headers={"User-Agent": http_factory.DEFAULT_USER_AGENT,
                      "Accept": "application/json"},
-            timeout=public_apis.DEFAULT_TIMEOUT,
-        )
-    monkeypatch.setattr(public_apis, "_client", _mock_client)
+            timeout=timeout,
+        ) as c:
+            yield c
+
+    monkeypatch.setattr(http_factory, "policy_gated_client",
+                        _mock_gated_client)
+    from domains.discovery.adapters import public_apis as _pa
+    monkeypatch.setattr(_pa, "policy_gated_client", _mock_gated_client)
 
     rows = await GreenhouseConnector().fetch("ExampleCo", "exampleco")
     assert rows and set(REQUIRED_NORMALIZED_KEYS).issubset(rows[0].keys()), (
