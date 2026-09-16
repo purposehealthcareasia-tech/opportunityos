@@ -354,6 +354,68 @@ from datetime import datetime as _dt, timezone as _tz
 from pathlib import Path as _Path
 
 
+def _resolve_git_sha() -> str:
+    """Resolve the git short SHA in DEPLOY-SAFE order.
+
+    Priority ladder (first non-empty wins):
+      1. `GIT_SHA` env var — set by CI/CD or the platform's deploy
+         image build step. Preferred for prod.
+      2. `BUILD_SHA` env var — legacy alias for the same value; the
+         admin surface already reads this.
+      3. `/app/.git-sha` file — baked into the image at build time
+         (`echo $(git rev-parse --short=8 HEAD) > .git-sha` in the
+         Dockerfile is enough).
+      4. `git rev-parse --short=8 HEAD` — works on preview where the
+         `.git/` directory is present.
+      5. `"unknown"` — HONEST fallback. Never fabricated.
+
+    Every step short-circuits on the first success; failure is silent
+    so the endpoint always returns 200.
+    """
+    import os as _os
+    env = (_os.environ.get("GIT_SHA") or _os.environ.get("BUILD_SHA") or "").strip()
+    if env:
+        return env[:8]
+    sha_file = _Path(__file__).resolve().parent.parent / ".git-sha"
+    try:
+        if sha_file.is_file():
+            v = sha_file.read_text(encoding="utf-8").strip()
+            if v:
+                return v[:8]
+    except Exception:
+        pass
+    try:
+        v = _subprocess.check_output(
+            ["git", "rev-parse", "--short=8", "HEAD"],
+            cwd=str(_Path(__file__).resolve().parent.parent),
+            stderr=_subprocess.DEVNULL, timeout=2,
+        ).decode("utf-8").strip()
+        if v:
+            return v
+    except Exception:
+        pass
+    return "unknown"
+    sha_file = _Path(__file__).resolve().parent.parent / ".git-sha"
+    try:
+        if sha_file.is_file():
+            v = sha_file.read_text(encoding="utf-8").strip()
+            if v:
+                return v[:8]
+    except Exception:
+        pass
+    try:
+        v = _subprocess.check_output(
+            ["git", "rev-parse", "--short=8", "HEAD"],
+            cwd=str(_Path(__file__).resolve().parent.parent),
+            stderr=_subprocess.DEVNULL, timeout=2,
+        ).decode("utf-8").strip()
+        if v:
+            return v
+    except Exception:
+        pass
+    return "unknown"
+
+
 def _load_build_version() -> dict:
     """Read the frontend package.json version + git short SHA once at boot."""
     pkg_version = "unversioned"
@@ -362,18 +424,9 @@ def _load_build_version() -> dict:
         pkg_version = str(_json.loads(pkg_path.read_text(encoding="utf-8")).get("version") or "unversioned")
     except Exception:
         pass
-    git_sha = "unknown"
-    try:
-        git_sha = _subprocess.check_output(
-            ["git", "rev-parse", "--short=8", "HEAD"],
-            cwd=str(_Path(__file__).resolve().parent.parent),
-            stderr=_subprocess.DEVNULL, timeout=2,
-        ).decode("utf-8").strip() or "unknown"
-    except Exception:
-        pass
     return {
         "version": pkg_version,
-        "git_sha": git_sha,
+        "git_sha": _resolve_git_sha(),
         "booted_at": _dt.now(_tz.utc).isoformat(),
         "source": "frontend/package.json",
     }

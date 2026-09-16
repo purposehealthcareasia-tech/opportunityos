@@ -68,3 +68,4 @@ credentials.json
 
 # Portable handoff artifacts (kept outside web-served paths, tripwire-clean)
 .export/
+.git-sha
