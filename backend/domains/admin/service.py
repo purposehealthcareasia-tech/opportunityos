@@ -476,3 +476,60 @@ async def list_test_errors(staff: dict = Depends(_require_admin)):
     errs = [e async for e in get_db().internal_error_events.find({}, {"_id": 0}).sort("ts", -1).limit(50)]
     return {"errors": jsonable_encoder(errs),
             "label": "INTERNAL STUB — Sentry equivalent. Not sent to any external error-tracking service."}
+
+
+# ==================================================================
+# P3 · Pulse moderation queue — reports
+# ==================================================================
+class PulseReportReview(BaseModel):
+    state: str = Field(..., pattern="^(reviewed|dismissed|actioned)$")
+    review_notes: str = Field("", max_length=2000)
+
+
+@router.get("/pulse/reports")
+async def list_pulse_reports(
+    state: str | None = None,
+    limit: int = 50,
+    staff: dict = Depends(_require_admin),
+):
+    """List pulse moderation reports. Defaults to `state=pending`.
+
+    Human review only — no auto-punishment anywhere. Every state
+    transition captures the reviewer and timestamp so the audit
+    trail is intact."""
+    db = get_db()
+    q: dict = {}
+    q["state"] = state if state else "pending"
+    limit = max(1, min(200, limit))
+    rows = [r async for r in
+            db.pulse_reports.find(q, {"_id": 0})
+            .sort("created_at", -1).limit(limit)]
+    total = await db.pulse_reports.count_documents(q)
+    return {"items": rows, "total": total, "filter_state": q["state"]}
+
+
+@router.patch("/pulse/reports/{report_id}")
+async def review_pulse_report(
+    report_id: str,
+    payload: PulseReportReview,
+    staff: dict = Depends(_require_admin_only),
+):
+    """Admin-only. Marks the report as reviewed/dismissed/actioned +
+    records who + when + review notes. Does NOT auto-punish; any
+    subsequent action (content removal, account suspension) is a
+    separate, deliberate admin surface call."""
+    db = get_db()
+    r = await db.pulse_reports.find_one({"id": report_id})
+    if not r:
+        raise HTTPException(status_code=404, detail={"error": "not_found"})
+    await db.pulse_reports.update_one(
+        {"id": report_id},
+        {"$set": {
+            "state":        payload.state,
+            "review_notes": payload.review_notes,
+            "reviewed_by":  staff["id"],
+            "reviewed_at":  utc_now().isoformat(),
+        }},
+    )
+    fresh = await db.pulse_reports.find_one({"id": report_id}, {"_id": 0})
+    return {"report": fresh}

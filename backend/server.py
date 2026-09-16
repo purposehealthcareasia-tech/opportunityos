@@ -449,6 +449,9 @@ async def version_meta():
 
 app.include_router(auth_router)
 app.include_router(pulse_router)  # Task 2 · Pulse UI social + collider
+# P3 · Pulse social endpoints (comments, threads, reports, notifications)
+from domains.pulse.social import router as pulse_social_router  # noqa: E402
+app.include_router(pulse_social_router)
 app.include_router(consent_router)
 app.include_router(users_router)
 app.include_router(research_reports_router)

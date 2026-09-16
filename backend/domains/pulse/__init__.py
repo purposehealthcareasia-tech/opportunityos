@@ -338,6 +338,13 @@ async def _toggle_reaction(post_id: str, user_id: str, kind: str, add: bool):
 @router.put("/posts/{post_id}/like")
 async def like_add(post_id: str, user: dict = Depends(get_current_user)):
     fresh = await _toggle_reaction(post_id, user["id"], "like", add=True)
+    # P3 notification: notify post author of the like (24h idempotent).
+    from domains.pulse.social import _emit_notification as _emit
+    await _emit(
+        get_db(),
+        user_id=fresh["author_id"], kind="post_like",
+        actor_id=user["id"], target_kind="post", target_id=post_id,
+    )
     return {"post": await _post_public(get_db(), user, fresh)}
 
 
@@ -382,11 +389,23 @@ async def follow_add(member_id: str, user: dict = Depends(get_current_user)):
     db = get_db()
     if not await _viewer_can_see_author(db, user, member_id):
         raise HTTPException(status_code=404, detail={"error": "not_found"})
+    existed = await db.pulse_follows.find_one(
+        {"user_id": user["id"], "target_id": member_id})
     await db.pulse_follows.update_one(
         {"user_id": user["id"], "target_id": member_id},
         {"$set": {"user_id": user["id"], "target_id": member_id, "at": _now_iso()}},
         upsert=True,
     )
+    if not existed:
+        # First-follow only — dedup by _emit_notification's 24h window
+        # already covers repeat follows, but skip the DB call entirely
+        # when we know it's a no-op.
+        from domains.pulse.social import _emit_notification as _emit
+        await _emit(
+            db,
+            user_id=member_id, kind="follow",
+            actor_id=user["id"], target_kind="user", target_id=member_id,
+        )
     return {"following": True}
 
 
@@ -538,16 +557,8 @@ async def poll_run(run_id: str, user: dict = Depends(get_current_user)):
 
 
 # ==================================================================
-# 10. Threads / messaging + comments + reports — BLOCKED for MVP scope.
-# Documented in the Task 2 PASS/FAIL/BLOCKED table; not wired here.
-# Frontend surfaces them; will show a graceful error on interaction.
+# 10. Threads / messaging + comments + reports — P3 real endpoints.
+# Delegated to `domains/pulse/social.py`. Its APIRouter (same
+# `/api/v1/pulse` prefix) is mounted from `server.py` right after
+# this module's router.
 # ==================================================================
-@router.get("/threads")
-async def list_threads(user: dict = Depends(get_current_user)):
-    # Honest empty state — no message threads infrastructure in MVP.
-    return {"items": [], "next_cursor": None}
-
-
-@router.get("/posts/{post_id}/comments")
-async def list_comments(post_id: str, user: dict = Depends(get_current_user)):
-    return {"items": [], "next_cursor": None}
