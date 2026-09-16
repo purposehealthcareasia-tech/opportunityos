@@ -35,6 +35,7 @@ from domains.claims.router import router as claims_router
 from domains.preferences.router import router as preferences_router
 from domains.eligibility.router import router as eligibility_router
 from domains.jobs.router import router as jobs_router
+from domains.pulse import router as pulse_router  # Task 2 · Pulse UI backend
 from domains.jobs.internal_router import router as jobs_internal_router
 from domains.fixtures.internal_router import router as fixture_internal_router
 from domains.admin.bootstrap_internal_router import router as admin_bootstrap_internal_router
@@ -394,6 +395,7 @@ async def version_meta():
 
 
 app.include_router(auth_router)
+app.include_router(pulse_router)  # Task 2 · Pulse UI social + collider
 app.include_router(consent_router)
 app.include_router(users_router)
 app.include_router(research_reports_router)

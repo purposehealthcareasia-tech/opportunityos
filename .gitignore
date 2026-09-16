@@ -65,3 +65,6 @@ credentials.json
 *.pem
 *.key
 .credentials
+
+# Portable handoff artifacts (kept outside web-served paths, tripwire-clean)
+.export/
