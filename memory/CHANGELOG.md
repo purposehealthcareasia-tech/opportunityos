@@ -1019,3 +1019,33 @@ Post-`v0.1 CERTIFIED` remediation of the four Medium findings from the security 
 - `test_admin_service_lists_all_known_credential_fields` cross-checks that `SENSITIVE_USER_FIELDS` in `domains/admin/service.py` stays in sync with the invariants registry.
 
 **v0.1 close-out complete.** Final commit: recorded at write-time.
+
+---
+
+## 2026-02-14 — P1 Foundation Batch 5 COMPLETE (STOP for founder gate)
+
+Landed in five checkpoint commits on `main` (`38c31958` → `54fcee73`); state written to `/app/docs/ATLAS-STATE.md` §14–§15.
+
+**Ch 1 — Discovery adapter hardening (`38c31958`).** New `domains/discovery/adapters/http.py::policy_gated_client(...)` factory is the sole entry-point that constructs `httpx.AsyncClient` inside `domains/discovery/`. `usajobs.py:94` escape closed structurally. Top-level tripwire pruned + new discovery sub-tripwire (`test_no_raw_httpx_under_discovery`).
+
+**Ch 2 — Matching Constitution (`22310933`).**
+- `domains/matching/gates/` (four outcomes: pass/fail/unknown/candidate_confirmation_required over the ATLAS gate list)
+- `domains/matching/ranking/` (Stage 2 signals with direction, evidence, `what_would_change_it`)
+- `domains/matching/evaluator.py` (only bridge between stages)
+- **Import-graph invariant** (`test_ranking_module_does_not_import_gates`) + behavioral short-circuit invariant both green
+
+**Ch 3 — Application Route Engine (`8de50ec4`).** Seven ATLAS route types with full payload (automation_level / required_candidate_actions / limitations / approval_requirement / authorization_expiry_hint / expected_receipt). Deterministic resolver; `NO_APPLY_PATH` is the only submission-restricted route.
+
+**Ch 4 — Fastest-Path Engine (`1f0c9f70`).** Pure ranker; no fabricated probabilities; silence first-class; no protected attributes (AST-asserted); PREPARE_ONLY always sorts last regardless of score.
+
+**Ch 5 — /standards/matching-constitution auto-gen page (`54fcee73`).** Reads live registries at request time; `constitution_version` sha256 fingerprint moves with any code change; byte-for-byte prose-drift test ensures no hand-written text creeps into the handler.
+
+**Test surface.** 170/170 across Batch 5; 28/28 on Batch 4 surface unchanged; tripwire clean.
+
+**Backlog (unchanged priority order).**
+- P1 Batch 6: i18n foundation + AI generation firewall reuse (awaiting founder gate on Batch 5).
+- P1 Batch 4 pytest-asyncio motor loop-binding flake (RCA documented, DEFERRED).
+- BLOCKER-11.a/b/c privacy models — founder async.
+- Real-phone 390px mobile check — HUMAN_REQUIRED.
+- Admin.jsx `IntegrationsTab` split + 51 nested-ternary burn-down — BLOCKED.
+
